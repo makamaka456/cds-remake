@@ -42,7 +42,7 @@ namespace System.Windows.Media
     public abstract class Brush : Freezable
     {
         private double _opacity = 1;
-        public double Opacity { get => _opacity; set { _opacity = value; WpfHost.Touch(); } }
+        public double Opacity { get => _opacity; set { if (Equals(_opacity, value)) return; _opacity = value; WpfHost.Touch(); } }
         public Transform? Transform { get; set; }
         public Transform? RelativeTransform { get; set; }
         public Brush Clone() => (Brush)MemberwiseClone();
@@ -55,7 +55,7 @@ namespace System.Windows.Media
         public static readonly DependencyProperty ColorProperty = DependencyProperty.Register("Color", typeof(Color), typeof(SolidColorBrush));
         public SolidColorBrush() { }
         public SolidColorBrush(Color color) { _color = color; }
-        public Color Color { get => _color; set { _color = value; WpfHost.Touch(); } }
+        public Color Color { get => _color; set { if (Equals(_color, value)) return; _color = value; WpfHost.Touch(); } }
 
         public override void SetValue(DependencyProperty p, object? value)
         {
@@ -246,8 +246,8 @@ namespace System.Windows.Media
         public ScaleTransform() { }
         public ScaleTransform(double x, double y) { _x = x; _y = y; }
         public ScaleTransform(double x, double y, double cx, double cy) { _x = x; _y = y; CenterX = cx; CenterY = cy; }
-        public double ScaleX { get => _x; set { _x = value; WpfHost.Touch(); } }
-        public double ScaleY { get => _y; set { _y = value; WpfHost.Touch(); } }
+        public double ScaleX { get => _x; set { if (Equals(_x, value)) return; _x = value; WpfHost.Touch(); } }
+        public double ScaleY { get => _y; set { if (Equals(_y, value)) return; _y = value; WpfHost.Touch(); } }
         public double CenterX { get; set; }
         public double CenterY { get; set; }
         internal override Android.Graphics.Matrix Matrix(double w, double h)
@@ -270,8 +270,8 @@ namespace System.Windows.Media
         private double _x, _y;
         public TranslateTransform() { }
         public TranslateTransform(double x, double y) { _x = x; _y = y; }
-        public double X { get => _x; set { _x = value; WpfHost.Touch(); } }
-        public double Y { get => _y; set { _y = value; WpfHost.Touch(); } }
+        public double X { get => _x; set { if (Equals(_x, value)) return; _x = value; WpfHost.Touch(); } }
+        public double Y { get => _y; set { if (Equals(_y, value)) return; _y = value; WpfHost.Touch(); } }
         internal override Android.Graphics.Matrix Matrix(double w, double h)
         {
             var m = new Android.Graphics.Matrix();
@@ -292,7 +292,7 @@ namespace System.Windows.Media
         public RotateTransform() { }
         public RotateTransform(double angle) { _a = angle; }
         public RotateTransform(double angle, double cx, double cy) { _a = angle; CenterX = cx; CenterY = cy; }
-        public double Angle { get => _a; set { _a = value; WpfHost.Touch(); } }
+        public double Angle { get => _a; set { if (Equals(_a, value)) return; _a = value; WpfHost.Touch(); } }
         public double CenterX { get; set; }
         public double CenterY { get; set; }
         internal override Android.Graphics.Matrix Matrix(double w, double h)

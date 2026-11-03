@@ -212,6 +212,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "lag")
     void Measure(string name, Action open)
     {
         Log.W($"--- {name}");
+        Drive.Steps.Clear();   // 앞서 걸어 둔 걸음(책 읽기 따위)이 이 창에 먹히지 않게
         Drive.Add("1초 가만히", w => { Stat("열기"); for (int i = 0; i < 60; i++) { System.Windows.WpfHost.Tick(); Thread.Sleep(16); } Stat("가만히 1초"); });
         Drive.Add("손가락 끌기 30번", w => { for (int i = 0; i < 30; i++) { System.Windows.WpfHost.Pointer(w, System.Windows.WpfHost.Touching.Move, new System.Windows.Point(100 + i * 5, 200)); System.Windows.WpfHost.Tick(); } Stat("끌기 30"); });
         Drive.Add("찍기", w =>

@@ -288,6 +288,13 @@ namespace System.Windows
                 c.Concat(t.Matrix(e.RenderSize.Width, e.RenderSize.Height));
                 c.Translate(-ox, -oy);
             }
+            // 화면(잘린 칸) 밖에 통째로 있는 줄은 안 그린다 — 긴 목록(모드 창 따위)에서 스크롤로 가려진 줄까지 그리던 것.
+            // 칸 밖으로 넘쳐 그리는 요소(Canvas, 크기 없는 것)는 그대로 그린다.
+            if (Culls(e) && c.QuickReject(new ARectF(0, 0, (float)e.RenderSize.Width, (float)e.RenderSize.Height), ACanvas.EdgeType.Bw!))
+            {
+                c.Restore();
+                return;
+            }
             if (e.ClipToBounds) c.ClipRect(0, 0, (float)e.RenderSize.Width, (float)e.RenderSize.Height);
             if (e is FrameworkElement { LayoutClip: { } lc } && e.VisualParent is not Canvas)
                 c.ClipRect((float)lc.X, (float)lc.Y, (float)lc.Right, (float)lc.Bottom);
@@ -302,6 +309,12 @@ namespace System.Windows
             if (layer) c.Restore();
             c.Restore();
         }
+
+        /// <summary>건너뛰어도 되는 요소인지 — 줄을 쌓는 판(StackPanel · Grid)의 아이이고, 크기가 있고, 제 칸 밖에 그리지 않는 것.</summary>
+        private static bool Culls(UIElement e) =>
+            e.VisualParent is Controls.StackPanel or Controls.Grid or Controls.WrapPanel
+            && e is not Controls.Canvas && e.RenderTransform == null
+            && e.RenderSize.Width > 0 && e.RenderSize.Height > 0;
 
         // ── 손 ──
 

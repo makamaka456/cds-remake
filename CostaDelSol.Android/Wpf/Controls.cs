@@ -125,7 +125,7 @@ namespace System.Windows.Controls
         private Brush? _background;
         protected Panel() { Children = new UIElementCollection(this); }
         public UIElementCollection Children { get; }
-        public Brush? Background { get => _background; set { _background = value; WpfHost.Touch(); } }
+        public Brush? Background { get => _background; set { if (Equals(_background, value)) return; _background = value; WpfHost.Touch(); } }
         public bool IsItemsHost { get; set; }
 
         public static readonly DependencyProperty ZIndexProperty = DependencyProperty.RegisterAttached("ZIndex", typeof(int), typeof(Panel));
@@ -179,7 +179,7 @@ namespace System.Windows.Controls
     public class StackPanel : Panel
     {
         private Orientation _o = Orientation.Vertical;
-        public Orientation Orientation { get => _o; set { _o = value; WpfHost.Touch(); } }
+        public Orientation Orientation { get => _o; set { if (Equals(_o, value)) return; _o = value; WpfHost.Touch(); } }
 
         protected override Size MeasureOverride(Size available)
         {
@@ -532,8 +532,8 @@ namespace System.Windows.Controls
             public UIElement? Child { get => _child; set { _child = value; if (_window != null) _window.Content = value; } }
             public UIElement? PlacementTarget { get; set; }
             public PlacementMode Placement { get; set; } = PlacementMode.Bottom;
-            public double HorizontalOffset { get => _h; set { _h = value; WpfHost.Touch(); } }
-            public double VerticalOffset { get => _v; set { _v = value; WpfHost.Touch(); } }
+            public double HorizontalOffset { get => _h; set { if (Equals(_h, value)) return; _h = value; WpfHost.Touch(); } }
+            public double VerticalOffset { get => _v; set { if (Equals(_v, value)) return; _v = value; WpfHost.Touch(); } }
             private double _h, _v;
             public bool AllowsTransparency { get; set; }
             public bool StaysOpen { get; set; } = true;
@@ -647,10 +647,10 @@ namespace System.Windows.Controls
         public static readonly DependencyProperty PaddingProperty = DependencyProperty.Register("Padding", typeof(Thickness), typeof(Border));
         private Brush? _background, _borderBrush;
         private Thickness _thickness, _padding;
-        public Brush? Background { get => _background; set { _background = value; WpfHost.Touch(); } }
-        public Brush? BorderBrush { get => _borderBrush; set { _borderBrush = value; WpfHost.Touch(); } }
-        public Thickness BorderThickness { get => _thickness; set { _thickness = value; WpfHost.Touch(); } }
-        public Thickness Padding { get => _padding; set { _padding = value; WpfHost.Touch(); } }
+        public Brush? Background { get => _background; set { if (Equals(_background, value)) return; _background = value; WpfHost.Touch(); } }
+        public Brush? BorderBrush { get => _borderBrush; set { if (Equals(_borderBrush, value)) return; _borderBrush = value; WpfHost.Touch(); } }
+        public Thickness BorderThickness { get => _thickness; set { if (Equals(_thickness, value)) return; _thickness = value; WpfHost.Touch(); } }
+        public Thickness Padding { get => _padding; set { if (Equals(_padding, value)) return; _padding = value; WpfHost.Touch(); } }
         public CornerRadius CornerRadius { get; set; }
 
         protected override Size MeasureOverride(Size available)
@@ -717,9 +717,9 @@ namespace System.Windows.Controls
     {
         public static readonly DependencyProperty FontFamilyProperty = DependencyProperty.Register("FontFamily", typeof(FontFamily), typeof(Control));
         private Brush? _background, _foreground, _borderBrush;
-        public Brush? Background { get => _background; set { _background = value; WpfHost.Touch(); } }
-        public Brush? Foreground { get => _foreground ?? Brushes.Black; set { _foreground = value; WpfHost.Touch(); } }
-        public Brush? BorderBrush { get => _borderBrush; set { _borderBrush = value; WpfHost.Touch(); } }
+        public Brush? Background { get => _background; set { if (Equals(_background, value)) return; _background = value; WpfHost.Touch(); } }
+        public Brush? Foreground { get => _foreground ?? Brushes.Black; set { if (Equals(_foreground, value)) return; _foreground = value; WpfHost.Touch(); } }
+        public Brush? BorderBrush { get => _borderBrush; set { if (Equals(_borderBrush, value)) return; _borderBrush = value; WpfHost.Touch(); } }
         public Thickness BorderThickness { get; set; }
         public Thickness Padding { get; set; }
         public double FontSize { get; set; } = 12;
@@ -841,8 +841,8 @@ namespace System.Windows.Controls
         public static readonly DependencyProperty StretchProperty = DependencyProperty.Register("Stretch", typeof(Stretch), typeof(Image));
         private ImageSource? _source;
         private Stretch _stretch = Stretch.Uniform;
-        public ImageSource? Source { get => _source; set { _source = value; WpfHost.Touch(); } }
-        public Stretch Stretch { get => _stretch; set { _stretch = value; WpfHost.Touch(); } }
+        public ImageSource? Source { get => _source; set { if (Equals(_source, value)) return; _source = value; WpfHost.Touch(); } }
+        public Stretch Stretch { get => _stretch; set { if (Equals(_stretch, value)) return; _stretch = value; WpfHost.Touch(); } }
         public StretchDirection StretchDirection { get; set; } = StretchDirection.Both;
 
         protected override Size MeasureOverride(Size available)
@@ -900,10 +900,10 @@ namespace System.Windows.Controls
         private double _size = 12;
         public TextBlock() { Inlines = new Documents.InlineCollection(this); }
         public TextBlock(Documents.Inline inline) : this() { Inlines.Add(inline); }
-        public string Text { get => Inlines.Count > 0 ? string.Concat(Inlines.Select(i => i.Plain)) : _text; set { Inlines.Clear(); _text = value ?? ""; WpfHost.Touch(); } }
-        public Brush? Foreground { get => _foreground ?? Brushes.Black; set { _foreground = value; WpfHost.Touch(); } }
+        public string Text { get => Inlines.Count > 0 ? string.Concat(Inlines.Select(i => i.Plain)) : _text; set { if (Inlines.Count == 0 && _text == (value ?? "")) return; Inlines.Clear(); _text = value ?? ""; WpfHost.Touch(); } }
+        public Brush? Foreground { get => _foreground ?? Brushes.Black; set { if (Equals(_foreground, value)) return; _foreground = value; WpfHost.Touch(); } }
         public Brush? Background { get; set; }
-        public double FontSize { get => _size; set { _size = value; WpfHost.Touch(); } }
+        public double FontSize { get => _size; set { if (Equals(_size, value)) return; _size = value; WpfHost.Touch(); } }
         public FontWeight FontWeight { get; set; } = FontWeights.Normal;
         public FontFamily? FontFamily { get; set; }
         public FontStyle FontStyle { get; set; }
@@ -1507,8 +1507,8 @@ namespace System.Windows.Shapes
     public abstract class Shape : FrameworkElement
     {
         private Brush? _fill, _stroke;
-        public Brush? Fill { get => _fill; set { _fill = value; WpfHost.Touch(); } }
-        public Brush? Stroke { get => _stroke; set { _stroke = value; WpfHost.Touch(); } }
+        public Brush? Fill { get => _fill; set { if (Equals(_fill, value)) return; _fill = value; WpfHost.Touch(); } }
+        public Brush? Stroke { get => _stroke; set { if (Equals(_stroke, value)) return; _stroke = value; WpfHost.Touch(); } }
         public double StrokeThickness { get; set; } = 1;
         public DoubleCollection? StrokeDashArray { get; set; }
         public PenLineCap StrokeStartLineCap { get; set; }

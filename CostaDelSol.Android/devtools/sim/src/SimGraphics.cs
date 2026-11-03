@@ -227,6 +227,13 @@ namespace Android.Graphics
             return true;
         }
         public bool ClipRect(RectF r) => ClipRect(r.Left, r.Top, r.Right, r.Bottom);
+        public enum EdgeType { Aa, Bw }
+        /// <summary>잘린 칸과 안 겹치면 참(안드로이드 Canvas.QuickReject).</summary>
+        public bool QuickReject(RectF r, EdgeType edge)
+        {
+            var d = Dev(r.Left, r.Top, r.Right, r.Bottom);
+            return d.R <= _clip.L || d.B <= _clip.T || d.L >= _clip.R || d.T >= _clip.B;
+        }
         public bool ClipPath(Path p) { var r = new RectF(); p.ComputeBounds(r, true); return ClipRect(r); }
 
         private void Blend(int x, int y, int argb, double alpha)

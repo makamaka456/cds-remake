@@ -243,10 +243,19 @@ namespace System.Windows
         private System.Reflection.PropertyInfo? Clr(DependencyProperty p)
         {
             if (p.Attached) return null;
-            var prop = GetType().GetProperty(p.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            return prop != null && prop.GetIndexParameters().Length == 0
-                   && prop.DeclaringType?.Namespace?.StartsWith("System.Windows", StringComparison.Ordinal) == true ? prop : null;
+            var key = (GetType(), p.Name);
+            lock (ClrCache)
+            {
+                if (ClrCache.TryGetValue(key, out var known)) return known;
+                var prop = key.Item1.GetProperty(p.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (prop == null || prop.GetIndexParameters().Length != 0
+                    || prop.DeclaringType?.Namespace?.StartsWith("System.Windows", StringComparison.Ordinal) != true) prop = null;
+                return ClrCache[key] = prop;
+            }
         }
+
+        /// <summary>찾아 둔 CLR 속성(형 · 이름) — 값을 쓸 때마다 다시 찾지 않게.</summary>
+        private static readonly Dictionary<(Type, string), System.Reflection.PropertyInfo?> ClrCache = [];
 
         private static bool Fits(Type type, object? value) =>
             value == null ? !type.IsValueType || Nullable.GetUnderlyingType(type) != null : type.IsInstanceOfType(value);
@@ -362,13 +371,13 @@ namespace System.Windows
         public override object? GetValue(DependencyProperty p) =>
             ReferenceEquals(p, OpacityProperty) ? Opacity : ReferenceEquals(p, VisibilityProperty) ? Visibility : base.GetValue(p);
 
-        public double Opacity { get => _opacity; set { _opacity = value; WpfHost.Touch(); } }
+        public double Opacity { get => _opacity; set { if (Equals(_opacity, value)) return; _opacity = value; WpfHost.Touch(); } }
         public Brush? OpacityMask { get; set; }
         public bool IsHitTestVisible { get => _hit; set => _hit = value; }
-        public bool IsEnabled { get => _enabled; set { _enabled = value; WpfHost.Touch(); IsEnabledChanged?.Invoke(this, new DependencyPropertyChangedEventArgs()); } }
-        public Transform? RenderTransform { get => _renderTransform; set { _renderTransform = value; WpfHost.Touch(); } }
-        public Point RenderTransformOrigin { get => _origin; set { _origin = value; WpfHost.Touch(); } }
-        public bool ClipToBounds { get => _clip; set { _clip = value; WpfHost.Touch(); } }
+        public bool IsEnabled { get => _enabled; set { if (_enabled == value) return; _enabled = value; WpfHost.Touch(); IsEnabledChanged?.Invoke(this, new DependencyPropertyChangedEventArgs()); } }
+        public Transform? RenderTransform { get => _renderTransform; set { if (Equals(_renderTransform, value)) return; _renderTransform = value; WpfHost.Touch(); } }
+        public Point RenderTransformOrigin { get => _origin; set { if (Equals(_origin, value)) return; _origin = value; WpfHost.Touch(); } }
+        public bool ClipToBounds { get => _clip; set { if (Equals(_clip, value)) return; _clip = value; WpfHost.Touch(); } }
         public Geometry? Clip { get; set; }
         public CacheMode? CacheMode { get; set; }
         public Media.Effects.Effect? Effect { get; set; }
@@ -546,6 +555,7 @@ namespace System.Windows
         {
             if (child.VisualParent != null && !ReferenceEquals(child.VisualParent, this))
                 child.VisualParent.Orphan(child);
+            if (ReferenceEquals(child.VisualParent, this)) return;   // 이미 내 아이 — 바뀐 것이 없다
             child.VisualParent = this;
             WpfHost.Touch();
         }
@@ -584,23 +594,23 @@ namespace System.Windows
         public static readonly RoutedEvent LoadedEvent = new("Loaded");
         public Style? FocusVisualStyle { get; set; }
         public static readonly DependencyProperty HeightProperty = DependencyProperty.Register("Height", typeof(double), typeof(FrameworkElement));
-        public double Width { get => _w; set { _w = value; WpfHost.Touch(); } }
-        public double Height { get => _h; set { _h = value; WpfHost.Touch(); } }
-        public double MinWidth { get => _minW; set { _minW = value; WpfHost.Touch(); } }
-        public double MinHeight { get => _minH; set { _minH = value; WpfHost.Touch(); } }
-        public double MaxWidth { get => _maxW; set { _maxW = value; WpfHost.Touch(); } }
-        public double MaxHeight { get => _maxH; set { _maxH = value; WpfHost.Touch(); } }
+        public double Width { get => _w; set { if (Equals(_w, value)) return; _w = value; WpfHost.Touch(); } }
+        public double Height { get => _h; set { if (Equals(_h, value)) return; _h = value; WpfHost.Touch(); } }
+        public double MinWidth { get => _minW; set { if (Equals(_minW, value)) return; _minW = value; WpfHost.Touch(); } }
+        public double MinHeight { get => _minH; set { if (Equals(_minH, value)) return; _minH = value; WpfHost.Touch(); } }
+        public double MaxWidth { get => _maxW; set { if (Equals(_maxW, value)) return; _maxW = value; WpfHost.Touch(); } }
+        public double MaxHeight { get => _maxH; set { if (Equals(_maxH, value)) return; _maxH = value; WpfHost.Touch(); } }
         public double ActualWidth => Rendered.Width;
         public double ActualHeight => Rendered.Height;
-        public Thickness Margin { get => _margin; set { _margin = value; WpfHost.Touch(); } }
-        public HorizontalAlignment HorizontalAlignment { get => _ha; set { _ha = value; WpfHost.Touch(); } }
-        public VerticalAlignment VerticalAlignment { get => _va; set { _va = value; WpfHost.Touch(); } }
+        public Thickness Margin { get => _margin; set { if (Equals(_margin, value)) return; _margin = value; WpfHost.Touch(); } }
+        public HorizontalAlignment HorizontalAlignment { get => _ha; set { if (Equals(_ha, value)) return; _ha = value; WpfHost.Touch(); } }
+        public VerticalAlignment VerticalAlignment { get => _va; set { if (Equals(_va, value)) return; _va = value; WpfHost.Touch(); } }
         public object? Tag { get; set; }
         public string Name { get; set; } = "";
         public object? ToolTip { get; set; }
         public Cursor? Cursor { get; set; }
         public object? DataContext { get; set; }
-        public Transform? LayoutTransform { get => _layout; set { _layout = value; WpfHost.Touch(); } }
+        public Transform? LayoutTransform { get => _layout; set { if (Equals(_layout, value)) return; _layout = value; WpfHost.Touch(); } }
         private Transform? _layout;
 
         /// <summary>자리 바꿈(LayoutTransform) 가운데 배율만 — 원본 화면들은 배율로만 쓴다.</summary>

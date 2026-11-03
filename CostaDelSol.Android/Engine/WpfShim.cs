@@ -61,13 +61,13 @@ namespace System.Windows
         public double Left
         {
             get => double.IsNaN(_left) ? ScreenLeft : _left;
-            set { _left = value; WpfHost.Touch(); LocationChanged?.Invoke(this, EventArgs.Empty); }
+            set { if (_left.Equals(value)) return; _left = value; WpfHost.Touch(); LocationChanged?.Invoke(this, EventArgs.Empty); }
         }
 
         public double Top
         {
             get => double.IsNaN(_top) ? ScreenTop : _top;
-            set { _top = value; WpfHost.Touch(); LocationChanged?.Invoke(this, EventArgs.Empty); }
+            set { if (_top.Equals(value)) return; _top = value; WpfHost.Touch(); LocationChanged?.Invoke(this, EventArgs.Empty); }
         }
 
         internal bool Placed => !double.IsNaN(_left) && !double.IsNaN(_top);
