@@ -1,4 +1,4 @@
-using Android.App;
+﻿using Android.App;
 using Android.Widget;
 using System.Windows;
 using CdsHelper.Game.Engine;
@@ -88,10 +88,21 @@ public sealed partial class WorldMapWindow
     // ── 타이틀 차림표에서 부른다(게임 줄) ───────────────────────────────
 
     public void TitleNewGame() => NewGame();
-    public void TitleLoadGame() => StartMap(fresh: false);
-    public void TitleContinue() => StartMap(fresh: false, auto: true);
+    /// <summary>LOAD GAME — 손으로 적은 세이브 칸(열 칸까지)을 목록에서 고른다(PC 판과 같다).</summary>
+    public void TitleLoadGame()
+    {
+        if (PickManualSave(this) is { } file) StartMap(fresh: false, path: file);
+    }
+
+    /// <summary>CONTINUE — 입항 자동저장 칸을 목록에서 고른다(PC 판과 같다).</summary>
+    public void TitleContinue()
+    {
+        if (PickAutoSave() is { } file) StartMap(fresh: false, path: file);
+    }
+
     public void TitleMiniGames() => MiniGames();
-    public bool HasAutoSave => File.Exists(GameSave.AutoPath);
+    public bool HasManualSave => GameSave.HasManualSave();
+    public bool HasAutoSave => GameSave.HasAutoSave();
 
     // ── 프레임 · 틱(게임 줄) ─────────────────────────────────────────────
 
@@ -212,12 +223,13 @@ public sealed partial class WorldMapWindow
         TitleWanted?.Invoke();
     }
 
-    public void LoadGame()
+    /// <param name="path">열 세이브 — 안 주면 손으로 적은 세이브(불러오기 목록 화면이 고른 칸을 준다).</param>
+    public void LoadGame(string? path = null)
     {
         CommandMenu.Close();
         InfoMenu.Close();
         _askedCity = -1;
-        StartMap(fresh: false);
+        StartMap(fresh: false, path);
     }
 
     internal void SaveByKey(Window owner)
@@ -228,11 +240,50 @@ public sealed partial class WorldMapWindow
     }
 
 
-    private static void WithMenuHidden(Window? menu, Action show)
+    /// <param name="holdNotes">겹쳐 보기 쪽지도 걷어 둘지(PC 판 — 지도 창이 쪽지를 덮는다).</param>
+    private static void WithMenuHidden(Window? menu, Action show, bool holdNotes = false)
     {
         if (menu != null) menu.Visibility = Visibility.Hidden;
+        using var notes = holdNotes ? OverlayNotes.Hold() : null;
         try { show(); }
         finally { if (menu != null) menu.Visibility = Visibility.Visible; }
+    }
+
+    /// <summary>스폰서 일람 — 아는 후원자와 권력 · 친밀도. 도시 창이 없는 바다 · 뭍에서도 같은 창을 낸다(PC 판 그대로).</summary>
+    private void ShowPatrons(Window owner) =>
+        new PatronMenu(owner, _game, "", CommandMenu, CommandMenu, 0, 0, -1).ShowPatrons(owner);
+
+    /// <summary>첫 출항 갈매기(장면 16)를 이미 치렀는가 — 원본 항해 고리의 <c>[ebp-0x2C]</c>.</summary>
+    private bool _gullsShown;
+
+    /// <summary>
+    /// 대 둔 배 곁에서 승선을 이미 물었는지. 배에 타 있는 동안은 참이라 상륙하자마자 묻지 않고,
+    /// 배에서 멀어지면 거짓이 되어 다시 다가올 때 한 번 묻는다(<see cref="CheckBoard"/>).
+    /// </summary>
+    private bool _askedBoard = true;
+
+    /// <summary>속도 값 몇이 1노트인지 — 작위 혜택 「항해 속도 +1노트」가 더하는 몫. 적어도 1(PC 판 그대로).</summary>
+    private static readonly int SpeedPerKnot =
+        Math.Max(1, (int)Math.Round(10.0 / Math.Max(1e-6, KnotsOf(110) - KnotsOf(100))));
+
+    private static double KnotsOf(int speed)
+    {
+        double cells = (Engine.Sea.Sailing.CellsPerTick(speed, true, false)
+                        + Engine.Sea.Sailing.CellsPerTick(speed, false, false)) / 2;
+        return cells * TerrainTable.TicksPerDay * NauticalMilesPerCell / 24;
+    }
+
+    /// <summary>
+    /// 지금 자리의 기후대(0~12) — 바람 표 낱말의 비트 8~11(<c>0x00424FA0</c>)이다. 표를 못 읽으면 -1.
+    /// </summary>
+    /// <param name="latRaw">원본 위도 값(0~20000)을 함께 내준다.</param>
+    private int ClimateZone(out int latRaw)
+    {
+        var (lat, lon) = _host.ShipLatLon;
+        latRaw = (int)((90 - lat) / 180 * 20000);
+        int lonRaw = (int)((lon + 180) / 360 * 40000);
+        _weatherWind ??= WindTable.Open(_game.Directory);
+        return _weatherWind?.ZoneAt(WindTable.CellOf(lonRaw, latRaw)) ?? -1;
     }
 
     private void HideTitleMenu(bool hide) { }
@@ -319,38 +370,124 @@ public sealed partial class WorldMapWindow
 
     public void ShowPersonMove() => PersonMoveDialog.Show(this, _game);
 
-    /// <summary>모드 — 원본에 없는 편의 기능을 켜고 끈다.</summary>
-    public void ShowModDialog() => ModDialog.Show(this, new ModDialog.Options
+    /// <summary>모드 — 원본에 없는 편의 기능을 켜고 끈다(PC 판 ShowModDialog 와 같은 줄).</summary>
+    /// <remarks>
+    /// 지도 그림 새 효과(바다 효과 · 밝기 · 물결 · 고해상 바다 · 지형 세부 · 항적 · 점 거르기 · 구름)는 값만 적어 둔다 —
+    /// 안드로이드 GL 지도가 아직 그리지 않는다(다음 판에서 옮긴다).
+    /// </remarks>
+    public void ShowModDialog()
     {
-        MiniMapOn = () => GameSettings.ShowMiniMap,
-        SetMiniMap = on => GameSettings.ShowMiniMap = on,
-        ConditionOn = () => GameSettings.ShowConditionOverlay,
-        SetCondition = on => GameSettings.ShowConditionOverlay = on,
-        ArrowsOn = () => _host.ShowFlowArrows,
-        SetArrows = on =>
+        if (_modOpen) return;
+        _modOpen = true;
+        try
         {
-            _host.ShowFlowArrows = on;
-            GameSettings.ShowFlowArrows = on;
-        },
-    });
+            ModDialog.Show(this, new ModDialog.Options
+            {
+                DiscoveryCountOn = () => GameSettings.ShowDiscoveryCount,
+                SetDiscoveryCount = on => GameSettings.ShowDiscoveryCount = on,
+                MiniMapOn = () => GameSettings.ShowMiniMap,
+                SetMiniMap = on => GameSettings.ShowMiniMap = on,
+                MiniMapOpacity = () => GameSettings.MiniMapOpacity,
+                SetMiniMapOpacity = v => GameSettings.MiniMapOpacity = v,
+                ArrowsOn = () => _host.ShowFlowArrows,
+                SetArrows = on =>
+                {
+                    _host.ShowFlowArrows = on;
+                    GameSettings.ShowFlowArrows = on;
+                },
+                SeaOn = () => GameSettings.SeaEffect,
+                SetSea = on => GameSettings.SeaEffect = on,
+                SeaBrightness = () => GameSettings.SeaBrightness,
+                SetSeaBrightness = v => GameSettings.SeaBrightness = v,
+                SeaFlowAmount = () => GameSettings.SeaFlowAmount,
+                SetSeaFlowAmount = v => GameSettings.SeaFlowAmount = v,
+                HiResSeaOn = () => GameSettings.HiResSea,
+                SetHiResSea = on => GameSettings.HiResSea = on,
+                LandDetailOn = () => GameSettings.LandDetail,
+                SetLandDetail = on => GameSettings.LandDetail = on,
+                ShipWakeOn = () => GameSettings.ShipWake,
+                SetShipWake = on => GameSettings.ShipWake = on,
+                PixelFilterOn = () => GameSettings.PixelFilter,
+                SetPixelFilter = on => GameSettings.PixelFilter = on,
+                SmoothCloudsOn = () => GameSettings.SmoothClouds,
+                SetSmoothClouds = on => GameSettings.SmoothClouds = on,
+            });
+        }
+        finally { _modOpen = false; }
+        _refreshApps();
+        _host.RefreshGrownCities();   // 「도시 투자 성장」을 켜고 껐으면 자란 도시 그림을 바꾼다
+    }
 
-    /// <summary>개발 — 소지금 · 명성을 손으로 넣고, 모의 싸움(일기토 · 육상전 · 해전)을 돌린다.</summary>
+    private bool _modOpen;
+
+    /// <summary>개발 — PC 판과 같은 줄(도우미 앱 띄우기만 뺀다 — 사용자 결정).</summary>
     public void ShowDevDialog() => DevDialog.Show(this, _game.Player, new DevDialog.Options
     {
+        GiveItem = GiveItemToSave,
         CoordsOn = () => GameSettings.ShowCoordOverlay,
         SetCoords = on => GameSettings.ShowCoordOverlay = on,
         RuseTable = () => RuseEditDialog.Show(this),
+        Scenarios = () => ScenarioEditDialog.Show(this, _game),
         Duel = PlayDuel,
         LandSpar = () => LandSparDialog.Play(this, _game),
         SeaSpar = MockSeaBattle,
-        ToolBarOn = () => GameSettings.ShowToolBar,
-        SetToolBar = on => GameSettings.ShowToolBar = on,
-        AutoSail = () =>
+        YearChanged = back => { if (back) _game.ResetWorld(); },
+        Quest = () => QuestDialog.Show(this, _game),
+        Discoveries = _game.Discoveries?.Table,
+        DiscoveriesChanged = () => HideCities(),
+        EventDone = id => _game.Player.IsSettled(id) && !Engine.Disev.DisevRunner.RecordsDiscovery(_game, id),
+        UserDiscoveries = () =>
         {
-            if (_host.IsOnLand) Say("바다에 있을 때만 자동항해를 쓸 수 있습니다");
-            else ShowAutoSailDialog();
+            UserDiscoveryDialog.Show(this, DiscoveryAreaMap, _game);
+            HideCities();
         },
+        HistoryEvents = () => _game.HistoryCatalog(),
+        Barmaids = _game.Barmaids,
+        CityName = _game.CityName,
+        Faces = _game.Faces,
     });
+
+    /// <summary>
+    /// 개발 창 「아이템 넣기」 — 세이브 파일을 고르고, 아이템을 골라 그 주인공 소지품에 넣는다. 그만둘 때까지 이어 넣는다.
+    /// </summary>
+    /// <remarks>파일만 고친다 — 지금 떠 있는 판에는 안 들고, 그 세이브를 불러와야 보인다.</remarks>
+    private void GiveItemToSave()
+    {
+        if (_game.Items is not { } table) { NoticeDialog.Show(this, "아이템 표를 읽지 못했습니다."); return; }
+
+        var slots = GameSave.ManualSaves().Select(s => (Slot: s, Auto: false))
+            .Concat(GameSave.AutoSaves().Select(s => (Slot: s, Auto: true))).ToList();
+        if (slots.Count == 0) { NoticeDialog.Show(this, "저장한 데이터가 없습니다"); return; }
+
+        var rows = slots.Select(s =>
+        {
+            var d = s.Slot.Save;
+            string who = !string.IsNullOrEmpty(d.Name) ? d.Name
+                       : $"{d.Given} {d.Family}".Trim() is { Length: > 0 } whole ? whole : "이름 없는 제독";
+            return new[]
+            {
+                s.Auto ? who + " (자동)" : who, string.IsNullOrEmpty(d.CityName) ? "바다" : d.CityName,
+                $"{d.SavedAt:yyyy-MM-dd HH:mm}", $"{d.Items?.Count ?? 0}개",
+            };
+        }).ToList();
+        int pick = SaveListDialog.Pick(this, "아이템 넣기 - 세이브 고르기", ["캐릭터", "도시", "저장한 시각", "소지품"], rows);
+        if (pick < 0) return;
+        string file = slots[pick].Slot.File;
+
+        var items = table.Items.Where(i => !string.IsNullOrWhiteSpace(i.Name)).ToList();
+        var lines = items.Select(i => GameUi.Pad(i.Name, 24) + i.CategoryName).ToList();
+        int last = -1;
+        while (true)
+        {
+            int at = ListPickDialog.Pick(this, lines, "아이템 넣기 - 아이템 고르기", "아이템이 없습니다", preselect: last);
+            if (at < 0) return;
+            last = at;
+            string failed = GameSave.AddItem(file, items[at].Id);
+            if (failed.Length > 0) { NoticeDialog.Show(this, failed); return; }
+            Say($"{rows[pick][0]}의 세이브에 {items[at].Name}{GameUi.Josa(items[at].Name, "을", "를")} 넣었습니다. 불러오면 보입니다.");
+        }
+    }
+
 
     /// <summary>
     /// 도구 — 리메이크 도구 앱(CdsHelperWindow) 차림표의 게임 자료 편집 창들. 창은 PC 판 그대로다.
@@ -402,35 +539,46 @@ public sealed partial class WorldMapWindow
 
     // ── 위 띠 칸 · 도시정보 창(PC 판 InfoCell · ShowCityInfoMenu) ──────────
 
-    /// <summary>띠 칸의 차례와 기본 켬 — PC 판 gameCells 에 꽂는 차례 그대로.</summary>
-    private static readonly (string Name, bool On)[] BarOrder =
-    [
-        (CityInfoMenu.Date, true), (CityInfoMenu.Crew, true), (CityInfoMenu.Stores, false),
-        (CityInfoMenu.DaysLeft, false), (CityInfoMenu.Wind, false), (CityInfoMenu.Coord, true),
-        (CityInfoMenu.Gold, true), (CityInfoMenu.Fame, true), (CityInfoMenu.Fatigue, false),
-        (CityInfoMenu.Morale, true), (CityInfoMenu.City, false), (CityInfoMenu.Language, false),
-        (CityInfoMenu.Rate, false), (CityInfoMenu.Current, false), (CityInfoMenu.Vitality, false),
-    ];
+    /// <summary>
+    /// 띠 갈래마다 처음 켜져 있는 칸 — 도시정보 줄 차례(<see cref="CityInfoMenu.Rows"/>)의 비트다
+    /// (PC 판 BarDefaults, <c>0x0047E167</c>~<c>0x0047E17F</c>).
+    /// <code>
+    ///   0 바다  0x000F  날짜 · 선원 · 물·식량 · 위도·경도
+    ///   1 뭍    0x041B  날짜 · 대원 · 위도·경도 · 소지금 · 남은일수
+    ///   2 도시  0x0691  날짜 · 소지금 · 도시명 · 시세 · 남은일수
+    /// </code>
+    /// </summary>
+    private static readonly int[] BarDefaults = [0x000F, 0x041B, 0x0691];
+
+    /// <summary>지금 띠 갈래 — 0 바다 · 1 뭍 · 2 도시(PC 판 SyncBarPlace 와 같은 셈).</summary>
+    private int BarPlace => _host.InCity ? 2 : _host.IsOnLand ? 1 : 0;
 
     /// <summary>띠 칸을 켜고 끄면 알린다 — 안드로이드 띠(SeaBars)가 다시 그린다.</summary>
     public event Action? BarCellsChanged;
 
-    /// <summary>그 칸이 켜져 있는지. 한 번도 안 건드렸으면 기본값이다(PC 판 InfoCell).</summary>
-    private static bool BarOn(string name) =>
-        GameSettings.BarCells?.Contains(name) ?? BarOrder.FirstOrDefault(c => c.Name == name).On;
+    /// <summary>그 자리에서 그 칸이 켜져 있는지. 그 자리에서 안 건드렸으면 게임 기본값이다.</summary>
+    private static bool BarOn(int place, string name)
+    {
+        int i = Array.IndexOf(CityInfoMenu.Rows, name);
+        return GameSettings.BarCellsAt(place)?.Contains(name) ?? (i >= 0 && ((BarDefaults[place] >> i) & 1) != 0);
+    }
 
     /// <summary>켜진 칸들의 글 — 서식은 PC 판 상태 시계(0x0047DCE2 · 0x0056BEA8 · 0x0056BFB0 …) 그대로.</summary>
-    public IReadOnlyList<string> BarCells()
+    public IReadOnlyList<string> BarCells() => BarCells(BarPlace);
+
+    /// <summary>그 자리 갈래의 켜진 칸 글(타이틀 화면 띠는 바다 갈래를 쓴다).</summary>
+    public IReadOnlyList<string> BarCells(int place)
     {
         var p = _game.Player;
         var list = new List<string>();
-        foreach (var (name, _) in BarOrder)
+        foreach (var name in CityInfoMenu.Rows)
         {
-            if (!BarOn(name)) continue;
+            if (!BarOn(place, name)) continue;
             list.Add(name switch
             {
                 CityInfoMenu.Date => $"{p.Date.Year,4}년{p.Date.Month,2}월{p.Date.Day,2}일",
-                CityInfoMenu.Crew => $"{(_host.IsOnLand ? "대원" : "선원")}{p.Crew,4}명",
+                // 글을 통째로 둘로 나눠 둔다 — 낱말을 자리로 끼우면 번역표의 「선원{0}명」 틀에 안 맞는다(PC 판).
+                CityInfoMenu.Crew => _host.IsOnLand ? $"대원{p.Crew,4}명" : $"선원{p.Crew,4}명",
                 CityInfoMenu.Stores => $"물{p.SupplyOf(SupplyKind.Water),4}통 식량{p.SupplyOf(SupplyKind.Food),4}통",
                 CityInfoMenu.DaysLeft => p.Contract is { } deal ? $"남은일수{deal.DaysLeftOn(p.Date),4}" : "남은일수----",
                 CityInfoMenu.Wind => WindLine(),
@@ -438,12 +586,11 @@ public sealed partial class WorldMapWindow
                 CityInfoMenu.Gold => $"소지금{p.Gold,6}닢",
                 CityInfoMenu.Fame => $"명성{p.Fame,6}",
                 CityInfoMenu.Fatigue => $"피로도{p.Fatigue,4}",
-                CityInfoMenu.Morale => $"규칙{p.Morale,4}",
-                CityInfoMenu.City => p.CityName.Length > 0 ? p.CityName : "-------------------",
+                CityInfoMenu.Morale => $"규율{p.Morale,4}",
+                CityInfoMenu.City => p.CityName.Length > 0 ? p.CityName : NoCity,
                 CityInfoMenu.Language => CityLanguage(),
                 CityInfoMenu.Rate => CityRate(),
                 CityInfoMenu.Current => CurrentLine(),
-                CityInfoMenu.Vitality => $"HP:{p.Condition,4}",
                 _ => name,
             });
         }
@@ -473,15 +620,20 @@ public sealed partial class WorldMapWindow
         if (!_host.InCity && !_host.IsOnLand) _host.Paused = true;
     }
 
-    private GameMenu BuildCityInfo() => CityInfoMenu.Build(
-        name => BarOrder.Any(c => c.Name == name) ? BarOn(name) : null,
-        name =>
-        {
-            var on = BarOrder.Where(c => BarOn(c.Name)).Select(c => c.Name).ToList();
-            if (!on.Remove(name)) on.Add(name);
-            GameSettings.BarCells = on;
-            InfoMenu.Refresh();
-            BarCellsChanged?.Invoke();
-        },
-        InfoMenu.Close);
+    private GameMenu BuildCityInfo()
+    {
+        int place = BarPlace;
+        return CityInfoMenu.Build(
+            name => Array.IndexOf(CityInfoMenu.Rows, name) >= 0 ? BarOn(place, name) : null,
+            name =>
+            {
+                // 지금 자리 몫으로 적어 둔다 — 다음에 그 자리에 오면 이대로 선다(PC 판 SaveBarCells).
+                var on = CityInfoMenu.Rows.Where(c => BarOn(place, c)).ToList();
+                if (!on.Remove(name)) on.Add(name);
+                GameSettings.SetBarCellsAt(place, on);
+                InfoMenu.Refresh();
+                BarCellsChanged?.Invoke();
+            },
+            InfoMenu.Close, place);
+    }
 }

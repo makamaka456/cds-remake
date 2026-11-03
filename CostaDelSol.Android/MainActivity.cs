@@ -1,4 +1,4 @@
-using Android.Widget;
+﻿using Android.Widget;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
@@ -263,7 +263,7 @@ public sealed class MainActivity : Activity
         _title.Show($"{start.Year}년 {start.Month}월 {start.Day}일",
         [
             new("NEW GAME", true, () => GameThread.Post(_map.TitleNewGame)),
-            new("LOAD GAME", true, () => GameThread.Post(_map.TitleLoadGame)),
+            new("LOAD GAME", _map.HasManualSave, () => GameThread.Post(_map.TitleLoadGame)),
             new("CONTINUE", _map.HasAutoSave, () => GameThread.Post(_map.TitleContinue)),
             new("MINI GAME", true, () => GameThread.Post(_map.TitleMiniGames)),
             new("END GAME", true, FinishAffinity),

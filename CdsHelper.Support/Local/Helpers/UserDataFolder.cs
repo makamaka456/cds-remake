@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 
 namespace CdsHelper.Support.Local.Helpers;
 
@@ -19,7 +19,12 @@ public static class UserDataFolder
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CdsHelper");
 
     /// <summary>지금 쓰는 사용자 자료 폴더 — <c>CDS_SAVEDIR</c>, 없으면 <see cref="RealRoaming"/>.</summary>
+#if ANDROID
+    /// <remarks>안드로이드판은 앱이 고른 세이브 폴더(내장 저장소 · 사람이 고른 곳)를 켤 때 여기 건다.</remarks>
+    public static string Roaming { get; set; } = OffscreenTest.SaveDir ?? RealRoaming;
+#else
     public static string Roaming { get; } = OffscreenTest.SaveDir ?? RealRoaming;
+#endif
 
     /// <summary>사용자 자료 폴더 밑의 자리.</summary>
     public static string Combine(params string[] parts) => Path.Combine([Roaming, .. parts]);

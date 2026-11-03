@@ -1,4 +1,4 @@
-using Android.App;
+﻿using Android.App;
 using Android.Widget;
 using System.Text.Json;
 using Android.Content;
@@ -90,6 +90,10 @@ public sealed class GameData
             for (int d = 0; d < 8; d++) frames[s][d] = ReadSprite(context, $"ship-g{s}/ship_{d}.png");
         }
 
+        var cityNames = ReadCityNames(context);
+        // PC 판 CityNames(작위 · 귀양 · 시나리오 글이 쓴다)는 실행 폴더의 cities.json 을 읽는다 — 안드로이드는 APK 안 것을 건넨다.
+        CdsHelper.Support.Local.Helpers.CityNames.Names = cityNames;
+
         return new GameData
         {
             World = world,
@@ -98,7 +102,7 @@ public sealed class GameData
             Terrain = terrain,
             Sails = sails,
             Cities = cities,
-            CityNames = ReadCityNames(context),
+            CityNames = cityNames,
             ShipFrames = frames,
             Problems = problems,
         };

@@ -38,14 +38,79 @@ namespace CdsHelper.Game.UI.Views
         public bool ShowArrows { get; set; }
         public (float R, float G, float B, float A) Cover { get; set; }
 
-        public void Initialize(byte[] worldData, OceanTiles ocean) { }
+        public void Initialize(byte[] worldData, OceanTiles ocean) { lock (_gate) _world = (byte[])worldData.Clone(); }
+
+        // ── 바뀐 지도(수에즈 운하 따위) — PC 판 UpdateWorld 는 칸 텍스처를 통째로 다시 올린다.
+        //    안드로이드는 앞 지도와 견줘 바뀐 칸만 모아 두고, GL 지도(MapRenderer.ApplyWorld)가 그 칸을 고친다.
+        private byte[]? _world;
+
+        /// <summary>원래 지도에서 바뀐 칸 — (칸 x, 칸 y) → 타일 번호.</summary>
+        public Dictionary<(int X, int Y), ushort> WorldPatch { get; } = [];
+        public int WorldVersion { get; private set; }
+
+        public void UpdateWorld(byte[] world)
+        {
+            lock (_gate)
+            {
+                if (_world is { } old && old.Length == world.Length)
+                {
+                    int stride = global::CostaDelSol.Droid.WorldMapImage.RawStride, half = global::CostaDelSol.Droid.WorldMapImage.CellW;
+                    for (int i = 0; i + 1 < world.Length; i += 2)
+                    {
+                        if (old[i] == world[i] && old[i + 1] == world[i + 1]) continue;
+                        int row = i / stride, col = (i % stride) / 2;
+                        if (col >= half) continue;
+                        int x = col + (row % 2 == 1 ? half : 0), y = row / 2;
+                        WorldPatch[(x, y)] = (ushort)((world[i] | (world[i + 1] << 8)) & OceanTiles.TileMask);
+                    }
+                }
+                _world = (byte[])world.Clone();
+                WorldVersion++;
+            }
+        }
+
+        // ── v1.1.x 의 지도 그림 새 기능(바다 효과 · 항적 · 도시 스프라이트 · 고해상 바다 · 배 출렁임 …).
+        //    안드로이드 GL 지도는 아직 이 기능들을 그리지 않는다 — 값만 받아 두고, 「준비됨」은 받은 뒤 참이 되어
+        //    엔진이 자료를 거듭 올리지 않게 한다. 나중 판에서 GL 지도에 하나씩 옮긴다.
+        public const int MaxWake = 12;
+        public const int FolkSkins = 4, FolkWays = 8;
+        public const int FolkLandPhases = CdsHelper.Game.Local.Helpers.ShipSprites.WalkPhases;
+        public const int CitySpriteSide = 48, CitySpritesPerRow = 16;
+
+        public bool ShipFx { get; set; }
+        public float ShipBob { get; set; }
+        public (float X, float Y, float DirX, float DirY, float Strength, float Tick) FlowDrift { get; set; }
+        public float FlowAmount { get; set; } = 0.5f;
+        public bool SeaEffect { get; set; }
+        public float SeaTime { get; set; }
+        public float SeaBrightness { get; set; } = 1f;
+        public bool SmoothClouds { get; set; } = true;
+        public bool HiResSea { get; set; }
+        public bool PixelFilter { get; set; }
+        public bool LandDetail { get; set; }
+        public bool Software => false;
+        public bool CitySprites { get; private set; }
+        public bool CityArtReady { get; private set; }
+        public bool TileKindsReady { get; private set; }
+        public bool WaterPaletteReady { get; private set; }
+        public bool SeaDepthReady { get; private set; }
+
+        public void SetWake(ReadOnlySpan<(float X, float Y, float Age)> points) { }
+        public void SetShipHi(uint[]? premultiplied, int side) { }
+        public void SetCityArt(uint[] atlas, int atlasW, int atlasH, (int X, int Y, ushort[] Block, int Width)[] blocks) => CityArtReady = true;
+        public void SetCityHiRes(uint[] atlas, int atlasW, int atlasH, float[] info, int count) { }
+        public void SetCitySprites(bool on) => CitySprites = on;
+        public void SetHiddenCities(IEnumerable<int> hidden) { }
+        public void SetTileKinds(byte[] kinds) => TileKindsReady = true;
+        public void SetWaterPalette(byte[] water) => WaterPaletteReady = true;
+        public void SetSeaDepth(byte[] depth) => SeaDepthReady = true;
 
         public void SetSprite(ReadOnlySpan<uint> bgra) { lock (_gate) { Sprite = bgra.ToArray(); SpriteVersion++; } }
         public void SetOverlay(ReadOnlySpan<uint> bgra) { lock (_gate) { Overlay = bgra.ToArray(); OverlayVersion++; } }
         public void SetFolkSprites(ReadOnlySpan<uint> bgra) { lock (_gate) FolkSprites = bgra.ToArray(); }
         public void SetCloudSprites(ReadOnlySpan<uint> bgra) { lock (_gate) CloudSpriteSheet = bgra.ToArray(); }
         public void SetFolk(ReadOnlySpan<FolkDraw> folk) { lock (_gate) Folk = folk.ToArray(); }
-        public void SetRoute(ReadOnlySpan<RouteDraw> points) { lock (_gate) Route = points.ToArray(); }
+        public void SetRoute(ReadOnlySpan<RouteDraw> points, float width = 1, float opacity = 1) { lock (_gate) Route = points.ToArray(); }
         public void SetClouds(ReadOnlySpan<CloudDraw> clouds) { lock (_gate) Clouds = clouds.ToArray(); }
         public void SetFlowGrid(ReadOnlySpan<uint> grid) { lock (_gate) FlowGrid = grid.ToArray(); }
         public void SetRippleTiles(ushort[] nextTiles) { lock (_gate) RippleTiles = nextTiles; }

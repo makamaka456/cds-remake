@@ -1,5 +1,6 @@
-using Android.Graphics;
+﻿using Android.Graphics;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CdsHelper.Game.Local.Helpers;
 using CdsHelper.Support.Local.Helpers;

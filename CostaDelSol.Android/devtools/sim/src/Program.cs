@@ -273,7 +273,6 @@ if (Environment.GetEnvironmentVariable("MODE") == "sea")
 if (Environment.GetEnvironmentVariable("MODE") == "overlay")
 {
     CdsHelper.Game.Local.Settings.GameSettings.ShowMiniMap = true;
-    CdsHelper.Game.Local.Settings.GameSettings.ShowConditionOverlay = true;
     CdsHelper.Game.Local.Settings.GameSettings.ShowCoordOverlay = true;
     CdsHelper.Game.Local.Settings.GameSettings.ShowPeopleOverlay = true;
     for (int f = 0; f < 60; f++) { map.Frame(0.05, 640, 422); GameThread.Drain(); System.Windows.WpfHost.Tick(); Thread.Sleep(30); }

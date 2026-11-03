@@ -683,70 +683,7 @@ public sealed partial class WorldMapWindow : Window
     /// 다시 잡아 끌 수 있다.
     /// </remarks>
 
-    /// <summary>
-    /// 상단 띠 칸 글을 지금 값으로 채운다 — 날마다 도는 고리와 타이틀 화면 띠가 같이 쓴다.
-    /// 칸마다의 서식은 원본 것을 자리 수까지 그대로 옮겼다.
-    /// </summary>
-    private void FillBarTexts()
-    {
-        var (lat, lon) = _host.ShipLatLon;
-        // 칸마다의 서식은 원본 것을 자리 수까지 그대로 옮겼다(BarFormats 참고).
-        // 좌표는 <b>육분의</b>를 지녀야 보인다 — 없으면 「위도 ---′ 경도 ---′」다
-        // (0x0047DCE2 가 0x0047CE20(0x22) 를 보고 0x0056BF00 을 찍는다).
-        _coord.Text = _game.Player.Items.Contains(SextantItem)
-            ? $"{(lat >= 0 ? "북" : "남")}위 {Math.Abs(lat),3:F0}  " +
-              $"{(lon >= 0 ? "동" : "서")}경 {Math.Abs(lon),3:F0}  "
-            : "위도 ---′ 경도 ---′";
-        _purse.Text = $"소지금{_game.Player.Gold,6}닢";
-        _fame.Text = $"명성{_game.Player.Fame,6}";
-        _tired.Text = $"피로도{_game.Player.Fatigue,4}";
-        // 게임 서식 그대로다 — 「규칙%4d」(0x0056BFB0) · 「풍향: %s/풍속:%d」(0x0056BFF8) ·
-        // 「해류: %s/속도:%d」(0x0056C010) · 「HP:%4d」(0x005692AC).
-        _morale.Text = $"규율{_game.Player.Morale,4}";
-        _windText.Text = WindLine();
-        _currentText.Text = CurrentLine();
-        // 커서 쪽 길찾기 보정은 항해사(자리 1)와 나침반이 있을 때만 든다(0x0048ECEF).
-        _host.PathAssist = _game.Player.MateAt(NavigatorSlot).Length > 0
-                           && _game.Player.Items.Contains(CompassItem);
-        // 원본은 뭍이면 「대원」, 바다면 「선원」이다(0x0056BEA8 의 %s).
-        // 글을 통째로 둘로 나눠 둔다 — 낱말을 자리로 끼우면 번역표의 「선원{0}명」 틀에 안 맞아 한국어로 남았다.
-        _crew.Text = _host.IsOnLand ? $"대원{_game.Player.Crew,4}명" : $"선원{_game.Player.Crew,4}명";
-        _stores.Text = $"물{_game.Player.SupplyOf(SupplyKind.Water),4}통" +
-                       $" 식량{_game.Player.SupplyOf(SupplyKind.Food),4}통";
-        // 「남은일수」는 <b>계약 기한</b>이다 — 보급이 아니다(0x0047DEF8).
-        // 계약이 없으면 원본처럼 줄을 긋는다.
-        _left.Text = _game.Player.Contract is { } deal
-            ? $"남은일수{deal.DaysLeftOn(_game.Player.Date),4}"
-            : "남은일수----";
-        // 가진 배 중 가장 큰 것이 기함이다 — 그 벌의 그림으로 그린다(원본이 안 떠 있을 때).
-        // 그림은 기함 것으로 그린다 — 항구 함대편성에서 기함을 바꾸면 배 모양도 바뀐다.
-        ShipSprites.Use(_game.Player.FlagshipHull?.Hull);
-        _date.Text = $"{_game.Player.Date.Year,4}년{_game.Player.Date.Month,2}월{_game.Player.Date.Day,2}일";
-        _cityLabel.Text = _game.Player.CityName.Length > 0 ? _game.Player.CityName : NoCity;
-        _language.Text = CityLanguage();
-        _rate.Text = CityRate();
-    }
 
-    /// <summary>
-    /// 타이틀 위 띠에 얹을 바다 갈래 칸들 — 지난번 바다에서 켜 둔 것(없으면 게임 기본 0x000F)을 지금 값으로 찍는다.
-    /// 칸을 아직 못 지었으면 null 이라 날짜 한 칸으로 물러선다.
-    /// </summary>
-    private FrameworkElement? SeaBarCells()
-    {
-        if (_infoCells.Count == 0) return null;
-        try { FillBarTexts(); } catch { /* 지도가 아직 안 섰으면 지난 글 그대로 */ }
-
-        var saved = GameSettings.BarCellsAt(0);
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        for (int i = 0; i < CityInfoMenu.Rows.Length; i++)
-        {
-            string name = CityInfoMenu.Rows[i];
-            bool on = saved?.Contains(name) ?? ((BarDefaults[0] >> i) & 1) != 0;
-            if (on && _infoCells.TryGetValue(name, out var cell) && cell is GameButton { } shown)
-                row.Children.Add(new GameButton(shown.Text) { Lit = true, Margin = default });
-        }
-        return row.Children.Count > 0 ? row : null;
-    }
 
     /// <summary>
     /// 타이틀 화면 위아래에 두는 액자 띠. <paramref name="text"/> 를 주면 왼쪽에 칸 하나를 둔다.
@@ -1738,9 +1675,6 @@ public sealed partial class WorldMapWindow : Window
     /// </param>
     private void StartMap(bool fresh, string? path = null)
     {
-        _barReady = false;
-        if (_gameBar != null) _gameBar.Visibility = Visibility.Collapsed;
-
         // 불러올 것이 없으면 타이틀에 그대로 머문다 — 화면부터 갈아 끼우면 되돌리기 번거롭다.
         GameSave.Data? saved = null;
         if (!fresh)
@@ -2461,11 +2395,6 @@ public sealed partial class WorldMapWindow : Window
     /// </remarks>
     private string _lastNote = "";
 
-    private void SetNoteText(string text)
-    {
-        _note.Text = text;
-        if (_titleNote != null) _titleNote.Text = text;
-    }
 
     /// <summary>
     /// 띠를 눌러 마지막 알림을 다시 편다(<c>0x0040DE30</c>).

@@ -17,14 +17,59 @@ namespace CdsHelper.Game.UI.Views
     public static class ConfirmDialog
     {
         public static bool Ask(Window owner, string text, string? title = null,
-                               uint[]? face = null, Action<Window>? place = null) =>
-            GameThread.Show<bool>(reply => ChoicePanel.MakeAsk(text, title, GameThread.Face(face), reply));
+                               uint[]? face = null, Action<Window>? place = null)
+        {
+            // 시설 주인의 물음도 말 수준만큼 뭉개진다. 통역이 있으면 뭉갠 말을 듣고 통역이 옮긴 말로 묻는다(PC 판 그대로).
+            if (Engine.Town.KeeperTongue.Hear(text, face) is { } got)
+            {
+                var (heard, relayFace, relay) = got;
+                if (relay == null) text = heard;
+                else
+                {
+                    Tell(owner, heard, title, Engine.Town.KeeperTongue.Plain(face));
+                    text = relay;
+                    face = relayFace;
+                }
+            }
+            return GameThread.Show<bool>(reply => ChoicePanel.MakeAsk(text, title, GameThread.Face(face), reply));
+        }
 
         public static void Tell(Window owner, string text, string? title = null,
                                 uint[]? face = null, double indent = 0, Window? under = null,
-                                Action<Window>? place = null) =>
-            GameThread.Show<bool>(reply => ChoicePanel.MakeTell(text, title, GameThread.Face(face), () => reply(true),
+                                Action<Window>? place = null)
+        {
+            // 시설 주인의 말은 말 수준만큼 뭉개 들린다 — 원본은 얼굴 대사 창이 뭉갠다(0x00478280 → 0x004780E0).
+            string? relay = null;
+            uint[]? relayFace = null;
+            if (Engine.Town.KeeperTongue.Hear(text, face) is { } got) (text, relayFace, relay) = got;
+            string shown = text;
+            GameThread.Show<bool>(reply => ChoicePanel.MakeTell(shown, title, GameThread.Face(face), () => reply(true),
                                                                 left: indent > 0));
+            // 부관 · 통역이 더 잘 알아들으면 원문을 옮겨 준다(0x004692E0).
+            if (relay != null) Tell(owner, relay, title, relayFace);
+        }
+
+        /// <summary>
+        /// <b>단추 없이</b> 글만 띄워 두고 곧바로 돌아온다 — 게임 알림의 종류 3(<c>0x0049E3E0(3, …)</c>).
+        /// 부르는 쪽이 다 쓴 뒤 돌려받은 창을 <see cref="Window.Close"/> 로 걷는다.
+        /// </summary>
+        public static Window Hold(Window owner, string text, string? title = null)
+        {
+            var layer = ChoicePanel.MakeTell(text, title, null, () => { }, left: false);
+            layer.Sticky = true;
+            GameThread.OnUi(() => GameThread.Panel.Push(layer));
+            return new HeldWindow(layer);
+        }
+
+        /// <summary>띄워 둔 글 한 겹 — 닫으면 판에서 걷는다.</summary>
+        private sealed class HeldWindow(ChoicePanel.Layer layer) : Window
+        {
+            public override void Close()
+            {
+                GameThread.OnUi(() => GameThread.Panel.Remove(layer));
+                base.Close();
+            }
+        }
     }
 
     /// <summary>얼굴과 함께 하는 말(<c>TalkDialog</c>).</summary>
@@ -53,6 +98,10 @@ namespace CdsHelper.Game.UI.Views
     {
         public static void Show(Window owner, string text, string? title = null) =>
             ConfirmDialog.Tell(owner, text, title);
+
+        /// <summary>여러 줄짜리 긴 글(릴리즈 노트) — 글이 왼쪽 테에 붙지 않게 들인다.</summary>
+        public static void Notes(Window owner, string text, string title) =>
+            ConfirmDialog.Tell(owner, text, title, null, 8);
 
         /// <summary>게임 설명 — 62 칸에서 끊고 왼쪽을 세 칸 들인다(<c>NoticeDialog.Explain</c>).</summary>
         public static void Explain(Window owner, string text, string title = "게임 설명") =>
@@ -83,13 +132,16 @@ namespace CdsHelper.Game.UI.Views
     /// <summary>고르기 창(<c>ChoiceDialog</c>) — 원본 차림표 모양.</summary>
     internal static class ChoiceDialog
     {
-        /// <summary>줄들 밑에 나가기 줄(<paramref name="cancel"/>)이 붙는다. 나가거나 물리면 -1.</summary>
+        /// <summary>
+        /// 줄들 밑에 나가기 줄(<paramref name="cancel"/>)이 붙는다. 나가거나 물리면 -1. <paramref name="cancel"/> 이
+        /// null 이면 나가기 줄이 없다. <paramref name="under"/>(띄워 둔 글 아래에 서기)는 판 위에서 겹쳐 서므로 따로 안 잡는다.
+        /// </summary>
         public static int Ask(Window owner, string title, IReadOnlyList<string> rows,
-                              string cancel = "취소", int dim = -1)
+                              string? cancel = "취소", int dim = -1, Window? under = null)
         {
-            var all = rows.Append(cancel).ToList();
+            var all = cancel != null ? rows.Append(cancel).ToList() : rows.ToList();
             var dims = all.Select((_, i) => i == dim).ToArray();
-            int cancelAt = all.Count - 1;
+            int cancelAt = cancel != null ? all.Count - 1 : ChoicePanel.CloseOnCancel;
             return GameThread.Show<int>(reply => ChoicePanel.MakeMenu(title, all, i => reply(i == cancelAt ? -1 : i),
                                                                        cancelAt, dim: dims, plain: true));
         }
@@ -111,6 +163,16 @@ namespace CdsHelper.Game.UI.Views
     public static class CountDialog
     {
         public readonly record struct Gauge(string Name, int Value, string? Unit = null);
+
+        /// <summary>오른쪽 단추로 도는 다음 수 — 전부(100%) → 절반(50%) → 0 → 다시 전부(PC 판 그대로).</summary>
+        public static int NextShare(int now, int max)
+        {
+            if (max <= 0) return 0;
+            int half = max / 2;
+            if (now == max) return half;
+            if (now == half && half > 0) return 0;
+            return max;
+        }
 
         /// <summary>수를 고르게 한다. 고른 수를 내고, 중단하거나 0 이면 0 이다.</summary>
         public static int Ask(Window owner, string caption, string label, string unit,

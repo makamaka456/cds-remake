@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 
 namespace CdsHelper.Support.Local.Helpers;
@@ -17,9 +17,18 @@ public static class CityNames
 
     private static Dictionary<int, string>? _fromJson;
 
+#if ANDROID
+    /// <summary>안드로이드판: APK 안 cities.json 에서 읽은 이름들(번호 차례) — 앱이 켤 때 건다.</summary>
+    public static IReadOnlyList<string>? Names { get; set; }
+#endif
+
     /// <summary>그 번호의 도시 이름. 모르면 「도시 N」.</summary>
     public static string Of(int id)
     {
+#if ANDROID
+        if (Names is { } names && id >= 0 && id < names.Count && names[id].Length > 0) return names[id];
+#endif
+#if !ANDROID
         try
         {
             var service = Prism.Ioc.ContainerLocator.Container?.Resolve(typeof(CityService)) as CityService;
@@ -27,6 +36,7 @@ public static class CityNames
             if (hit is { Name.Length: > 0 }) return hit.Name;
         }
         catch (Exception) { /* 컨테이너가 없는 자리 — JSON 으로 물러선다 */ }
+#endif
 
         return FromJson().TryGetValue(id, out var name) && name.Length > 0 ? name : $"도시 {id}";
     }

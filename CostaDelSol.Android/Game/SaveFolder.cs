@@ -1,4 +1,4 @@
-using Android.App;
+﻿using Android.App;
 using Android.Widget;
 using Android.Content;
 using Android.Content.PM;
@@ -49,7 +49,7 @@ public static class SaveFolder
     public static void Choose(Context context, string? path) =>
         context.GetSharedPreferences(PrefsName, FileCreationMode.Private)!.Edit()!.PutString("path", path)!.Apply();
 
-    /// <summary>지금 쓸 폴더를 정해 <see cref="GameSave.FolderOverride"/> 에 걸고 돌려준다.</summary>
+    /// <summary>지금 쓸 폴더를 정해 <see cref="UserDataFolder.Roaming"/>(세이브 · 설정이 사는 곳)에 걸고 돌려준다.</summary>
     public static string Apply(Context context)
     {
         string folder = HasAccess(context) ? Chosen(context) ?? DefaultPath : FallbackPath(context);
@@ -59,7 +59,7 @@ public static class SaveFolder
             folder = FallbackPath(context);
             Directory.CreateDirectory(folder);
         }
-        GameSave.FolderOverride = folder;
+        CdsHelper.Support.Local.Helpers.UserDataFolder.Roaming = folder;
         return folder;
     }
 

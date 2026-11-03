@@ -1,4 +1,4 @@
-using Android.App;
+﻿using Android.App;
 using Android.Widget;
 using System.Windows;
 using Android.Graphics;
@@ -32,16 +32,35 @@ namespace CdsHelper.Game.UI.Views
 
     public static class ShipNameDialog
     {
-        public static string? Ask(Window owner, string current, bool mustName = false) =>
+        /// <summary>배 이름을 묻는다(선명입력). 중단하면 null, 비운 채 결정하면 빈 글이다.</summary>
+        public static string? Ask(Window owner, string current) =>
+            Ask(owner, current, ShipNames.All, "선명입력", ShipNames.MaxLength);
+
+        /// <summary>이름 목록 · 제목 · 글자 수를 주고 묻는다(부하 이름 짓기 따위가 같은 창을 쓴다).</summary>
+        public static string? Ask(Window owner, string current, IReadOnlyList<string> names, string heading, int maxLength) =>
             GameThread.Wait<string?>(reply =>
             {
                 ChoicePanel.Layer layer = null!;
-                var window = new NameWindow(current, ShipNames.All, mustName,
+                var window = new NameWindow(current, names, false,
                     done => { GameThread.Panel.Remove(layer); reply(done); },
-                    (now, typed) => TextInputDialog.OpenOnUi(now, ShipNames.MaxLength, "문자입력", typed));
+                    (now, typed) => TextInputDialog.OpenOnUi(now, maxLength, "문자입력", typed), heading);
                 layer = new ChoicePanel.Layer { Kind = ChoicePanel.Kind.Custom, Custom = window };
                 GameThread.Panel.Push(layer);
             });
+
+        /// <summary>
+        /// 원본 <c>0x00423BE0</c> 그대로 이름을 받는다 — 결정했는데 비었으면 「배의 이름을 정해 주십시오」 뒤 다시 묻고,
+        /// 중단하면 <paramref name="current"/> 그대로다.
+        /// </summary>
+        public static string Settle(Window owner, string current)
+        {
+            while (Ask(owner, current) is { } name)
+            {
+                if (name.Length > 0) return name;
+                ConfirmDialog.Tell(owner, "배의 이름을 정해 주십시오");
+            }
+            return current;
+        }
     }
 
     /// <summary>

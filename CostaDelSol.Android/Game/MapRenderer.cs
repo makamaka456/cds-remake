@@ -138,6 +138,7 @@ public sealed class MapRenderer : Java.Lang.Object, GLSurfaceView.IRenderer
     {
         var view = _host.View;
         if (view.Width <= 0) { GLES30.GlClearColor(0, 0, 0, 1); GLES30.GlClear(GLES30.GlColorBufferBit); return; }
+        ApplyWorld();
         ApplyErased();
 
         // float 로 넘기기 전에 가로를 한 바퀴 안으로 접어 둔다(정밀도).
@@ -159,6 +160,39 @@ public sealed class MapRenderer : Java.Lang.Object, GLSurfaceView.IRenderer
     }
 
     private Dictionary<(int X, int Y), ushort> _applied = [];
+    private int _worldSeen;
+
+    /// <summary>
+    /// 지도가 바뀐 칸(수에즈 운하 따위, <c>MapD3DRenderer.UpdateWorld</c>)을 원래 칸으로 삼는다 — 덧칠(숨긴 도시)이
+    /// 걸린 칸은 덧칠이 이기므로 바탕만 고쳐 두고, 아니면 텍스처도 고친다.
+    /// </summary>
+    private void ApplyWorld()
+    {
+        var layers = _host.Layers;
+        List<((int X, int Y) At, ushort Tile)> changed;
+        lock (layers.Gate)
+        {
+            if (layers.WorldVersion == _worldSeen) return;
+            _worldSeen = layers.WorldVersion;
+            changed = [.. layers.WorldPatch.Select(p => (p.Key, p.Value))];
+        }
+        GLES30.GlActiveTexture(GLES30.GlTexture0);
+        GLES30.GlBindTexture(GLES30.GlTexture2d, _textures[0]);
+        var one = ByteBuffer.AllocateDirect(2)!;
+        one.Order(ByteOrder.NativeOrder()!);
+        foreach (var ((x, y), tile) in changed)
+        {
+            if (x < 0 || y < 0 || x >= MapW || y >= MapH) continue;
+            int o = (y * MapW + x) * 2;
+            _tex.Cells[o] = (byte)tile;
+            _tex.Cells[o + 1] = (byte)(tile >> 8);
+            if (_applied.ContainsKey((x, y))) continue;
+            one.Position(0);
+            one.PutShort((short)tile);
+            one.Position(0);
+            GLES30.GlTexSubImage2D(GLES30.GlTexture2d, 0, x, y, 1, 1, GLES30.GlRedInteger, GLES30.GlUnsignedShort, one);
+        }
+    }
 
     /// <summary>엔진이 덧칠한 칸(숨긴 · 드러낸 도시)을 칸 텍스처에 반영한다 — 빠진 칸은 원래 칸으로 되돌린다.</summary>
     private void ApplyErased()

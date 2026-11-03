@@ -1,4 +1,4 @@
-using Android.App;
+﻿using Android.App;
 using Android.Widget;
 using Android.Content;
 using Android.Graphics;
@@ -1165,9 +1165,12 @@ internal sealed class NameWindow : ChoicePanel.IGameWindow
     private bool _dragged;
     private int _focus;
 
-    public NameWindow(string current, IReadOnlyList<string> names, bool must, Action<string?> done, Action<string, Action<string?>> type)
+    private readonly string _heading;
+
+    public NameWindow(string current, IReadOnlyList<string> names, bool must, Action<string?> done, Action<string, Action<string?>> type,
+                      string heading = "선명입력")
     {
-        _name = current; _names = names; _must = must; _done = done; _type = type;
+        _name = current; _names = names; _must = must; _done = done; _type = type; _heading = heading;
         Width = 2 + Pad + 4 + ListW + 4 + 4 + Pad + 2;
         Height = 2 + Pad + GameArt.BandHeight + 4 + 26 + 4 + ListH + 8 + 8 + GameArt.BandHeight + 8 + Pad + 2;
     }
@@ -1185,7 +1188,7 @@ internal sealed class NameWindow : ChoicePanel.IGameWindow
     {
         WindowArt.Rect(canvas, x, y, Width, Height, WindowArt.Back, s);
         WindowArt.Edges(canvas, x + Pad, y + Pad, Width - Pad * 2, Height - Pad * 2, WindowArt.Edge, 2, s);
-        GameArt.DrawBand(context, canvas, BandStyle.Title, x + 2 + Pad, y + 2 + Pad, (int)(Width - (2 + Pad) * 2), s, "선명입력");
+        GameArt.DrawBand(context, canvas, BandStyle.Title, x + 2 + Pad, y + 2 + Pad, (int)(Width - (2 + Pad) * 2), s, _heading);
         float fw = ListW + 8;
         WindowArt.Rect(canvas, x + Left, y + FieldY, fw, 26, WindowArt.PageFill, s);
         WindowArt.Edges(canvas, x + Left, y + FieldY, fw, 26, WindowArt.ItemEdge, 2, s);

@@ -1832,7 +1832,7 @@ public sealed class WorldMapHost
                 var again = _onLand
                     ? Engine.Sea.SeaPathfinder.FindRoute(_world, _terrain, (_shipX, _shipY), _autoDest, land: true)
                     : PlanSeaRoute(_autoDest.X, _autoDest.Y, _autoKind).Route;
-                if (again is { Count: >= 2 }) { _autoRoute = again; _autoIndex = 0; _dirty = true; }
+                if (again is { Count: >= 2 }) { _autoRoute = Densify(again); _autoIndex = 0; _dirty = true; }
             }
         }
 
@@ -1847,9 +1847,9 @@ public sealed class WorldMapHost
         ++_stuckTicks;
         // 2초를 못 나아가면 지금 자리에서 바닷길을 다시 짠다 — 곶 안쪽 후미에 들어가 버린 경우다(안드로이드판 보완).
         if (_stuckTicks == RerouteTicks && _autoRoute is { Count: > 0 } route && _world != null && _terrain != null
-            && Engine.Sea.SeaPathfinder.FindRoute(_world, _terrain, (_shipX, _shipY), route[^1]) is { Count: >= 2 } again)
+            && Engine.Sea.SeaPathfinder.FindRoute(_world, _terrain, (_shipX, _shipY), route[^1]) is { Count: >= 2 } fresh)
         {
-            _autoRoute = Densify(again);
+            _autoRoute = Densify(fresh);
             _autoIndex = 0;
             return;
         }

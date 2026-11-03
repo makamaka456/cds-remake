@@ -83,7 +83,7 @@ public sealed partial class WorldMapWindow
         if (_peopleBox != null) _peopleBox.IsOpen = people;
 
         // 컨디션 — 왼쪽 아래.
-        bool vital = up && GameSettings.ShowConditionOverlay;
+        bool vital = false;   // 원본 v1.1.x 가 컨디션 상자를 걷었다(설정 ShowConditionOverlay 없음)
         if (vital)
         {
             _vitalLine ??= BoxText();

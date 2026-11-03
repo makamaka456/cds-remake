@@ -93,6 +93,19 @@
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GameFont.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GameFont.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GamePalette.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GamePalette.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\FrameArt.cs" Link="Shared\CdsHelper.Game\UI\Views\FrameArt.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\BookPickerDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\BookPickerDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CityPickerDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CityPickerDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\CrashReport.cs" Link="Shared\CdsHelper.Game\Local\Helpers\CrashReport.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ItemPickerDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ItemPickerDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LandBattlePickerDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LandBattlePickerDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\ScenarioPackage.cs" Link="Shared\CdsHelper.Game\Engine\ScenarioPackage.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\BugReport.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BugReport.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\Languages\TranslatedLanguage.cs" Link="Shared\CdsHelper.Game\Local\Helpers\Languages\TranslatedLanguage.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\PngIo.cs" Link="Shared\CdsHelper.Game\Local\Helpers\PngIo.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\QuestDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\QuestDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\ReleaseNotes.cs" Link="Shared\CdsHelper.Game\Local\Helpers\ReleaseNotes.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ScenarioEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ScenarioEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\UserDiscoveryDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\UserDiscoveryDialog.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\Languages\ILanguage.cs" Link="Shared\CdsHelper.Game\Local\Helpers\Languages\ILanguage.cs" />
         <Compile Include="..\CdsHelper.Game\Engine\Aging.cs" Link="Shared\CdsHelper.Game\Engine\Aging.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\CargoRankDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CargoRankDialog.cs" />

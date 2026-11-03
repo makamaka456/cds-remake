@@ -62,7 +62,8 @@ public sealed class CityPicView : Window, ITownScreen, IGateStage
                 if (a == 0) continue;
                 ref uint dst = ref copy[py * CityStage.PicW + px];
                 if (a == 255) { dst = src; continue; }
-                uint Mix(int sh) => ((((src >> sh) & 0xFF) * a + ((dst >> sh) & 0xFF) * (255 - a)) / 255) << sh;
+                uint under = dst;
+                uint Mix(int sh) => ((((src >> sh) & 0xFF) * a + ((under >> sh) & 0xFF) * (255 - a)) / 255) << sh;
                 dst = 0xFF000000u | Mix(16) | Mix(8) | Mix(0);
             }
         }
@@ -396,7 +397,8 @@ public sealed class CityPicView : Window, ITownScreen, IGateStage
         if (order.Count == 0 || MenuOpen) return false;
         int at = order.FindIndex(b => b.Code == _pickedCode);
 
-        switch (GameUi.Arrow(key))
+        // 안드로이드 글쇠(GameKey)는 숫자판이 이미 방향으로 들어온다(PC 판 GameUi.Arrow 몫).
+        switch (key)
         {
             case GameKey.Up or GameKey.Left:
                 at = at < 0 ? order.Count - 1 : (at - 1 + order.Count) % order.Count;
@@ -545,9 +547,7 @@ public sealed class CityPicView : Window, ITownScreen, IGateStage
     /// </summary>
     private bool Unreachable(FrameworkElement spot)
     {
-        bool shut = MenuOpen;
-        spot.Cursor = shut ? null : Cursors.Hand;
-        return shut;
+        return MenuOpen;
     }
 
     /// <summary>
