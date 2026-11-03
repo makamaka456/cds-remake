@@ -351,7 +351,11 @@ namespace CdsHelper.Game.UI.Views
         public static string? Ask(Window o, string current, IReadOnlyList<string> names, string heading, int maxLength) { Log.W($"[{heading}] {current}"); return current; }
         public static string Settle(Window o, string current) => Ask(o, current) is { Length: > 0 } n ? n : current;
     }
-    public static class TextInputDialog { public static string? Ask(Window o, string start, int max, string caption = "문자입력") { Log.W($"[글자 {caption}] {start}"); return start.Length > 0 ? start : "테스트"; } }
+    public static class TextInputDialog
+    {
+        public static string? Ask(Window o, string start, int max, string caption = "문자입력") { Log.W($"[글자 {caption}] {start}"); return start.Length > 0 ? start : "테스트"; }
+        public static string? AskLong(Window o, string start, string caption) { Log.W($"[긴 글 {caption}] {start.Length}자"); return start; }
+    }
 }
 
 namespace CdsHelper.Game.UI.Views

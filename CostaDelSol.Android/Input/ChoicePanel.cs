@@ -1,4 +1,4 @@
-using Android.App;
+﻿using Android.App;
 using Android.Widget;
 using Android.Content;
 using Android.Graphics;
@@ -320,9 +320,12 @@ public sealed class ChoicePanel : View
         int cells = Math.Max(MinCells, (int)Math.Ceiling(widest / (float)CellWidth));
         int barW = cells * CellWidth + CellWidth * 2 + (l0.Face != null ? FaceColumn : 0);
         float w = barW + (AskSide + AskEdgeW) * 2;
-        int titleBar = l0.Title.Length > 0 ? GameArt.BandHeight : 0;
+        bool dh2 = Dh2.On;
+        // 대항해시대2 스타일이면 제목 띠가 없고(요청), 단추 줄은 명판(높이 30)에 위아래 3 을 둔 띠다.
+        int titleBar = l0.Title.Length > 0 && !dh2 ? GameArt.BandHeight : 0;
         int bodyH = Math.Max(l0.Lines.Count * GameArt.TextHeight, l0.Face != null ? FaceH : 0);
-        float hAsk = AskEdgeW + AskTop + titleBar + BodyGap + bodyH + TextGap + GameArt.BandHeight + AskBottom + AskEdgeW;
+        int buttonsH = dh2 ? Dh2.BarHeight : GameArt.BandHeight;
+        float hAsk = AskEdgeW + AskTop + titleBar + BodyGap + bodyH + TextGap + buttonsH + AskBottom + AskEdgeW;
         float ax = (areaW - w) / 2f, ay = (areaH - hAsk) / 2f;
         float left = ax + AskEdgeW + AskSide;
         float textY = ay + AskEdgeW + AskTop + titleBar + BodyGap;
@@ -340,6 +343,18 @@ public sealed class ChoicePanel : View
             {
                 float y = l.RowsY + i * GameArt.BandHeight;
                 list.Add((l0.Scroll + i, new RectF(l.RowsX, y, l.RowsX + l.RowW, y + GameArt.BandHeight)));
+            }
+            return list;
+        }
+        if (Dh2.On)
+        {
+            // 명판은 띠 왼쪽부터 3 씩 띄워 늘어놓는다(PC 판 Dh2Style.PlaqueBar).
+            float px = l.RowsX + 3;
+            for (int i = 0; i < l0.Rows.Count; i++)
+            {
+                float pw = Dh2.PlaqueWidth(l0.Rows[i]);
+                list.Add((i, new RectF(px, l.ButtonsY + 3, px + pw, l.ButtonsY + 3 + Dh2.PlaqueHeight)));
+                px += pw + 3;
             }
             return list;
         }
@@ -402,8 +417,11 @@ public sealed class ChoicePanel : View
             return;
         }
 
-        GameArt.DrawBox(canvas, l.X, l.Y, l.W, l.H, GameArt.MenuBack, GameArt.AskEdge, s);
-        if (l0.Title.Length > 0) GameArt.DrawBand(Context!, canvas, BandStyle.Title, l.RowsX, l.RowsY, l.RowW, s, l0.Title);
+        bool dh2 = Dh2.On;
+        if (dh2) Dh2.DrawFrame(canvas, l.X, l.Y, l.W, l.H, s);
+        else GameArt.DrawBox(canvas, l.X, l.Y, l.W, l.H, GameArt.MenuBack, GameArt.AskEdge, s);
+        if (l0.Title.Length > 0 && !dh2) GameArt.DrawBand(Context!, canvas, BandStyle.Title, l.RowsX, l.RowsY, l.RowW, s, l0.Title);
+        byte ink = dh2 ? GameFont.BlackColor : GameFont.WhiteColor;
         if (l0.Face is { } face)
         {
             float fx = l.RowsX + FacePad, fy = l.TextY;
@@ -413,12 +431,15 @@ public sealed class ChoicePanel : View
         for (int i = 0; i < l0.Lines.Count; i++)
         {
             float y = l.TextY + i * GameArt.TextHeight;
-            if (center) GameText.DrawCentered(canvas, l0.Lines[i], l.RowsX + l.RowW / 2f, y, GameArt.TextHeight, GameFont.WhiteColor, false, s);
-            else GameText.Draw(canvas, l0.Lines[i], l.TextX, y, GameArt.TextHeight, GameFont.WhiteColor, false, s);
+            if (center) GameText.DrawCentered(canvas, l0.Lines[i], l.RowsX + l.RowW / 2f, y, GameArt.TextHeight, ink, false, s);
+            else GameText.Draw(canvas, l0.Lines[i], l.TextX, y, GameArt.TextHeight, ink, false, s);
         }
         foreach (var (index, r) in Buttons(l0, l))
-            GameArt.DrawBand(Context!, canvas, BandStyle.Button, r.Left, r.Top, ButtonWidth, s, l0.Rows[index],
-                             focused: top && index == l0.Selected);
+        {
+            if (dh2) Dh2.DrawPlaque(canvas, r, l0.Rows[index], lit: index == l0.Selected, s);
+            else GameArt.DrawBand(Context!, canvas, BandStyle.Button, r.Left, r.Top, ButtonWidth, s, l0.Rows[index],
+                                  focused: top && index == l0.Selected);
+        }
     }
 
     /// <summary>마우스 커서(오른 막대) — 맨 위 창이 따로 지은 창이면 그 자리를 알린다. 이 판 안의 좌표.</summary>

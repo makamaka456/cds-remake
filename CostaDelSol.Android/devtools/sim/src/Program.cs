@@ -198,6 +198,39 @@ if (Environment.GetEnvironmentVariable("MODE") == "qa-long")
     Log.W($"[긴 항해 끝] 입항 {ports} · 오류 {errs} · {clock.Elapsed.TotalMinutes:F1}분 · {State()} · 발견 {player().Discoveries.Count} · 억지로 닫음 {string.Join(",", Drive.Stuck)}");
     return;
 }
+if (Environment.GetEnvironmentVariable("MODE") == "celledit")
+{
+    // 표 칸 고치기 — 나라 편집 표의 첫 줄 칸들을 길게 눌러(오른쪽 딸깍) 입력칸이 열리는지 본다.
+    Leave();
+    Drive.Dir = Environment.GetEnvironmentVariable("SHOTS") ?? ".";
+    Drive.Install();
+    foreach (int tool in new[] { 3, 14 })
+    {
+        Drive.Steps.Clear();
+        Drive.Add("칸 길게 누르기", w =>
+        {
+            System.Windows.WpfHost.LayoutNow();
+            System.Windows.Controls.DataGrid? grid = null;
+            void Find(System.Windows.UIElement e) { if (e is System.Windows.Controls.DataGrid d) grid ??= d; foreach (var c in e.VisualChildren) Find(c); }
+            Find(w);
+            if (grid == null) { Log.W("  표 없음"); w.Close(); return; }
+            var o = grid.ToWindow(new System.Windows.Point(0, 0), false);
+            Log.W($"--- {WorldMapWindow.Tools[tool].Name}: 칸 {string.Join(" | ", grid.Columns.Select(c => c.Header))}");
+            for (double x = 20; x < Math.Min(grid.ActualWidth, 700); x += 120)
+            {
+                var at = new System.Windows.Point(o.X + x, o.Y + 40);
+                System.Windows.WpfHost.Pointer(w, System.Windows.WpfHost.Touching.Move, at);
+                System.Windows.WpfHost.Pointer(w, System.Windows.WpfHost.Touching.RightDown, at);
+                System.Windows.WpfHost.Pointer(w, System.Windows.WpfHost.Touching.RightUp, at);
+                GameThread.Drain();
+            }
+            w.Close();
+        });
+        try { map.OpenTool(tool); } catch (Exception ex) { Log.W($"  !! {ex.Message}"); }
+        GameThread.Drain();
+    }
+    return;
+}
 if (Environment.GetEnvironmentVariable("MODE") == "edits")
 {
     // 도구에서 고친 것이 게임에 드는지 — 나라 이름을 고쳐 보고, 게임 표에서 다시 읽고, 적힌 파일을 본다.

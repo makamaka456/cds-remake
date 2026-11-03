@@ -281,6 +281,17 @@ namespace System.Windows.Controls
                     }
                     break;
                 }
+                case "MouseRightButtonUp" when !IsReadOnly && local.Y >= BorderThickness.Top + Head:
+                {
+                    // 길게 누르기(오른쪽 딸깍) — 그 줄을 고르고 곧장 그 칸을 고친다(두 번 누르기와 같다).
+                    int row = (int)((local.Y - BorderThickness.Top - Head + _scroll) / Line);
+                    var rows = AllItems.ToList();
+                    if (row < 0 || row >= rows.Count) break;
+                    e.Handled = true;
+                    SelectedIndex = row;
+                    Edit(rows[row], local.X);
+                    break;
+                }
                 case "MouseLeftButtonUp":
                     if (_grabY == null) break;
                     _grabY = null;
@@ -330,7 +341,15 @@ namespace System.Windows.Controls
                     var prop = row.GetType().GetProperty(b.PathText);
                     if (prop is not { CanWrite: true }) return;
                     var owner = Window.GetWindow(this) ?? Window.Screen;
-                    if (CdsHelper.Game.UI.Views.TextInputDialog.Ask(owner, Cell(row, column), 40, column.Header?.ToString() ?? "") is not { } typed)
+                    string now = Cell(row, column), caption = column.Header?.ToString() ?? "";
+                    var target = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                    // 글 칸이고 길거나(30 자 넘게) 줄이 바뀌는 글이면 여러 줄 입력칸 — 책 본문 · 힌트 · 소문 따위.
+                    // 예전에는 모두 한 줄 40 자로 잘렸다.
+                    bool text = target == typeof(string);
+                    string? typed = text && (now.Length > 30 || now.Contains('\n') || widths[col] >= 300)
+                        ? CdsHelper.Game.UI.Views.TextInputDialog.AskLong(owner, now, caption)
+                        : CdsHelper.Game.UI.Views.TextInputDialog.Ask(owner, now, text ? 400 : 40, caption);
+                    if (typed is null)
                     {
                         CellEditEnding?.Invoke(this, new DataGridCellEditEndingEventArgs { EditAction = DataGridEditAction.Cancel, Column = column, Row = new DataGridRow(row) });
                         return;
@@ -340,9 +359,19 @@ namespace System.Windows.Controls
                         object? value = b.Converter != null
                             ? b.Converter.ConvertBack(typed, prop.PropertyType, b.ConverterParameter, System.Globalization.CultureInfo.CurrentCulture)
                             : typed;
-                        prop.SetValue(row, Convert.ChangeType(value, Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType));
+                        // 숫자 칸을 비우면 「값 없음」 — 고친 것을 걷고 원본 값으로 돌아가는 칸(int? 따위)이다.
+                        if (value is string str && str.Length == 0 && !text && Nullable.GetUnderlyingType(prop.PropertyType) != null)
+                            prop.SetValue(row, null);
+                        else prop.SetValue(row, value is null ? null : Convert.ChangeType(value, target, System.Globalization.CultureInfo.InvariantCulture));
                     }
-                    catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException) { return; }
+                    catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException or ArgumentException)
+                    {
+                        // 예전에는 말없이 버렸다 — 무엇을 넣어야 하는지 알린다.
+                        CdsHelper.Game.UI.Views.NoticeDialog.Show(owner, target == typeof(bool) ? "참/거짓(True/False)을 넣어 주세요"
+                            : target.IsPrimitive || target == typeof(decimal) ? $"「{caption}」 칸에는 숫자를 넣어 주세요" : $"「{caption}」 칸에 넣을 수 없는 값입니다");
+                        CellEditEnding?.Invoke(this, new DataGridCellEditEndingEventArgs { EditAction = DataGridEditAction.Cancel, Column = column, Row = new DataGridRow(row) });
+                        return;
+                    }
                     CellEditEnding?.Invoke(this, new DataGridCellEditEndingEventArgs
                     {
                         EditAction = DataGridEditAction.Commit, Column = column, Row = new DataGridRow(row), EditingElement = new TextBox { Text = typed },

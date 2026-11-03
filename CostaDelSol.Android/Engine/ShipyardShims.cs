@@ -72,12 +72,26 @@ namespace CdsHelper.Game.UI.Views
         public static string? Ask(Window owner, string start, int maxLength, string caption = "문자입력") =>
             GameThread.Wait<string?>(reply => OpenOnUi(start, maxLength, caption, reply));
 
-        internal static void OpenOnUi(string start, int maxLength, string caption, Action<string?> reply)
+        /// <summary>
+        /// 여러 줄 글 — 도구 편집 표의 긴 칸(책 본문 · 힌트 · 소문 따위). 줄바꿈을 그대로 받고 앞뒤 빈칸만 걷는다.
+        /// 중단하면 null.
+        /// </summary>
+        public static string? AskLong(Window owner, string start, string caption) =>
+            GameThread.Wait<string?>(reply => OpenOnUi(start, 4000, caption, reply, multiline: true));
+
+        internal static void OpenOnUi(string start, int maxLength, string caption, Action<string?> reply, bool multiline = false)
         {
             var activity = GameThread.Activity;
             if (activity == null) { reply(null); return; }
             var edit = new EditText(activity) { Text = start };
-            edit.SetSingleLine(true);
+            if (multiline)
+            {
+                edit.SetSingleLine(false);
+                edit.SetMinLines(3);
+                edit.SetMaxLines(10);
+                edit.InputType = Android.Text.InputTypes.ClassText | Android.Text.InputTypes.TextFlagMultiLine;
+            }
+            else edit.SetSingleLine(true);
             edit.SetFilters([new Android.Text.InputFilterLengthFilter(maxLength)]);
             edit.SetSelection(edit.Text?.Length ?? 0);
             bool answered = false;
