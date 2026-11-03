@@ -514,6 +514,9 @@ public sealed class WorldMapHost
     /// 뱃머리 반대쪽으로 곧게 긋지 않고 <b>지나온 자리</b>를 잇는다 — 배가 돌면 항적도 휘어 남는다.
     /// 마디는 때를 고르게 띄워 남기므로 빠를수록 길고, 서면 스러져 없어진다.
     /// </remarks>
+    /// <summary>바다 효과 · 항적이 쓰는 시계(초).</summary>
+    private static readonly System.Diagnostics.Stopwatch EffectClock = System.Diagnostics.Stopwatch.StartNew();
+
     private bool SyncWake(double dt, (double X, double Y) origin, double seconds)
     {
         bool on = _shipWake && ShowShip && _shipKnown && _spriteReady && !_onLand && !_inCity;
@@ -1022,6 +1025,11 @@ public sealed class WorldMapHost
         SyncOverlaySprite();
         SyncFolk(origin, w, h);
         SyncRoute(origin);
+
+        // 항적은 배 뒤로 벌어지며 스러지고, 바다 효과 · 고해상도 바다는 물결이 흐른다 — 셰이더가 쓰는 시각을 넘긴다(PC 판 OnFrame).
+        double seconds = EffectClock.Elapsed.TotalSeconds;
+        SyncWake(dt, origin, seconds);
+        _renderer.SeaTime = (float)seconds;
 
         View = new Frame(origin.Item1, origin.Item2, _cellsPerPixel, w, h, rect, overlay, !_onLand, _renderer.Cover);
         _drawnFlow = flowKey;

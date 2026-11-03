@@ -69,9 +69,8 @@ namespace CdsHelper.Game.UI.Views
             }
         }
 
-        // ── v1.1.x 의 지도 그림 새 기능(바다 효과 · 항적 · 도시 스프라이트 · 고해상 바다 · 배 출렁임 …).
-        //    안드로이드 GL 지도는 아직 이 기능들을 그리지 않는다 — 값만 받아 두고, 「준비됨」은 받은 뒤 참이 되어
-        //    엔진이 자료를 거듭 올리지 않게 한다. 나중 판에서 GL 지도에 하나씩 옮긴다.
+        // ── v1.1.x 의 지도 그림 새 기능 — 바다 효과 · 밝기 · 물결 흐름 · 고해상도 바다 · 지형 세부 · 점 거르기 · 항적은
+        //    GL 지도(MapRenderer)가 PC 판 셰이더를 옮겨 그린다. 도시 스프라이트 · 배 출렁임 · 큰 배 그림은 아직 값만 받는다.
         public const int MaxWake = 12;
         public const int FolkSkins = 4, FolkWays = 8;
         public const int FolkLandPhases = CdsHelper.Game.Local.Helpers.ShipSprites.WalkPhases;
@@ -95,15 +94,38 @@ namespace CdsHelper.Game.UI.Views
         public bool WaterPaletteReady { get; private set; }
         public bool SeaDepthReady { get; private set; }
 
-        public void SetWake(ReadOnlySpan<(float X, float Y, float Age)> points) { }
+        /// <summary>항적 마디(화면 점 x, y, 나이 0~1) — 셰이더 uWake 로 간다.</summary>
+        public float[] Wake { get; } = new float[MaxWake * 4];
+        public void SetWake(ReadOnlySpan<(float X, float Y, float Age)> points)
+        {
+            lock (_gate)
+            {
+                Array.Clear(Wake);
+                for (int i = 0; i < points.Length && i < MaxWake; i++)
+                {
+                    Wake[i * 4] = points[i].X; Wake[i * 4 + 1] = points[i].Y; Wake[i * 4 + 2] = points[i].Age; Wake[i * 4 + 3] = 1;
+                }
+            }
+        }
         public void SetShipHi(uint[]? premultiplied, int side) { }
         public void SetCityArt(uint[] atlas, int atlasW, int atlasH, (int X, int Y, ushort[] Block, int Width)[] blocks) => CityArtReady = true;
         public void SetCityHiRes(uint[] atlas, int atlasW, int atlasH, float[] info, int count) { }
         public void SetCitySprites(bool on) => CitySprites = on;
         public void SetHiddenCities(IEnumerable<int> hidden) { }
-        public void SetTileKinds(byte[] kinds) => TileKindsReady = true;
-        public void SetWaterPalette(byte[] water) => WaterPaletteReady = true;
-        public void SetSeaDepth(byte[] depth) => SeaDepthReady = true;
+
+        // 바다 효과 · 지형 세부 · 고해상도 바다가 쓰는 자료 — GL 지도(MapRenderer)가 판이 바뀔 때마다 텍스처로 올린다.
+        /// <summary>타일마다 지형 갈래(128x128).</summary>
+        public byte[]? TileKinds { get; private set; }
+        /// <summary>팔레트 색인마다 물인지(256).</summary>
+        public byte[]? WaterPalette { get; private set; }
+        /// <summary>칸마다 수심(아래 넉 비트) · 강(위 넉 비트) — 펼친 지도 2500x1250.</summary>
+        public byte[]? SeaDepth { get; private set; }
+        /// <summary>위 자료가 바뀐 판 — GL 지도가 이 값이 바뀌면 다시 올린다.</summary>
+        public int EffectDataVersion { get; private set; }
+
+        public void SetTileKinds(byte[] kinds) { lock (_gate) { TileKinds = kinds; TileKindsReady = true; EffectDataVersion++; } }
+        public void SetWaterPalette(byte[] water) { lock (_gate) { WaterPalette = water; WaterPaletteReady = true; EffectDataVersion++; } }
+        public void SetSeaDepth(byte[] depth) { lock (_gate) { SeaDepth = depth; SeaDepthReady = true; EffectDataVersion++; } }
 
         public void SetSprite(ReadOnlySpan<uint> bgra) { lock (_gate) { Sprite = bgra.ToArray(); SpriteVersion++; } }
         public void SetOverlay(ReadOnlySpan<uint> bgra) { lock (_gate) { Overlay = bgra.ToArray(); OverlayVersion++; } }
