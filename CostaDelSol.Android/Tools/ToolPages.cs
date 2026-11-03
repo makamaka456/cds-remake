@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
@@ -21,7 +21,6 @@ internal static class ToolPages
         ("아이템", w => Show(w, "아이템", ItemPage())),
         ("선수상", w => Show(w, "선수상", FigureheadPage())),
         ("후원자", w => Show(w, "후원자", PatronPage())),
-        ("스핑크스 계산기", w => Show(w, "스핑크스", SphinxPage())),
         ("발견물 그림", w => Show(w, "발견물 그림", StillPage())),
         ("효과음 보기", w => new CdsHelper.Main.UI.Views.WaveBankDialog { Owner = w }.ShowDialog()),
         ("동영상 보기", w => new CdsHelper.Main.UI.Views.MovieBankDialog { Owner = w }.ShowDialog()),
@@ -126,50 +125,6 @@ internal static class ToolPages
          ("취향", "Preferences", 200), ("비고", "Note", 0)]);
     }
 
-    private static UIElement SphinxPage()
-    {
-        var vm = new SphinxCalculatorContentViewModel();
-        var stack = new StackPanel { Margin = new Thickness(20) };
-
-        void Kind(string title, string note, (string Label, string Prop)[][] inputRows, string a, string b, string countA, string countB, string solution, string lead)
-        {
-            stack.Children.Add(new TextBlock { Text = title, FontSize = 18, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 10) });
-            stack.Children.Add(new TextBlock { Text = note, Foreground = Brushes.Gray, Margin = new Thickness(0, 0, 0, 10) });
-            var input = new StackPanel();
-            foreach (var row in inputRows)
-            {
-                var line = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
-                foreach (var (label, prop) in row)
-                {
-                    line.Children.Add(Label(label));
-                    line.Children.Add(Bind.Text(new TextBox { Width = 60, Margin = new Thickness(4, 0, 16, 0) }, vm, prop));
-                }
-                input.Children.Add(line);
-            }
-            stack.Children.Add(Group("입력", input));
-            var result = new WrapPanel();
-            result.Children.Add(Bind.Show(new TextBlock { VerticalAlignment = VerticalAlignment.Center }, vm, a, v => $"{lead}{v}다리: "));
-            result.Children.Add(Bind.Show(new TextBlock { FontSize = 16, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x4F, 0x89)), Margin = new Thickness(0, 0, 30, 0) }, vm, countA, v => $"{v}마리"));
-            result.Children.Add(Bind.Show(new TextBlock { VerticalAlignment = VerticalAlignment.Center }, vm, b, v => $"{lead}{v}다리: "));
-            result.Children.Add(Bind.Show(new TextBlock { FontSize = 16, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(0x19, 0x76, 0xD2)) }, vm, countB, v => $"{v}마리"));
-            stack.Children.Add(Group("결과", result));
-            stack.Children.Add(Group("풀이 과정", Bind.Show(new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap }, vm, solution, v => v?.ToString() ?? "")));
-        }
-
-        Kind("유형 1: 기본형", "괴물의 수와 다리의 총 수를 알 때",
-            [[("A 다리 수:", "LegsPerTypeA"), ("B 다리 수:", "LegsPerTypeB"), ("괴물 총 수:", "TotalCreatures"), ("다리 총 수:", "TotalLegs")]],
-            "LegsPerTypeA", "LegsPerTypeB", "TypeACount", "TypeBCount", "SolutionText", "");
-        Kind("유형 2: 변환형", "세월이 지나 다리 수가 변할 때",
-            [[("A 초기 다리 수:", "T2_InitialLegsA"), ("B 초기 다리 수:", "T2_InitialLegsB"), ("초기 다리 합계:", "T2_InitialTotalLegs")],
-             [("A 변환 후 다리:", "T2_AfterLegsA"), ("B 변환 마리 수:", "T2_TransformCountB"), ("B 변환 후 다리:", "T2_AfterLegsB"), ("최종 다리 합계:", "T2_FinalTotalLegs")]],
-            "T2_InitialLegsA", "T2_InitialLegsB", "T2_TypeACount", "T2_TypeBCount", "T2_SolutionText", "처음 ");
-        Kind("유형 3: 변환+탄생형", "세월이 지나 다리 수가 변하고 새 괴물이 탄생할 때",
-            [[("A 초기 다리 수:", "T3_InitialLegsA"), ("B 초기 다리 수:", "T3_InitialLegsB"), ("초기 다리 합계:", "T3_InitialTotalLegs")],
-             [("A 변환 후 다리:", "T3_AfterLegsA"), ("B 변환 마리 수:", "T3_TransformCountB"), ("B 변환 후 다리:", "T3_AfterLegsB")],
-             [("신규 괴물 배수:", "T3_NewCreatureMultiplier"), ("신규 괴물 다리:", "T3_NewCreatureLegs"), ("최종 다리 합계:", "T3_FinalTotalLegs")]],
-            "T3_InitialLegsA", "T3_InitialLegsB", "T3_TypeACount", "T3_TypeBCount", "T3_SolutionText", "처음 ");
-        return new ScrollViewer { Content = stack };
-    }
 
     // ── 짓는 도구 ──
 

@@ -1,4 +1,4 @@
-using System.Windows.Media.Imaging;
+﻿using System.Windows.Media.Imaging;
 using ABitmap = Android.Graphics.Bitmap;
 
 namespace System.Windows.Media
@@ -21,6 +21,7 @@ namespace System.Windows.Media
     {
         public static Color Transparent => Color.FromArgb(0, 255, 255, 255);
         public static Color Black => Color.FromRgb(0, 0, 0);
+        public static Color Magenta => Color.FromRgb(0xFF, 0x00, 0xFF);
         public static Color White => Color.FromRgb(255, 255, 255);
         public static Color Gray => Color.FromRgb(128, 128, 128);
         public static Color DarkGray => Color.FromRgb(169, 169, 169);
@@ -123,6 +124,7 @@ namespace System.Windows.Media
     {
         private static SolidColorBrush Of(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
         public static readonly SolidColorBrush Transparent = Of(Colors.Transparent);
+        public static readonly SolidColorBrush DarkSlateBlue = Of(Color.FromRgb(0x48, 0x3D, 0x8B));
         public static readonly SolidColorBrush Black = Of(Colors.Black);
         public static readonly SolidColorBrush White = Of(Colors.White);
         public static readonly SolidColorBrush Gray = Of(Colors.Gray);
@@ -394,6 +396,8 @@ namespace System.Windows.Media
     public sealed class FontFamily
     {
         public FontFamily(string name) { Source = name; }
+        /// <summary>앱 안 글꼴(pack URI) — 안드로이드는 이름만 들고 기본 글꼴로 그린다.</summary>
+        public FontFamily(Uri baseUri, string name) { Source = name; }
         public string Source { get; }
     }
 
@@ -623,6 +627,7 @@ namespace System.Windows.Media
     {
         public PointCollection() { }
         public PointCollection(IEnumerable<Point> v) : base(v) { }
+        public void Freeze() { }
     }
 
     public static class PresentationSourceShim { }

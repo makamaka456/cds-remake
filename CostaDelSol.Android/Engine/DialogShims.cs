@@ -88,6 +88,17 @@ namespace CdsHelper.Game.UI.Views
         }
     }
 
+    /// <summary>
+    /// 「…읽는 중」 쪽지(<c>LoadingDialog</c>) — PC 판은 제 실(STA)에 창을 띄우지만 안드로이드는 판 위에 글 한 겹을 얹는다.
+    /// </summary>
+    internal sealed class LoadingDialog
+    {
+        private readonly Window _held;
+        private LoadingDialog(Window held) { _held = held; }
+        public static LoadingDialog Open(Window owner, string text) => new(ConfirmDialog.Hold(owner, text));
+        public void Close() => _held.Close();
+    }
+
     public static class GameDialog
     {
         public static void Show(Window owner, string text, string? title = null) =>
@@ -130,8 +141,10 @@ namespace CdsHelper.Game.UI.Views
     }
 
     /// <summary>고르기 창(<c>ChoiceDialog</c>) — 원본 차림표 모양.</summary>
-    internal static class ChoiceDialog
+    internal sealed class ChoiceDialog : Window
     {
+        private ChoiceDialog() { }
+
         /// <summary>
         /// 줄들 밑에 나가기 줄(<paramref name="cancel"/>)이 붙는다. 나가거나 물리면 -1. <paramref name="cancel"/> 이
         /// null 이면 나가기 줄이 없다. <paramref name="under"/>(띄워 둔 글 아래에 서기)는 판 위에서 겹쳐 서므로 따로 안 잡는다.

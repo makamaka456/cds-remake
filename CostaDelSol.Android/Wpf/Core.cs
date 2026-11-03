@@ -1,4 +1,4 @@
-using System.Windows.Input;
+﻿using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using AMatrix = Android.Graphics.Matrix;
@@ -186,9 +186,11 @@ namespace System.Windows
     public sealed class DependencyProperty
     {
         public string Name { get; }
+        /// <summary>붙임 속성(Grid.Column 따위)인지 — 아니면 같은 이름의 CLR 속성으로 값을 읽고 쓴다.</summary>
+        internal bool Attached { get; init; }
         internal DependencyProperty(string name) { Name = name; }
         public static DependencyProperty Register(string name, Type t, Type owner, PropertyMetadata? meta = null) => new(name);
-        public static DependencyProperty RegisterAttached(string name, Type t, Type owner, PropertyMetadata? meta = null) => new(name);
+        public static DependencyProperty RegisterAttached(string name, Type t, Type owner, PropertyMetadata? meta = null) => new(name) { Attached = true };
         public static readonly object UnsetValue = new();
     }
 
@@ -216,9 +218,38 @@ namespace System.Windows
             WpfHost.Touch();
         }
 
-        public virtual object? GetValue(DependencyProperty p) => _values != null && _values.TryGetValue(p, out var v) ? v : null;
-        public virtual void SetValue(DependencyProperty p, object? value) => Put(p, value);
+        public virtual object? GetValue(DependencyProperty p)
+        {
+            if (Clr(p) is { CanRead: true } prop) return prop.GetValue(this);
+            return _values != null && _values.TryGetValue(p, out var v) ? v : null;
+        }
+
+        public virtual void SetValue(DependencyProperty p, object? value)
+        {
+            if (Clr(p) is { CanWrite: true } prop && Fits(prop.PropertyType, value)) { prop.SetValue(this, value); (_values ??= [])[p] = value; return; }
+            Put(p, value);
+        }
+
         public void ClearValue(DependencyProperty p) { _values?.Remove(p); WpfHost.Touch(); }
+
+        /// <summary>그 값을 이 요소에 따로 적어 둔 적이 있으면 그 값, 없으면 <see cref="DependencyProperty.UnsetValue"/>.</summary>
+        public object? ReadLocalValue(DependencyProperty p) =>
+            _values != null && _values.TryGetValue(p, out var v) ? v : DependencyProperty.UnsetValue;
+
+        /// <summary>
+        /// 붙임 속성이 아니면 같은 이름의 CLR 속성(WpfLite 것만 — PC 판의 제 속성은 그쪽이 SetValue 를 부를 수 있다).
+        /// 그래서 틀(FrameworkElementFactory) · 애니메이션이 Width · Margin · Background 같은 값을 그대로 쓴다.
+        /// </summary>
+        private System.Reflection.PropertyInfo? Clr(DependencyProperty p)
+        {
+            if (p.Attached) return null;
+            var prop = GetType().GetProperty(p.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            return prop != null && prop.GetIndexParameters().Length == 0
+                   && prop.DeclaringType?.Namespace?.StartsWith("System.Windows", StringComparison.Ordinal) == true ? prop : null;
+        }
+
+        private static bool Fits(Type type, object? value) =>
+            value == null ? !type.IsValueType || Nullable.GetUnderlyingType(type) != null : type.IsInstanceOfType(value);
     }
 
     public abstract class Freezable : DependencyObject
@@ -471,6 +502,9 @@ namespace System.Windows
         internal bool ShowsUp => _visibility == Visibility.Visible;
 
         // ── 자리 셈 ──
+        /// <summary>이 요소 안의 점을 딴 요소 안의 점으로(창 좌표를 거쳐).</summary>
+        public Point TranslatePoint(Point p, UIElement relativeTo) => relativeTo.FromWindow(ToWindow(p, false), false);
+
         internal Point ToWindow(Point p, bool toScreen)
         {
             var m = ToWindowMatrix ?? new AMatrix();
@@ -542,6 +576,13 @@ namespace System.Windows
         private Size _lastSize;
 
         public static readonly DependencyProperty WidthProperty = DependencyProperty.Register("Width", typeof(double), typeof(FrameworkElement));
+        public static readonly DependencyProperty MinWidthProperty = DependencyProperty.Register("MinWidth", typeof(double), typeof(FrameworkElement));
+        public static readonly DependencyProperty MinHeightProperty = DependencyProperty.Register("MinHeight", typeof(double), typeof(FrameworkElement));
+        public static readonly DependencyProperty MarginProperty = DependencyProperty.Register("Margin", typeof(Thickness), typeof(FrameworkElement));
+        public static readonly DependencyProperty HorizontalAlignmentProperty = DependencyProperty.Register("HorizontalAlignment", typeof(HorizontalAlignment), typeof(FrameworkElement));
+        public static readonly DependencyProperty VerticalAlignmentProperty = DependencyProperty.Register("VerticalAlignment", typeof(VerticalAlignment), typeof(FrameworkElement));
+        public static readonly RoutedEvent LoadedEvent = new("Loaded");
+        public Style? FocusVisualStyle { get; set; }
         public static readonly DependencyProperty HeightProperty = DependencyProperty.Register("Height", typeof(double), typeof(FrameworkElement));
         public double Width { get => _w; set { _w = value; WpfHost.Touch(); } }
         public double Height { get => _h; set { _h = value; WpfHost.Touch(); } }
@@ -687,6 +728,19 @@ namespace System.Windows
         public object? FindResource(object key) => null;
         public object? TryFindResource(object key) => null;
         public void SetBinding(DependencyProperty p, string path) { }
+
+        /// <summary>
+        /// 묶음 — 원천(Source)이 있으면 지금 값을 한 번 옮겨 둔다(WpfLite 는 값 바뀜 알림이 없어 따라가지 않는다).
+        /// </summary>
+        public void SetBinding(DependencyProperty p, System.Windows.Data.Binding b)
+        {
+            object? value = b.Source;
+            if (value != null && b.PathText.Length > 0)
+                foreach (var part in b.PathText.Split('.'))
+                    value = value?.GetType().GetProperty(part)?.GetValue(value);
+            if (b.Converter != null) value = b.Converter.Convert(value!, typeof(object), b.ConverterParameter!, System.Globalization.CultureInfo.CurrentCulture);
+            if (b.Source != null) SetValue(p, value);
+        }
     }
 
     public readonly record struct SizeChangedInfo(Size PreviousSize, Size NewSize)
@@ -713,6 +767,9 @@ namespace System.Windows
 
     public sealed class ApplicationInstance
     {
+        /// <summary>앱이 앞으로 왔다 · 뒤로 갔다(안드로이드 OnResume · OnPause 가 알린다).</summary>
+        public event EventHandler? Activated, Deactivated;
+        internal void RaiseActive(bool front) => (front ? Activated : Deactivated)?.Invoke(this, EventArgs.Empty);
         public Window? MainWindow { get; set; }
         public Dispatcher Dispatcher => Dispatcher.CurrentDispatcher;
         public WindowCollection Windows => [.. WpfHost.Shown];

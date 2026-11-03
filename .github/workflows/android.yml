@@ -27,6 +27,10 @@ on:
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
+env:
+  # 다음에 낼 안드로이드판 번호 — 브랜치에서 구운 APK(아티팩트)도 이 번호로 낸다.
+  APP_VERSION: '0.9.6'
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -53,10 +57,11 @@ jobs:
       - name: Version
         id: version
         run: |
+          # 앱 버전 — 태그(android-vX.Y.Z)면 그 번호, 브랜치 빌드면 다음에 낼 판 번호(APP_VERSION)를 쓴다.
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             v="${GITHUB_REF_NAME#android-v}"
           else
-            v="0.0.${GITHUB_RUN_NUMBER}"
+            v="${APP_VERSION}"
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "버전: $v (빌드 번호 $GITHUB_RUN_NUMBER)"
@@ -85,6 +90,26 @@ jobs:
             curl -fsSL --retry 4 -o "CostaDelSol.Android/Assets/bgm/Track$t.mp3" "$base/Track$t.mp3"
           done
           du -sh CostaDelSol.Android/Assets/bgm
+
+      # 원본 동영상(로고 · 오프닝 · 발견물 70 · 선체 8 · 엔딩, 약 36MB)도 APK 에 넣는다 — 리메이크가 뒤에서 받는
+      # 고정 릴리즈 movie-assets(Kyeongrok/cds-remake)에서 받는다. 앱이 처음 켤 때 PC 판의 「받아 둔 동영상」 자리로 꺼낸다.
+      - name: Download movies
+        run: |
+          base=https://github.com/Kyeongrok/cds-remake/releases/download/movie-assets
+          dir=CostaDelSol.Android/Assets/movies
+          mkdir -p "$dir"
+          stems="LOGO OPEN END"
+          for n in $(seq 0 69); do stems="$stems $(printf 'I%02d_0000' $n)"; done
+          for n in $(seq 0 7); do stems="$stems $(printf 'S%02d_0001' $n)"; done
+          for s in $stems; do
+            curl -fsSL --retry 4 -o "$dir/$s.mp4" "$base/$s.mp4"
+          done
+          # 앱에 실은 새 배의 동영상(바사 S08_0001 따위) — 릴리즈에 아직 없으면 건너뛴다(PC 판도 그렇다).
+          for n in $(seq 8 15); do
+            s=$(printf 'S%02d_0001' $n)
+            curl -fsSL --retry 2 -o "$dir/$s.mp4" "$base/$s.mp4" || rm -f "$dir/$s.mp4"
+          done
+          ls "$dir" | wc -l; du -sh "$dir"
 
       # 러너에 깔린 SDK 에 이 워크로드가 바라는 플랫폼/빌드 도구가 없으면 채운다.
       - name: Install Android dependencies
@@ -119,11 +144,11 @@ jobs:
           assets = sorted(n for n in names if n.startswith("assets/"))
           print(len(assets), "assets:", ", ".join(assets[:12]), "...")
           need = ["game/world.cdsx", "game/OCEAN.CDSX", "game/CITYCG.CDSX", "game/DISCOVER.CDSX",
-                  "game/MALE.CDSX", "asset/sfx/sfx-00.wav", "asset/ALL_FONT.16P", "cities.json", "exe-tables/바람표.json",
-                  "exe-tables/지형표.json", "exe-tables/돛효율표.json", "ship-g1/ship_0.png",
-                  "bgm/Track23.mp3", "ui/band/button-mid.png", "title/title-tile.png",
-                  "font/ALL_FONT.16P", "font/ANKFONT.DAT", "root/발견이벤트.json", "root/이야기0.json",
-                  "root/patrons.json", "root/인물표.json"]
+                  "game/MALE.CDSX", "asset/sfx/sfx-00.wav", "asset/ALL_FONT.16P", "cities.json", "exe-tables/winds.json",
+                  "exe-tables/terrain.json", "exe-tables/sails.json", "ship-g1/ship_0.png",
+                  "bgm/Track23.mp3", "movies/OPEN.mp4", "movies/I00_0000.mp4", "ui/band/button-mid.png", "title/title-tile.png",
+                  "font/ALL_FONT.16P", "font/ANKFONT.DAT", "root/disev.json", "root/story0.json",
+                  "root/patrons.json", "root/persons.json"]
           missing = [n for n in need if "assets/" + n not in names]
           if missing: sys.exit("APK 에 빠진 자료: " + ", ".join(missing))
           # 배경음악은 APK 안에서 바로 열어 튼다 — 눌러 담겼으면 못 연다.

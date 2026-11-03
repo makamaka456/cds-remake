@@ -133,6 +133,11 @@ public sealed class GameData
         // PC 판이 실행 파일 옆에서 읽는 json(도시 · 후원자 · 힌트 · 아이템 · 책 · 발견물 · 인물표 · 사건 · 이야기 대본).
         foreach (string name in assets.List("root") ?? [])
             all.Add(("root/" + name, System.IO.Path.Combine(root, name)));
+        // 원본 동영상(릴리즈 movie-assets — CI 가 받아 APK 의 movies/ 에 싣는다)은 PC 판이 「내려받은 것」을 찾는 자리로 꺼낸다
+        // (MovieAssetDownloader.CacheDirectory). 그래야 원작자가 갈아 끼운 발견물 동영상(asset/movie)과 섞이지 않고,
+        // 모드 「새 발견물 동영상」을 끄면 원본을 튼다. 안드로이드판은 내려받지 않는다(모두 APK 안에 있다).
+        foreach (string name in assets.List("movies") ?? [])
+            all.Add(("movies/" + name, CdsHelper.Game.Local.Helpers.MovieAssetDownloader.CachePath(System.IO.Path.GetFileNameWithoutExtension(name))));
 
         for (int i = 0; i < all.Count; i++)
         {

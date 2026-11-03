@@ -249,6 +249,112 @@ public sealed partial class WorldMapWindow
         finally { if (menu != null) menu.Visibility = Visibility.Visible; }
     }
 
+    // ── 단축키 창(PC 판 GameWindow 가 어느 창에서든 넘긴다 — 안드로이드는 가상 키보드 · 패드 매핑으로 같은 글쇠가 온다) ──
+
+    /// <summary>
+    /// 단축키로 <b>모드</b> 창을 연다 — 어느 창에서 눌러도 여기로 온다. 이미 떠 있으면 또 열지 않는다.
+    /// </summary>
+    internal void ModByKey()
+    {
+        if (!_started || !ReferenceEquals(_screen.Content, _mapRoot)) return;
+        ShowModDialog();
+    }
+
+    /// <summary>모드 「수에즈 운하」를 켜고 끈 것을 지도에 곧바로 들인다.</summary>
+    internal void RefreshSuezCanal() => _host.RefreshSuezCanal();
+
+    /// <summary>
+    /// 단축키로 <b>소지품 정보</b>를 연다 — 바다·뭍·도시 어디서든, 지금 손이 가 있는 창 위에 뜬다.
+    /// 이미 떠 있으면(그 창 안에서 또 누르면) 또 열지 않는다.
+    /// </summary>
+    internal void ItemsByKey(Window owner)
+    {
+        if (!_started || _itemsOpen) return;
+        _itemsOpen = true;
+        try
+        {
+            BelongingsDialog.Show(owner, _game.Player, _game.Items, _game.ItemText, _game.ItemPictures,
+                                  GameInfo.DiscoveryNames(_game), _game);
+        }
+        finally { _itemsOpen = false; }
+    }
+
+    /// <summary>소지품 창이 떠 있는지 — 그 창 안에서 R 을 또 눌러 겹쳐 뜨지 않게.</summary>
+    private bool _itemsOpen;
+
+    /// <summary>
+    /// 단축키로 <b>힌트 정보</b>(취득 힌트 일람)를 연다 — 커맨드 「힌트정보」와 같은 창이다. 어디서든 지금 창 위에 뜨고,
+    /// 이미 떠 있으면 또 열지 않는다.
+    /// </summary>
+    internal void HintsByKey(Window owner)
+    {
+        if (!_started || _hintsOpen) return;
+        _hintsOpen = true;
+        try { ShowHints(owner); }
+        finally { _hintsOpen = false; }
+    }
+
+    /// <summary>힌트 창이 떠 있는지 — 그 창 안에서 H 를 또 눌러 겹쳐 뜨지 않게.</summary>
+    private bool _hintsOpen;
+
+    /// <summary>
+    /// 단축키로 <b>인물정보</b>를 연다 — 커맨드 「인물정보」와 같은 판이다. 어디서든 지금 창 위에 뜨고,
+    /// 이미 떠 있으면 또 열지 않는다.
+    /// </summary>
+    internal void PersonByKey(Window owner)
+    {
+        if (!_started || _personOpen) return;
+        _personOpen = true;
+        try { PersonInfoMenu.ShowByKey(owner, _game); }
+        finally { _personOpen = false; }
+    }
+
+    /// <summary>인물정보가 떠 있는지 — 그 창 안에서 X 를 또 눌러 겹쳐 뜨지 않게.</summary>
+    private bool _personOpen;
+
+    /// <summary>
+    /// 단축키로 <b>후원자 정보</b>(스폰서 일람)를 연다 — 도시 커맨드 「후원자 정보」와 같은 창이다. 어디서든 지금 창 위에
+    /// 뜨고, 이미 떠 있으면 또 열지 않는다.
+    /// </summary>
+    internal void PatronsByKey(Window owner)
+    {
+        if (!_started || _patronsOpen) return;
+        _patronsOpen = true;
+        try { ShowPatrons(owner); }
+        finally { _patronsOpen = false; }
+    }
+
+    /// <summary>후원자 정보가 떠 있는지 — 그 창 안에서 P 를 또 눌러 겹쳐 뜨지 않게.</summary>
+    private bool _patronsOpen;
+
+    /// <summary>
+    /// 단축키로 <b>매입 정보</b>를 연다 — 함대정보 「짐」 판에서 교역품을 누를 때의 그 창(모드 「적하 시세 순위」)이다.
+    /// 첫 짐으로 열고, 여럿이면 창 위 교역품 단추로 바꿔 본다.
+    /// </summary>
+    internal void CargoByKey(Window owner)
+    {
+        if (!_started || _cargoOpen) return;
+        if (!GameSettings.CargoPriceRank)
+        {
+            NoticeDialog.Show(owner, "모드 「적하 시세 순위」를 켜면 쓸 수 있습니다.");
+            return;
+        }
+        _cargoOpen = true;
+        try
+        {
+            if (_game.Player.CargoHold.Count == 0)
+            {
+                NoticeDialog.Show(owner, "실은 교역품이 없습니다.");
+                return;
+            }
+            CargoRankDialog.Show(owner, _game, 0, c => GoodsInfoDialog.Show(owner, _game, c.Kind, c.Shelf));
+        }
+        finally { _cargoOpen = false; }
+    }
+
+    /// <summary>매입 정보가 떠 있는지 — 그 창 안에서 T 를 또 눌러 겹쳐 뜨지 않게.</summary>
+    private bool _cargoOpen;
+
     /// <summary>스폰서 일람 — 아는 후원자와 권력 · 친밀도. 도시 창이 없는 바다 · 뭍에서도 같은 창을 낸다(PC 판 그대로).</summary>
     private void ShowPatrons(Window owner) =>
         new PatronMenu(owner, _game, "", CommandMenu, CommandMenu, 0, 0, -1).ShowPatrons(owner);

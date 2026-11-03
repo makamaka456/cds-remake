@@ -1,4 +1,4 @@
-﻿using Android.Graphics;
+using Android.Graphics;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -162,7 +162,7 @@ internal sealed partial class EventAnimationPopup
         {
             canvas.Save();
             canvas.ClipRect(x * s, y * s, (x + w) * s, (y + h) * s);
-            if (Dim > 0) WindowArt.Rect(canvas, x, y, w, h, Color.Argb((int)Math.Clamp(Dim * 255, 0, 255), 0, 0, 0), s);
+            if (Dim > 0) WindowArt.Rect(canvas, x, y, w, h, Android.Graphics.Color.Argb((int)Math.Clamp(Dim * 255, 0, 255), 0, 0, 0), s);
             float k = (float)scale;
             foreach (var d in Draws)
             {

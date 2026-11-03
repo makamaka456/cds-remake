@@ -28,4 +28,32 @@ internal static class PngShim
             return null;
         }
     }
+
+    /// <summary>크기를 따지지 않고 푼다(BGRA). <paramref name="premultiply"/> 면 색에 투명도를 곱해 둔다(WPF Pbgra32).</summary>
+    public static (uint[] Pixels, int Width, int Height)? DecodeAny(string path, bool premultiply = false)
+    {
+        try
+        {
+            using var bitmap = BitmapFactory.DecodeFile(path);
+            if (bitmap == null) return null;
+            int w = bitmap.Width, h = bitmap.Height;
+            var argb = new int[w * h];
+            bitmap.GetPixels(argb, 0, w, 0, 0, w, h);
+            var px = new uint[argb.Length];
+            for (int i = 0; i < argb.Length; i++) px[i] = premultiply ? Premultiply((uint)argb[i]) : (uint)argb[i];
+            return (px, w, h);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static uint Premultiply(uint c)
+    {
+        uint a = c >> 24;
+        if (a == 255) return c;
+        uint M(int sh) => (((c >> sh) & 0xFF) * a / 255) << sh;
+        return (a << 24) | M(16) | M(8) | M(0);
+    }
 }

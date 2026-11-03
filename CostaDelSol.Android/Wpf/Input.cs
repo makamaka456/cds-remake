@@ -1,4 +1,4 @@
-namespace System.Windows.Input
+﻿namespace System.Windows.Input
 {
     public enum Key
     {
@@ -83,6 +83,9 @@ namespace System.Windows.Input
     public sealed class KeyEventArgs : InputEventArgs
     {
         public KeyEventArgs(Key key) { Key = key; }
+        /// <summary>PC 판이 다른 창에 글쇠를 넘길 때 쓰는 꼴(장치 · 창 · 시각은 안드로이드에서 안 쓴다).</summary>
+        public KeyEventArgs(object? keyboard, PresentationSource? source, int timestamp, Key key) { Key = key; }
+        public object? KeyboardDevice => null;
         public Key Key { get; }
         public Key SystemKey => Key.None;
         public Key ImeProcessedKey => Key.None;
@@ -106,7 +109,8 @@ namespace System.Windows.Input
     public static class Mouse
     {
         public static readonly RoutedEvent MouseDownEvent = new("MouseDown"), MouseUpEvent = new("MouseUp"),
-                                           MouseMoveEvent = new("MouseMove"), PreviewMouseDownEvent = new("PreviewMouseDown");
+                                           MouseMoveEvent = new("MouseMove"), PreviewMouseDownEvent = new("PreviewMouseDown"),
+                                           PreviewMouseUpEvent = new("PreviewMouseUp");
         public static IInputElement? Captured { get; private set; }
         public static MouseButtonState LeftButton { get; internal set; }
         public static MouseButtonState RightButton { get; internal set; }
@@ -164,7 +168,21 @@ namespace System.Windows.Input
     public static class InputMethod
     {
         public static void SetIsInputMethodEnabled(DependencyObject d, bool v) { }
+        public static void SetPreferredImeConversionMode(DependencyObject d, ImeConversionModeValues v) { }
+        public static void SetPreferredImeState(DependencyObject d, InputMethodState v) { }
+        /// <summary>지금 입력기 — 안드로이드 글자판은 한글 · 영문을 앱이 알 길이 없어 늘 한글(Native)로 본다.</summary>
+        public static InputMethodNow Current { get; } = new();
     }
+
+    public sealed class InputMethodNow
+    {
+        public ImeConversionModeValues ImeConversionMode { get; set; } = ImeConversionModeValues.Native;
+        public InputMethodState ImeState { get; set; } = InputMethodState.On;
+    }
+
+    [Flags]
+    public enum ImeConversionModeValues { Alphanumeric = 0, Native = 1, Katakana = 2, FullShape = 8, Roman = 16, CharCode = 32, NoConversion = 64, Eudc = 128, Symbol = 256, Fixed = 512, DoNotCare = int.MinValue }
+    public enum InputMethodState { Off, On, DoNotCare }
 
     public sealed class RoutedCommand : ICommand
     {

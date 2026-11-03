@@ -179,6 +179,24 @@ namespace CdsHelper.Game.Local.Helpers
             }
             catch { return null; }
         }
+
+        public static (uint[] Pixels, int Width, int Height)? DecodeAny(string p, bool premultiply = false)
+        {
+            try
+            {
+                using var f = File.OpenRead(p);
+                var px = Sim.PngRead.Decode(f, out int pw, out int ph);
+                if (px == null) return null;
+                return (px.Select(v =>
+                {
+                    uint c = (uint)v, a = c >> 24;
+                    if (!premultiply || a == 255) return c;
+                    uint M(int sh) => (((c >> sh) & 0xFF) * a / 255) << sh;
+                    return (a << 24) | M(16) | M(8) | M(0);
+                }).ToArray(), pw, ph);
+            }
+            catch { return null; }
+        }
     }
 }
 

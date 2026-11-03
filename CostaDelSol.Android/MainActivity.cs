@@ -954,12 +954,14 @@ public sealed class MainActivity : Activity
         _gl?.OnResume();
         if (_bgm != null) _bgm.Enabled = GameSettings.BgmEnabled;   // 밖에 나갔다 오면 다시 튼다
         HideSystemBars();
+        System.Windows.Application.Current.RaiseActive(true);   // PC 판 Application.Activated(쪽지 · 소리가 본다)
     }
 
     protected override void OnPause()
     {
         _padInput.Reset();
         _bgm.Enabled = false;   // 앱이 뒤로 가면 음악을 멈춘다
+        System.Windows.Application.Current.RaiseActive(false);
         _gl?.OnPause();
         base.OnPause();
     }

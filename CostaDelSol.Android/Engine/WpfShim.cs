@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Windows.Controls;
 using System.Windows.Media;
 
@@ -14,6 +14,8 @@ namespace System.Windows
     /// </remarks>
     public class Window : ContentControl
     {
+        public static readonly DependencyProperty LeftProperty = DependencyProperty.Register("Left", typeof(double), typeof(Window));
+        public static readonly DependencyProperty TopProperty = DependencyProperty.Register("Top", typeof(double), typeof(Window));
         public static readonly Window Screen = new();
 
         private Window? _owner;
@@ -151,6 +153,10 @@ namespace System.Windows
 
     public static class MessageBox
     {
+        public static MessageBoxResult Show(string text, string caption, MessageBoxButton button, MessageBoxImage icon,
+                                            MessageBoxResult defaultResult, MessageBoxOptions options) =>
+            Show(text, caption, button, icon);
+
         public static MessageBoxResult Show(string text, string caption = "", MessageBoxButton button = MessageBoxButton.OK, MessageBoxImage icon = MessageBoxImage.None)
         {
             if (button is MessageBoxButton.YesNo or MessageBoxButton.YesNoCancel or MessageBoxButton.OKCancel)

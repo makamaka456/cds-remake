@@ -130,7 +130,6 @@
         <Compile Include="..\CdsHelper.Game\UI\Views\LandBattleInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LandBattleInfoDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\LandUnitInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LandUnitInfoDialog.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\Lang.cs" Link="Shared\CdsHelper.Game\Local\Helpers\Lang.cs" />
-        <Compile Include="..\CdsHelper.Game\UI\Views\LoadingDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LoadingDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Rendering\MapShaderData.cs" Link="Shared\CdsHelper.Game\UI\Rendering\MapShaderData.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\MenuWindow.cs" Link="Shared\CdsHelper.Game\UI\Views\MenuWindow.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\MovieAssetDownloader.cs" Link="Shared\CdsHelper.Game\Local\Helpers\MovieAssetDownloader.cs" />

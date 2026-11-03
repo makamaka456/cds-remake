@@ -38,6 +38,13 @@ public sealed class MediaPlayer
 
     public void Play() => _player?.Start();
 
+    /// <summary>그 자리에서 멈춘다 — <see cref="Play"/> 가 멈춘 자리부터 잇는다.</summary>
+    public void Pause()
+    {
+        try { if (_player?.IsPlaying == true) _player.Pause(); }
+        catch (Java.Lang.IllegalStateException) { }
+    }
+
     public void Stop()
     {
         if (_player is { IsPlaying: true } p) p.Pause();

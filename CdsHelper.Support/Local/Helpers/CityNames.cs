@@ -53,10 +53,12 @@ public static class CityNames
         var map = new Dictionary<int, string>();
         try
         {
+#if !ANDROID
             string path = Path.Combine(AppContext.BaseDirectory, "cities.json");
             if (File.Exists(path))
                 foreach (var c in new CityService().LoadCities(path))
                     map[c.Id] = c.Name;
+#endif
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or FileNotFoundException) { }
         return _fromJson = map;

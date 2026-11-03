@@ -222,9 +222,18 @@ public static class ShipSprites
         if (!File.Exists(path)) return null;
         try
         {
+#if ANDROID
+            if (PngShim.DecodeAny(path, premultiply: true) is not { } got)
+            {
+                LastError = $"{path} 를 읽지 못했습니다";
+                return null;
+            }
+            var src = (PixelWidth: got.Width, PixelHeight: got.Height);
+#else
             using var fs = File.OpenRead(path);
             var decoder = new PngBitmapDecoder(fs, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
             var src = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Pbgra32, null, 0);
+#endif
             int side = src.PixelWidth;
             if (side != src.PixelHeight || side % Width != 0 || side <= Width || side > HiMaxWidth)
             {
@@ -232,8 +241,12 @@ public static class ShipSprites
                           + $"({Width * 2}~{HiMaxWidth})여야 합니다";
                 return null;
             }
+#if ANDROID
+            var px = got.Pixels;
+#else
             var px = new uint[side * side];
             src.CopyPixels(px, side * 4, 0);
+#endif
             return (px, side);
         }
         catch (Exception ex)
@@ -248,6 +261,9 @@ public static class ShipSprites
     {
         try
         {
+#if ANDROID
+            return PngShim.Decode(path, Width, Width);
+#else
             using var fs = File.OpenRead(path);
             var decoder = new PngBitmapDecoder(fs, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
             var src = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
@@ -255,6 +271,7 @@ public static class ShipSprites
             var px = new uint[Size];
             src.CopyPixels(px, Width * 4, 0);
             return px;
+#endif
         }
         catch
         {

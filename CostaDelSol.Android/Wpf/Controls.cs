@@ -289,6 +289,7 @@ namespace System.Windows.Controls
 
     public class ColumnDefinition
     {
+        public static readonly DependencyProperty WidthProperty = DependencyProperty.Register("Width", typeof(GridLength), typeof(ColumnDefinition));
         public GridLength Width { get; set; } = new(1, GridUnitType.Star);
         public double MinWidth { get; set; }
         public double MaxWidth { get; set; } = double.PositiveInfinity;
@@ -640,6 +641,10 @@ namespace System.Windows.Controls
 
     public class Border : Decorator
     {
+        public static readonly DependencyProperty BackgroundProperty = DependencyProperty.Register("Background", typeof(Brush), typeof(Border));
+        public static readonly DependencyProperty BorderBrushProperty = DependencyProperty.Register("BorderBrush", typeof(Brush), typeof(Border));
+        public static readonly DependencyProperty BorderThicknessProperty = DependencyProperty.Register("BorderThickness", typeof(Thickness), typeof(Border));
+        public static readonly DependencyProperty PaddingProperty = DependencyProperty.Register("Padding", typeof(Thickness), typeof(Border));
         private Brush? _background, _borderBrush;
         private Thickness _thickness, _padding;
         public Brush? Background { get => _background; set { _background = value; WpfHost.Touch(); } }
@@ -710,6 +715,7 @@ namespace System.Windows.Controls
 
     public class Control : FrameworkElement
     {
+        public static readonly DependencyProperty FontFamilyProperty = DependencyProperty.Register("FontFamily", typeof(FontFamily), typeof(Control));
         private Brush? _background, _foreground, _borderBrush;
         public Brush? Background { get => _background; set { _background = value; WpfHost.Touch(); } }
         public Brush? Foreground { get => _foreground ?? Brushes.Black; set { _foreground = value; WpfHost.Touch(); } }
@@ -884,6 +890,11 @@ namespace System.Windows.Controls
 
     public class TextBlock : FrameworkElement
     {
+        public static readonly DependencyProperty TextProperty = DependencyProperty.Register("Text", typeof(string), typeof(TextBlock));
+        public static readonly DependencyProperty FontSizeProperty = DependencyProperty.Register("FontSize", typeof(double), typeof(TextBlock));
+        public static readonly DependencyProperty FontWeightProperty = DependencyProperty.Register("FontWeight", typeof(FontWeight), typeof(TextBlock));
+        public static readonly DependencyProperty TextWrappingProperty = DependencyProperty.Register("TextWrapping", typeof(TextWrapping), typeof(TextBlock));
+        public static readonly DependencyProperty ForegroundProperty = DependencyProperty.Register("Foreground", typeof(Brush), typeof(TextBlock));
         private string _text = "";
         private Brush? _foreground;
         private double _size = 12;
@@ -1087,10 +1098,18 @@ namespace System.Windows.Controls
     public delegate void TextChangedEventHandler(object sender, TextChangedEventArgs e);
     public sealed class TextChangedEventArgs : RoutedEventArgs { }
 
-    public class PasswordBox : Control { public string Password { get; set; } = ""; }
+    public class PasswordBox : Control
+    {
+        public string Password { get; set; } = "";
+        public void Clear() => Password = "";
+    }
 
     public class ScrollViewer : ContentControl
     {
+        public static readonly DependencyProperty VerticalScrollBarVisibilityProperty = DependencyProperty.RegisterAttached("VerticalScrollBarVisibility", typeof(ScrollBarVisibility), typeof(ScrollViewer));
+        public static readonly DependencyProperty HorizontalScrollBarVisibilityProperty = DependencyProperty.RegisterAttached("HorizontalScrollBarVisibility", typeof(ScrollBarVisibility), typeof(ScrollViewer));
+        /// <summary>보이는 폭 — 가로로 밀지 않으므로 자기 폭이다.</summary>
+        public double ViewportWidth => ActualWidth;
         private double _offset, _extent, _viewport;
         public ScrollBarVisibility VerticalScrollBarVisibility { get; set; } = ScrollBarVisibility.Visible;
         public ScrollBarVisibility HorizontalScrollBarVisibility { get; set; } = ScrollBarVisibility.Disabled;
@@ -1208,8 +1227,14 @@ namespace System.Windows.Controls
         public string DisplayMemberPath { get; set; } = "";
         internal StackPanel Stack => _stack;
 
+        public ItemsPanelTemplate? ItemsPanel { get; set; }
+
         internal virtual UIElement Wrap(object item, int index) =>
-            item as UIElement ?? new TextBlock { Text = item?.ToString() ?? "", Foreground = Foreground, FontSize = FontSize };
+            item as UIElement ?? Templated(item) ?? new TextBlock { Text = item?.ToString() ?? "", Foreground = Foreground, FontSize = FontSize };
+
+        /// <summary>줄 틀(ItemTemplate)이 있으면 그 틀로 그 줄을 찍어 낸다.</summary>
+        internal UIElement? Templated(object? item) =>
+            ItemTemplate?.VisualTree is { } tree ? TemplateBuilder.Build(tree, item) as UIElement : null;
 
         protected void Rebuild()
         {
@@ -1353,6 +1378,7 @@ namespace System.Windows.Controls
 
     public class ContextMenu : ItemsControl
     {
+        public Primitives.PlacementMode Placement { get; set; }
         public bool IsOpen { get; set; }
         public UIElement? PlacementTarget { get; set; }
     }
@@ -1395,7 +1421,8 @@ namespace System.Windows.Controls
 
             internal override UIElement Wrap(object item, int index)
             {
-                var box = new ListBoxItem { Content = item is UIElement e ? e : item?.ToString() ?? "", Padding = new Thickness(2, 0, 2, 0), Background = Brushes.Transparent };
+                object shown = item is UIElement e ? e : Templated(item) is { } made ? made : item?.ToString() ?? "";
+                var box = new ListBoxItem { Content = shown, Padding = new Thickness(2, 0, 2, 0), Background = Brushes.Transparent };
                 if (box.Content is not UIElement || item is not UIElement) ((ListBoxItem)box).Foreground = Foreground;
                 box.MouseLeftButtonUp += (_, _) => SelectedIndex = index;
                 return box;

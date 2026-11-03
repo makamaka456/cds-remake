@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Windows.Media;
 
 namespace System.Windows.Data
@@ -15,6 +15,8 @@ namespace System.Windows.Data
         public IValueConverter? Converter { get; set; }
         public object? ConverterParameter { get; set; }
         public UpdateSourceTrigger UpdateSourceTrigger { get; set; }
+        /// <summary>묶을 원천 — 안 주면 그 줄(DataContext)이다.</summary>
+        public object? Source { get; set; }
         public static readonly object DoNothing = new();
     }
 
@@ -102,6 +104,9 @@ namespace System.Windows.Controls
         public event EventHandler<DataGridCellEditEndingEventArgs>? CellEditEnding;
 
         public void CommitEdit() { }
+        public bool CommitEdit(DataGridEditingUnit unit, bool exitEditingMode) => true;
+        public DataGridCellInfo CurrentCell { get; set; }
+        public bool BeginEdit() => false;
         public void CancelEdit() { }
         /// <summary>그 줄이 보이게 굴린다.</summary>
         public void ScrollIntoView(object item)
@@ -347,6 +352,8 @@ namespace System.Windows
         internal readonly Dictionary<DependencyProperty, Data.Binding> Bindings = [];
         public void SetValue(DependencyProperty p, object? v) => Values[p] = v;
         public void SetBinding(DependencyProperty p, Data.Binding b) => Bindings[p] = b;
+        internal readonly List<FrameworkElementFactory> Children = [];
+        public void AppendChild(FrameworkElementFactory child) => Children.Add(child);
     }
 }
 

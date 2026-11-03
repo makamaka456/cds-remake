@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using Path = System.Windows.Shapes.Path;   // System.IO 와 겹치는 이름(안드로이드판은 System.IO 를 전역으로 쓴다)
 using CdsHelper.Game.Local.Helpers;
 using CdsHelper.Game.Local.Settings;
 using CdsHelper.Support.Local.Models;
