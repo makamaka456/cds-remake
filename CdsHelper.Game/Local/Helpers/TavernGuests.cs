@@ -1,7 +1,9 @@
 ﻿using System.IO;
 using System.Text.Json.Serialization;
+#if !ANDROID
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+#endif
 using CdsHelper.Support.Local.Helpers;
 
 namespace CdsHelper.Game.Local.Helpers;
@@ -377,6 +379,9 @@ public sealed class TavernGuests
     {
         string path = ArtPath(guest.Index);
         if (!File.Exists(path)) return null;
+#if ANDROID
+        return PngShim.Decode(path, guest.Width, guest.Height);
+#else
         try
         {
             using var fs = File.OpenRead(path);
@@ -394,5 +399,6 @@ public sealed class TavernGuests
         {
             return null;
         }
+#endif
     }
 }

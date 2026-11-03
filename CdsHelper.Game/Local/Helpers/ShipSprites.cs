@@ -1,6 +1,8 @@
 ﻿using System.IO;
+#if !ANDROID
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+#endif
 using CdsHelper.Support.Local.Helpers;
 using CdsHelper.Support.Local.Models;
 
@@ -299,6 +301,11 @@ public static class ShipSprites
 
         try
         {
+#if ANDROID
+            var all = PngShim.Decode(path, Width * WalkPhases, Width * WalkRows);
+            if (all == null) { LastError = $"{path} 를 읽지 못했습니다"; return null; }
+            var src = (PixelWidth: Width * WalkPhases, PixelHeight: Width * WalkRows);
+#else
             using var fs = File.OpenRead(path);
             var decoder = new PngBitmapDecoder(fs, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
             var src = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
@@ -312,6 +319,7 @@ public static class ShipSprites
             int stride = src.PixelWidth * 4;
             var all = new uint[src.PixelWidth * src.PixelHeight];
             src.CopyPixels(all, stride, 0);
+#endif
 
             var cut = new uint[]?[WalkRows * WalkPhases];
             for (int row = 0; row < WalkRows; row++)
@@ -358,6 +366,10 @@ public static class ShipSprites
         }
         try
         {
+#if ANDROID
+            var px = PngShim.Decode(path, Width, Width);
+            if (px == null) { LastError = $"{path} 를 읽지 못했습니다"; return null; }
+#else
             using var fs = File.OpenRead(path);
             var decoder = new PngBitmapDecoder(fs, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
             var src = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
@@ -368,6 +380,7 @@ public static class ShipSprites
             }
             var px = new uint[Size];
             src.CopyPixels(px, Width * 4, 0);
+#endif
             LastError = "";
             return px;
         }

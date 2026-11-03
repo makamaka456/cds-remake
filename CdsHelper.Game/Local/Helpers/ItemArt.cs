@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CdsHelper.Support.Local.Helpers;
@@ -123,6 +123,9 @@ public sealed class ItemArt
     {
         string path = ArtPath(pic);
         if (!File.Exists(path)) return null;
+#if ANDROID
+        return PngShim.Decode(path, Width, Height);
+#else
         try
         {
             using var fs = File.OpenRead(path);
@@ -140,6 +143,7 @@ public sealed class ItemArt
         {
             return null;
         }
+#endif
     }
 
     /// <summary>ITEM.CDS 에서 그때그때 푼다.</summary>

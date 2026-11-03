@@ -1,8 +1,10 @@
 using System.IO;
+#if !ANDROID
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CdsHelper.Support.Local.Models;
+#endif
 
 namespace CdsHelper.Support.Local.Helpers;
 
@@ -31,6 +33,7 @@ public static class WorldMapRenderer
         return data;
     }
 
+#if !ANDROID   // 그림을 짓는 쪽은 WPF 다 — 안드로이드판은 크기 값과 좌표 셈만 쓴다(SeaPathfinder).
     /// <summary>
     /// WORLD.CDS 데이터로부터 2500x1250 단일 타일을 렌더링한 WriteableBitmap 생성.
     /// ocean이 주어지면 게임 타일 그림(칸당 16x16의 평균색)으로 그리고, null이면 palette로 색을 계산한다.
@@ -79,6 +82,8 @@ public static class WorldMapRenderer
         return bmp;
     }
 
+#endif
+
     /// <summary>위도/경도를 단일 타일 기준 픽셀 좌표로 변환.</summary>
     public static (double px, double py) LatLonToPixel(double lat, double lon)
     {
@@ -102,6 +107,7 @@ public static class WorldMapRenderer
     public static int CellToTile(byte[] worldData, int offset) =>
         (worldData[offset] | (worldData[offset + 1] << 8)) & OceanTiles.TileMask;
 
+#if !ANDROID
     /// <summary>
     /// 지형(0~127) x 속성(0~255) 조합의 색을 미리 계산한 표. 자리는 <c>terrain * 256 + attr</c>,
     /// 값은 0xRRGGBB. OCEAN.CDS가 없을 때 칸마다 색을 다시 계산하지 않으려고 쓴다.
@@ -116,7 +122,6 @@ public static class WorldMapRenderer
         return lut;
     }
 
-    #region 색상 변환 (WorldMapContent와 동일)
 
     private static Color GetCellColor(MapPalette palette, byte terrain, byte attr, bool showWind, bool showCoast)
     {
@@ -144,6 +149,8 @@ public static class WorldMapRenderer
     }
 
     private static int ColorToInt(Color c) => (c.R << 16) | (c.G << 8) | c.B;
+
+#endif
 
     /// <summary>지형별 육지 비율(0~1). 해안 칸의 바다색/육지색 섞는 비율이자 셀 정보 표시에 쓴다.</summary>
     public static float GetCoastLandRatio(byte terrain)
@@ -175,5 +182,4 @@ public static class WorldMapRenderer
         };
     }
 
-    #endregion
 }

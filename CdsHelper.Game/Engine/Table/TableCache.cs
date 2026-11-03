@@ -20,11 +20,19 @@ internal static class TableCache
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>
+    /// 표 자리를 못 박는다. 안드로이드판이 APK 에서 꺼내 둔 앱 폴더를 일러 줄 때 쓴다 —
+    /// 거기서는 실행 파일 옆이라는 자리가 없다. PC 판은 비워 둔다.
+    /// </summary>
+    public static string? FolderOverride { get; set; }
+
     /// <summary>정적으로 넣은 표 자리. 개발 때는 저장소 루트, 배포 때는 실행 파일 옆이다.</summary>
     public static string Folder
     {
         get
         {
+            if (FolderOverride != null) return FolderOverride;
+
             for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
             {
                 string candidate = Path.Combine(dir.FullName, "exe-tables");

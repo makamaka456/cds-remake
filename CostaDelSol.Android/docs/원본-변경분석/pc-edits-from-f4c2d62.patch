@@ -1,0 +1,524 @@
+diff --git a/.gitignore b/.gitignore
+index ad467180..3fafcc38 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -79,3 +79,7 @@ asset/bgm/
+ 
+ # WPF 임시 프로젝트 — 빌드 중에 생겼다 사라진다
+ *_wpftmp.csproj
++
++# 안드로이드 APK 에 넣는 원본 자료 — 빌드 때 map-assets 릴리즈에서 받는다
++CostaDelSol.Android/Assets/game/
++CostaDelSol.Android/Assets/bgm/
+diff --git a/CdsHelper.Game/Engine/Game.cs b/CdsHelper.Game/Engine/Game.cs
+index 1afafd9f..0ce01397 100644
+--- a/CdsHelper.Game/Engine/Game.cs
++++ b/CdsHelper.Game/Engine/Game.cs
+@@ -5,7 +5,9 @@ using CdsHelper.Game.Local.Helpers;
+ using CdsHelper.Support.Local.Helpers;
+ using CdsHelper.Support.Local.Models;
+ using CdsHelper.Support.Local.Settings;
++#if !ANDROID
+ using Prism.Ioc;
++#endif
+ 
+ namespace CdsHelper.Game.Engine;
+ 
+@@ -567,6 +569,7 @@ public sealed class Game
+         if (_hintNames == null)
+         {
+             _hintNames = [];
++#if !ANDROID
+             try
+             {
+                 var service = ContainerLocator.Container.Resolve<HintService>();
+@@ -578,6 +581,7 @@ public sealed class Game
+             {
+                 Debug.WriteLine($"[Game] 힌트 이름 로드 실패: {ex.Message}");
+             }
++#endif
+         }
+         return _hintNames.TryGetValue(id, out var found) && found.Length > 0 ? found : $"힌트 {id}";
+     }
+diff --git a/CdsHelper.Game/Engine/GameSave.cs b/CdsHelper.Game/Engine/GameSave.cs
+index c9f36277..2a8ad56c 100644
+--- a/CdsHelper.Game/Engine/GameSave.cs
++++ b/CdsHelper.Game/Engine/GameSave.cs
+@@ -81,10 +81,18 @@ public static class GameSave
+         catch (UnauthorizedAccessException) { return false; }
+     }
+ 
++    /// <summary>
++    /// 세이브를 적는 폴더를 못 박는다. 안드로이드판이 사용자가 고른 폴더(기본 <c>내장 저장소/CostaDelSol</c>)를
++    /// 일러 줄 때 쓴다. PC 판은 비워 두므로 늘 <c>%APPDATA%\CdsHelper</c> 다 — 두 폴더의 파일은 서로 그대로 옮겨 쓸 수 있다.
++    /// </summary>
++    public static string? FolderOverride { get; set; }
++
++    /// <summary>세이브 파일이 놓이는 폴더.</summary>
++    public static string Folder => FolderOverride ?? System.IO.Path.Combine(
++        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CdsHelper");
++
+     /// <summary>세이브 파일 자리.</summary>
+-    public static string Path => System.IO.Path.Combine(
+-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+-        "CdsHelper", "SAVEDATA.CDS");
++    public static string Path => System.IO.Path.Combine(Folder, "SAVEDATA.CDS");
+ 
+     /// <summary>
+     /// <b>자동저장</b> 파일 자리 — 손으로 적은 것과 <b>따로</b> 둔다.
+@@ -93,9 +101,7 @@ public static class GameSave
+     /// 원본에 없는 것이다. 입항할 때마다 덮어쓰므로 손으로 적어 둔 <see cref="Path"/> 를
+     /// 건드리지 않게 이름을 달리한다. 첫 화면의 <b>CONTINUE</b> 가 이 파일을 연다.
+     /// </remarks>
+-    public static string AutoPath => System.IO.Path.Combine(
+-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+-        "CdsHelper", "AUTOSAVE.CDS");
++    public static string AutoPath => System.IO.Path.Combine(Folder, "AUTOSAVE.CDS");
+ 
+     /// <summary>적어 두는 것.</summary>
+     /// <param name="Version">형식 판. 나중에 늘릴 때 본다.</param>
+@@ -236,9 +242,11 @@ public static class GameSave
+                             [.. player.Supplies], [.. player.Discoveries], DealOf(player),
+                             player.Crew, [.. player.Announced], player.Fame,
+                             [.. player.Stored], player.Savings,
+-                            [.. player.Ships.Select(s => s.Name)], player.Flagship,
++                            // 선체 칸에는 <b>선체 이름</b>을 적는다 — 배 이름(후원자가 빌려준 「산티아고」 같은)을
++                            // 적었더니 불러올 때 선체를 못 찾아 그 배가 가장 싼 배로 바뀌고 「빌린 배」 표시도 잃었다.
++                            [.. player.Ships.Select(s => s.Hull.Name)], player.Flagship,
+                             player.Docked.ToDictionary(
+-                                e => e.Key, e => e.Value.Select(s => s.Name).ToList()),
++                                e => e.Key, e => e.Value.Select(s => s.Hull.Name).ToList()),
+                             [.. player.Ships.Select(s => s.Hp)],
+                             player.Docked.ToDictionary(
+                                 e => e.Key, e => e.Value.Select(s => s.Hp).ToList()),
+diff --git a/CdsHelper.Game/Engine/Table/TableCache.cs b/CdsHelper.Game/Engine/Table/TableCache.cs
+index fd42ac52..299717ba 100644
+--- a/CdsHelper.Game/Engine/Table/TableCache.cs
++++ b/CdsHelper.Game/Engine/Table/TableCache.cs
+@@ -20,11 +20,19 @@ internal static class TableCache
+         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+     };
+ 
++    /// <summary>
++    /// 표 자리를 못 박는다. 안드로이드판이 APK 에서 꺼내 둔 앱 폴더를 일러 줄 때 쓴다 —
++    /// 거기서는 실행 파일 옆이라는 자리가 없다. PC 판은 비워 둔다.
++    /// </summary>
++    public static string? FolderOverride { get; set; }
++
+     /// <summary>정적으로 넣은 표 자리. 개발 때는 저장소 루트, 배포 때는 실행 파일 옆이다.</summary>
+     public static string Folder
+     {
+         get
+         {
++            if (FolderOverride != null) return FolderOverride;
++
+             for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+             {
+                 string candidate = Path.Combine(dir.FullName, "exe-tables");
+diff --git a/CdsHelper.Game/Local/Helpers/BgmPlayer.cs b/CdsHelper.Game/Local/Helpers/BgmPlayer.cs
+index f23b87fc..2138f5cd 100644
+--- a/CdsHelper.Game/Local/Helpers/BgmPlayer.cs
++++ b/CdsHelper.Game/Local/Helpers/BgmPlayer.cs
+@@ -209,6 +209,12 @@ public sealed class BgmPlayer : IDisposable
+         };
+     }
+ 
++    /// <summary>
++    /// 곡 번호 → 열 주소. 걸어 두면 게임 폴더·내려받은 곳을 보지 않고 이 주소를 연다(안드로이드판: APK 안의 곡).
++    /// PC 판은 비워 둔다.
++    /// </summary>
++    public static Func<int, string?>? Locate { get; set; }
++
+     /// <summary>지금 곡이 끝나면 갈아탈 곡. 없으면 -1.</summary>
+     private int _queued = -1;
+ 
+@@ -275,10 +281,11 @@ public sealed class BgmPlayer : IDisposable
+         if (!_enabled) return;
+         if (_track == track) return;
+ 
+-        var path = Path.Combine(_dir, "bgm", $"Track{track:D2}.mp3");
+-        if (!File.Exists(path))
++        // 안드로이드판은 곡을 APK 안에 싣고 그 자리(asset 주소)를 일러 준다 — PC 판은 비워 둔다.
++        var path = Locate?.Invoke(track) ?? Path.Combine(_dir, "bgm", $"Track{track:D2}.mp3");
++        if (Locate == null && !File.Exists(path))
+             path = BgmAssetDownloader.CachePath(track);
+-        if (!File.Exists(path))
++        if (Locate == null && !File.Exists(path))
+         {
+             LastError = $"{path} 없음";
+             return;
+diff --git a/CdsHelper.Game/Local/Helpers/CityTable.cs b/CdsHelper.Game/Local/Helpers/CityTable.cs
+index 1f35b1a1..963d06dd 100644
+--- a/CdsHelper.Game/Local/Helpers/CityTable.cs
++++ b/CdsHelper.Game/Local/Helpers/CityTable.cs
+@@ -2,7 +2,9 @@ using System.IO;
+ using System.Text.Json.Serialization;
+ using CdsHelper.Support.Local.Helpers;
+ using CdsHelper.Support.Local.Models;
++#if !ANDROID
+ using Prism.Ioc;
++#endif
+ 
+ namespace CdsHelper.Game.Local.Helpers;
+ 
+@@ -104,6 +106,7 @@ public sealed class CityTable
+     /// </summary>
+     private static Snapshot? FromApp()
+     {
++#if !ANDROID
+         try
+         {
+             var service = ContainerLocator.Container?.Resolve<CityService>();
+@@ -114,13 +117,18 @@ public sealed class CityTable
+         {
+             LastError = ex.Message;
+         }
++#endif
+ 
+         try
+         {
+             string path = Path.Combine(AppContext.BaseDirectory, "cities.json");
+             if (File.Exists(path))
+             {
++#if ANDROID
++                var cities = System.Text.Json.JsonSerializer.Deserialize<List<City>>(File.ReadAllText(path)) ?? [];
++#else
+                 var cities = new CityService().LoadCities(path);
++#endif
+                 if (cities.Count > 0) return ToSnapshot(cities);
+             }
+         }
+diff --git a/CdsHelper.Game/Local/Helpers/ItemArt.cs b/CdsHelper.Game/Local/Helpers/ItemArt.cs
+index f2827b4b..9e61308c 100644
+--- a/CdsHelper.Game/Local/Helpers/ItemArt.cs
++++ b/CdsHelper.Game/Local/Helpers/ItemArt.cs
+@@ -1,4 +1,4 @@
+-using System.IO;
++﻿using System.IO;
+ using System.Windows.Media;
+ using System.Windows.Media.Imaging;
+ using CdsHelper.Support.Local.Helpers;
+@@ -123,6 +123,9 @@ public sealed class ItemArt
+     {
+         string path = ArtPath(pic);
+         if (!File.Exists(path)) return null;
++#if ANDROID
++        return PngShim.Decode(path, Width, Height);
++#else
+         try
+         {
+             using var fs = File.OpenRead(path);
+@@ -140,6 +143,7 @@ public sealed class ItemArt
+         {
+             return null;
+         }
++#endif
+     }
+ 
+     /// <summary>ITEM.CDS 에서 그때그때 푼다.</summary>
+diff --git a/CdsHelper.Game/Local/Helpers/ShipSprites.cs b/CdsHelper.Game/Local/Helpers/ShipSprites.cs
+index 1473a2fc..ac0b0caf 100644
+--- a/CdsHelper.Game/Local/Helpers/ShipSprites.cs
++++ b/CdsHelper.Game/Local/Helpers/ShipSprites.cs
+@@ -1,6 +1,8 @@
+ ﻿using System.IO;
++#if !ANDROID
+ using System.Windows.Media;
+ using System.Windows.Media.Imaging;
++#endif
+ using CdsHelper.Support.Local.Models;
+ 
+ namespace CdsHelper.Game.Local.Helpers;
+@@ -186,6 +188,11 @@ public static class ShipSprites
+ 
+         try
+         {
++#if ANDROID
++            var all = PngShim.Decode(path, Width * WalkPhases, Width * WalkRows);
++            if (all == null) { LastError = $"{path} 를 읽지 못했습니다"; return null; }
++            var src = (PixelWidth: Width * WalkPhases, PixelHeight: Width * WalkRows);
++#else
+             using var fs = File.OpenRead(path);
+             var decoder = new PngBitmapDecoder(fs, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+             var src = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
+@@ -199,6 +206,7 @@ public static class ShipSprites
+             int stride = src.PixelWidth * 4;
+             var all = new uint[src.PixelWidth * src.PixelHeight];
+             src.CopyPixels(all, stride, 0);
++#endif
+ 
+             var cut = new uint[]?[WalkRows * WalkPhases];
+             for (int row = 0; row < WalkRows; row++)
+@@ -245,6 +253,10 @@ public static class ShipSprites
+         }
+         try
+         {
++#if ANDROID
++            var px = PngShim.Decode(path, Width, Width);
++            if (px == null) { LastError = $"{path} 를 읽지 못했습니다"; return null; }
++#else
+             using var fs = File.OpenRead(path);
+             var decoder = new PngBitmapDecoder(fs, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+             var src = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
+@@ -255,6 +267,7 @@ public static class ShipSprites
+             }
+             var px = new uint[Size];
+             src.CopyPixels(px, Width * 4, 0);
++#endif
+             LastError = "";
+             return px;
+         }
+diff --git a/CdsHelper.Game/Local/Helpers/TavernGuests.cs b/CdsHelper.Game/Local/Helpers/TavernGuests.cs
+index d576197d..5577b578 100644
+--- a/CdsHelper.Game/Local/Helpers/TavernGuests.cs
++++ b/CdsHelper.Game/Local/Helpers/TavernGuests.cs
+@@ -1,7 +1,9 @@
+ ﻿using System.IO;
+ using System.Text.Json.Serialization;
++#if !ANDROID
+ using System.Windows.Media;
+ using System.Windows.Media.Imaging;
++#endif
+ using CdsHelper.Support.Local.Helpers;
+ 
+ namespace CdsHelper.Game.Local.Helpers;
+@@ -311,6 +313,9 @@ public sealed class TavernGuests
+     {
+         string path = ArtPath(guest.Index);
+         if (!File.Exists(path)) return null;
++#if ANDROID
++        return PngShim.Decode(path, guest.Width, guest.Height);
++#else
+         try
+         {
+             using var fs = File.OpenRead(path);
+@@ -328,5 +333,6 @@ public sealed class TavernGuests
+         {
+             return null;
+         }
++#endif
+     }
+ }
+diff --git a/CdsHelper.Game/UI/Views/FrameArt.cs b/CdsHelper.Game/UI/Views/FrameArt.cs
+index 88dadd14..4886a3d9 100644
+--- a/CdsHelper.Game/UI/Views/FrameArt.cs
++++ b/CdsHelper.Game/UI/Views/FrameArt.cs
+@@ -96,6 +96,7 @@ internal static class FrameArt
+         return bmp;
+     }
+ 
++
+     private static uint Pixel(int depth, int along, bool thin)
+     {
+         if (thin)
+@@ -121,13 +122,12 @@ internal static class FrameArt
+         };
+     }
+ 
+-    /// <summary>액자 한 벌을 그린다. 크기가 테보다 작으면 null.</summary>
++    /// <summary>액자 한 벌의 점들(ARGB, 한 줄씩). 크기가 테보다 작으면 null. 안드로이드판도 이것을 쓴다.</summary>
+     /// <param name="thin">얇은 테(<see cref="ThinBorder"/>)로 그린다.</param>
+-    public static BitmapSource? Draw(int width, int height, bool thin = false)
++    public static uint[]? Pixels(int width, int height, bool thin = false)
+     {
+         int border = thin ? ThinBorder : Border;
+         if (width < border * 2 || height < border * 2) return null;
+-
+         var px = new uint[width * height];
+         for (int y = 0; y < height; y++)
+             for (int x = 0; x < width; x++)
+@@ -135,7 +135,11 @@ internal static class FrameArt
+                 var (depth, along) = Where(x, y, width, height);
+                 px[y * width + x] = Pixel(depth, along, thin);
+             }
+-
+-        return Freeze(px, width, height);
++        return px;
+     }
++
++    /// <summary>액자 한 벌을 그린다. 크기가 테보다 작으면 null.</summary>
++    /// <param name="thin">얇은 테(<see cref="ThinBorder"/>)로 그린다.</param>
++    public static BitmapSource? Draw(int width, int height, bool thin = false) =>
++        Pixels(width, height, thin) is { } px ? Freeze(px, width, height) : null;
+ }
+diff --git a/CdsHelper.Game/UI/Views/SeaCombatDialog.cs b/CdsHelper.Game/UI/Views/SeaCombatDialog.cs
+index d3c6e7f8..8c7e1dda 100644
+--- a/CdsHelper.Game/UI/Views/SeaCombatDialog.cs
++++ b/CdsHelper.Game/UI/Views/SeaCombatDialog.cs
+@@ -560,7 +560,7 @@ public sealed class SeaCombatDialog : GameWindow, SeaBattle.IStage
+ 
+     private void Touch(object sender, MouseButtonEventArgs e)
+     {
+-        if (_running) return;
++        if (_running || _finished) return;
+ 
+         // 위임 중이면 판에 손대는 순간 지휘를 되찾겠냐고 먼저 묻는다(0x0043EE32).
+         if (!TookBack()) return;
+@@ -723,9 +723,12 @@ public sealed class SeaCombatDialog : GameWindow, SeaBattle.IStage
+         Redraw();
+     }
+ 
++    /// <summary>판을 끝냈다 — 그 뒤로 들어오는 손은 다 버린다.</summary>
++    private bool _finished;
++
+     private void ClearOrders()
+     {
+-        if (_running) return;
++        if (_running || _finished) return;
+         foreach (var ship in _battle.Ships.Where(s => s.Mine && s.CanAct)) ship.Plan.Clear();
+         Say(_battle.OrderPrompt());
+         if (_battle.MonsterHidWord() is { Length: > 0 } hid) Say(hid);
+@@ -735,7 +738,7 @@ public sealed class SeaCombatDialog : GameWindow, SeaBattle.IStage
+     /// <summary>「Set」 — 계획을 마치고 한 턴을 굴린다(<c>0x0043DDD0</c> → <c>0x0043CA60</c>).</summary>
+     private void Decide()
+     {
+-        if (_running) return;
++        if (_running || _finished) return;
+         // 「해전」 창에 YES/NO — 얼굴 없이 묻는다(0x0056B5A0).
+         if (!ConfirmDialog.Ask(this, "이동 계획을 종료하겠습니까?", BattleTitle))
+         {
+@@ -821,6 +824,10 @@ public sealed class SeaCombatDialog : GameWindow, SeaBattle.IStage
+     /// </remarks>
+     private void Finish()
+     {
++        // 한 번만 끝낸다. 끝판의 기다림(Wait) 동안에도 창이 손을 받아 「Set」·배 누르기가 다시 들어오면
++        // 끝난 판이 또 굴러 명성·악명·되쓰기가 겹쳐 붙었다(바다뱀 사건에서 명성 +300 이 수백 번).
++        if (_finished) return;
++        _finished = true;
+         Result = OutcomeOf(_battle);
+         var report = new Report(Result, _battle.EnemyDowned, _battle.EnemyCaptured);
+ 
+diff --git a/CdsHelper.Support/Local/Helpers/ShipRegistry.cs b/CdsHelper.Support/Local/Helpers/ShipRegistry.cs
+index 1991580d..6c36ad42 100644
+--- a/CdsHelper.Support/Local/Helpers/ShipRegistry.cs
++++ b/CdsHelper.Support/Local/Helpers/ShipRegistry.cs
+@@ -1,7 +1,9 @@
+ ﻿using System.IO;
+ using System.Text.Json;
++#if !ANDROID
+ using System.Windows.Media;
+ using System.Windows.Media.Imaging;
++#endif
+ using CdsHelper.Support.Local.Models;
+ 
+ namespace CdsHelper.Support.Local.Helpers;
+@@ -212,6 +214,7 @@ public static class ShipRegistry
+         CanChangeSail: design.CanChangeSail,
+         SpriteFolder: FolderOf(design.Id));
+ 
++#if !ANDROID   // 그림을 굽고 읽는 쪽은 WPF 다 — 안드로이드판은 제 것으로 읽는다(CostaDelSol.Android).
+     /// <summary>
+     /// 그림 한 장을 배의 그림 폴더에 <see cref="SpriteWidth"/> 크기로 맞춰 넣는다.
+     /// </summary>
+@@ -238,6 +241,8 @@ public static class ShipRegistry
+         File.Move(temp, target, overwrite: true);
+     }
+ 
++#endif
++
+     /// <summary>넣어 둔 그림 한 장을 읽는다. 없으면 null.</summary>
+     /// <summary>
+     /// 붙박이 선체가 쓰는 그림 자리 — <c>asset/ship-g{벌}/ship_{쪽}.png</c> 다.
+@@ -247,6 +252,7 @@ public static class ShipRegistry
+         AppDomain.CurrentDomain.BaseDirectory, "asset", $"ship-g{Math.Max(0, skin)}",
+         $"ship_{direction}.png");
+ 
++#if !ANDROID
+     /// <summary>붙박이 선체의 그 쪽 그림. 없으면 null.</summary>
+     public static BitmapSource? ReadBuiltinSprite(int skin, int direction) =>
+         ReadFrom(BuiltinSpritePath(skin, direction));
+@@ -333,4 +339,5 @@ public static class ShipRegistry
+         fitted.Freeze();
+         return fitted;
+     }
++#endif
+ }
+diff --git a/CdsHelper.Support/Local/Helpers/WorldMapRenderer.cs b/CdsHelper.Support/Local/Helpers/WorldMapRenderer.cs
+index f3625a30..245aa230 100644
+--- a/CdsHelper.Support/Local/Helpers/WorldMapRenderer.cs
++++ b/CdsHelper.Support/Local/Helpers/WorldMapRenderer.cs
+@@ -1,8 +1,10 @@
+ using System.IO;
++#if !ANDROID
+ using System.Windows;
+ using System.Windows.Media;
+ using System.Windows.Media.Imaging;
+ using CdsHelper.Support.Local.Models;
++#endif
+ 
+ namespace CdsHelper.Support.Local.Helpers;
+ 
+@@ -31,6 +33,7 @@ public static class WorldMapRenderer
+         return data;
+     }
+ 
++#if !ANDROID   // 그림을 짓는 쪽은 WPF 다 — 안드로이드판은 크기 값과 좌표 셈만 쓴다(SeaPathfinder).
+     /// <summary>
+     /// WORLD.CDS 데이터로부터 2500x1250 단일 타일을 렌더링한 WriteableBitmap 생성.
+     /// ocean이 주어지면 게임 타일 그림(칸당 16x16의 평균색)으로 그리고, null이면 palette로 색을 계산한다.
+@@ -79,6 +82,8 @@ public static class WorldMapRenderer
+         return bmp;
+     }
+ 
++#endif
++
+     /// <summary>위도/경도를 단일 타일 기준 픽셀 좌표로 변환.</summary>
+     public static (double px, double py) LatLonToPixel(double lat, double lon)
+     {
+@@ -102,6 +107,7 @@ public static class WorldMapRenderer
+     public static int CellToTile(byte[] worldData, int offset) =>
+         (worldData[offset] | (worldData[offset + 1] << 8)) & OceanTiles.TileMask;
+ 
++#if !ANDROID
+     /// <summary>
+     /// 지형(0~127) x 속성(0~255) 조합의 색을 미리 계산한 표. 자리는 <c>terrain * 256 + attr</c>,
+     /// 값은 0xRRGGBB. OCEAN.CDS가 없을 때 칸마다 색을 다시 계산하지 않으려고 쓴다.
+@@ -116,7 +122,6 @@ public static class WorldMapRenderer
+         return lut;
+     }
+ 
+-    #region 색상 변환 (WorldMapContent와 동일)
+ 
+     private static Color GetCellColor(MapPalette palette, byte terrain, byte attr, bool showWind, bool showCoast)
+     {
+@@ -145,6 +150,8 @@ public static class WorldMapRenderer
+ 
+     private static int ColorToInt(Color c) => (c.R << 16) | (c.G << 8) | c.B;
+ 
++#endif
++
+     /// <summary>지형별 육지 비율(0~1). 해안 칸의 바다색/육지색 섞는 비율이자 셀 정보 표시에 쓴다.</summary>
+     public static float GetCoastLandRatio(byte terrain)
+     {
+@@ -175,5 +182,4 @@ public static class WorldMapRenderer
+         };
+     }
+ 
+-    #endregion
+ }
+diff --git a/CdsHelper.Support/Local/Models/Player.cs b/CdsHelper.Support/Local/Models/Player.cs
+index 98cf3106..9cc98c13 100644
+--- a/CdsHelper.Support/Local/Models/Player.cs
++++ b/CdsHelper.Support/Local/Models/Player.cs
+@@ -1997,6 +1997,12 @@ public sealed class Player
+         // 해전에서 빼앗은 코구·다우 따위는 조선소 선체에 없어 선체표에서 살린다.
+         static Hull? Find(string name) => Hull.All.FirstOrDefault(h => h.Name == name) ?? Hull.FromTableName(name);
+ 
++        // 예전 세이브는 선체 칸에 <b>배 이름</b>을 적었다(빌린 배 「산티아고」 같은) — 선체를 못 찾으면
++        // 개조 안 된 값이 선체 기본값과 꼭 맞는 선체를 고른다. 그래도 없으면 그 배는 빠진다.
++        static Hull? GuessHull(Ship.Stats? st) => st == null ? null :
++            Hull.All.FirstOrDefault(h => h.Hp == st.MaxHp && h.Speed == st.Speed
++                                         && h.Tonnage == st.Tonnage && h.Crew == st.Crew);
++
+         List<Ship> Build(IEnumerable<string> hulls, IReadOnlyList<int>? hps,
+                          IReadOnlyList<Ship.Stats>? stats, IReadOnlyList<string>? names)
+         {
+@@ -2013,7 +2019,7 @@ public sealed class Player
+                     st = st with { Turrets = Find(hull)?.Guns ?? 0, Gun = -1, Guns = 0 };
+                 if (st != null && !sailsInStats)
+                     st = st with { Sails = [Ship.Lateen, Ship.NoSail, Ship.NoSail] };
+-                if (Find(hull) is { } found) list.Add(new Ship(found, hp, st, nm));
++                if ((Find(hull) ?? GuessHull(st)) is { } found) list.Add(new Ship(found, hp, st, nm));
+             }
+             return list;
+         }

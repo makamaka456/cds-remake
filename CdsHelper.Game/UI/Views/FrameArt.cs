@@ -96,6 +96,7 @@ internal static class FrameArt
         return bmp;
     }
 
+
     private static uint Pixel(int depth, int along, bool thin)
     {
         if (thin)
@@ -121,13 +122,12 @@ internal static class FrameArt
         };
     }
 
-    /// <summary>액자 한 벌을 그린다. 크기가 테보다 작으면 null.</summary>
+    /// <summary>액자 한 벌의 점들(ARGB, 한 줄씩). 크기가 테보다 작으면 null. 안드로이드판도 이것을 쓴다.</summary>
     /// <param name="thin">얇은 테(<see cref="ThinBorder"/>)로 그린다.</param>
-    public static BitmapSource? Draw(int width, int height, bool thin = false)
+    public static uint[]? Pixels(int width, int height, bool thin = false)
     {
         int border = thin ? ThinBorder : Border;
         if (width < border * 2 || height < border * 2) return null;
-
         var px = new uint[width * height];
         for (int y = 0; y < height; y++)
             for (int x = 0; x < width; x++)
@@ -135,7 +135,11 @@ internal static class FrameArt
                 var (depth, along) = Where(x, y, width, height);
                 px[y * width + x] = Pixel(depth, along, thin);
             }
-
-        return Freeze(px, width, height);
+        return px;
     }
+
+    /// <summary>액자 한 벌을 그린다. 크기가 테보다 작으면 null.</summary>
+    /// <param name="thin">얇은 테(<see cref="ThinBorder"/>)로 그린다.</param>
+    public static BitmapSource? Draw(int width, int height, bool thin = false) =>
+        Pixels(width, height, thin) is { } px ? Freeze(px, width, height) : null;
 }

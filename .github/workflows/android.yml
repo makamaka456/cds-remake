@@ -1,0 +1,154 @@
+name: Android APK
+
+# 안드로이드판(CostaDelSol.Android) APK 를 굽는다.
+#  - android-v* 태그를 밀면: APK 를 구워 그 태그 이름으로 Releases 에 올린다.
+#    Windows 판 태그(v*)와는 이름이 달라 서로의 워크플로를 깨우지 않는다.
+#  - 안드로이드 쪽 파일을 고쳐 브랜치에 밀거나 수동 실행하면: 굽기만 하고 Actions 아티팩트로 남긴다.
+#    (태그 푸시에는 paths 거르개가 걸리지 않는다.)
+on:
+  push:
+    tags:
+      - 'android-v*'
+    branches:
+      - '**'
+    paths:
+      - 'CostaDelSol.Android/**'
+      # 안드로이드판이 끌어 쓰는 PC 판 엔진·자료
+      - 'CdsHelper.Game/**'
+      - 'CdsHelper.Support/**'
+      - 'exe-tables/**'
+      - 'asset/ship-g*/**'
+      - 'asset/ui/**'
+      - 'asset/movie/**'
+      - 'asset/title/**'
+      - 'asset/ALL_FONT.16P'
+      - 'asset/ANKFONT.DAT'
+      - 'CdsHelper/*.json'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            v="${GITHUB_REF_NAME#android-v}"
+          else
+            v="0.0.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "버전: $v (빌드 번호 $GITHUB_RUN_NUMBER)"
+
+      # 원본 자료(CDSX)는 저장소에 없다 — 빌드 전에 Assets/game 으로 받아 APK 에 넣는다.
+      # 앱은 처음 켤 때 이것을 앱 폴더로 꺼내 PC 판 읽개가 그대로 읽게 한다.
+      - name: Download original data
+        run: |
+          base=https://github.com/Kyeongrok/cds-helper/releases/download/map-assets
+          dir=CostaDelSol.Android/Assets/game
+          mkdir -p "$dir"
+          curl -fsSL --retry 4 -o "$dir/world.cdsx" "$base/world.cdsx"
+          for n in OCEAN CITYCG DISCOVER DSTILL MPCG WAVES ITEM MALE FEMALE LANDDATA EVSTILL FIGHTER \
+                   OPENBOOK ENC TRAMP MISC BOOKSHEL MPEFFECT CLOUD; do
+            curl -fsSL --retry 4 -o "$dir/$n.CDSX" "$base/$n.CDSX"
+          done
+          curl -fsSL --retry 4 -o "$dir/TRAMP.PX" "$base/TRAMP.PX"
+          ls -l "$dir"; du -sh "$dir"
+
+      # 배경음악 28곡(Track02~29, 약 114MB)도 APK 에 넣는다 — bgm-assets 릴리즈에서 받는다.
+      - name: Download BGM
+        run: |
+          base=https://github.com/Kyeongrok/cds-helper/releases/download/bgm-assets
+          mkdir -p CostaDelSol.Android/Assets/bgm
+          for t in $(seq -w 2 29); do
+            curl -fsSL --retry 4 -o "CostaDelSol.Android/Assets/bgm/Track$t.mp3" "$base/Track$t.mp3"
+          done
+          du -sh CostaDelSol.Android/Assets/bgm
+
+      # 러너에 깔린 SDK 에 이 워크로드가 바라는 플랫폼/빌드 도구가 없으면 채운다.
+      - name: Install Android dependencies
+        run: >
+          dotnet build CostaDelSol.Android/CostaDelSol.Android.csproj
+          -t:InstallAndroidDependencies -f net10.0-android
+          -p:AndroidSdkDirectory="$ANDROID_HOME" -p:AcceptAndroidSDKLicenses=True
+
+      # 서명은 디버그 키다(러너가 그때그때 만든다) — 새 버전을 깔려면 옛 앱을 지우고 깔아야 한다.
+      - name: Publish APK
+        run: >
+          dotnet publish CostaDelSol.Android/CostaDelSol.Android.csproj
+          -c Release -f net10.0-android -o out
+          -p:AndroidSdkDirectory="$ANDROID_HOME"
+          -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }}
+          -p:ApplicationVersion=${{ github.run_number }}
+
+      - name: Collect APK
+        id: apk
+        run: |
+          src=$(find out -name '*-Signed.apk' | head -n 1)
+          if [[ -z "$src" ]]; then echo "서명된 APK 가 없습니다"; find out; exit 1; fi
+          dst="CostaDelSol-${{ steps.version.outputs.version }}.apk"
+          cp "$src" "$dst"
+          ls -l "$dst"
+          # 지도 원본이 빠지면 앱이 켜져도 지도를 못 그린다 — 여기서 막는다.
+          python3 - "$dst" <<'PY'
+          import sys, zipfile
+          # aapt 는 한글 이름을 UTF-8 로 적되 UTF-8 깃발(0x800)을 안 세운다 — 파이썬이 cp437 로 읽은 것을 되돌린다.
+          names = {i.filename if i.flag_bits & 0x800 else i.filename.encode("cp437").decode("utf-8", "replace")
+                   for i in zipfile.ZipFile(sys.argv[1]).infolist()}
+          assets = sorted(n for n in names if n.startswith("assets/"))
+          print(len(assets), "assets:", ", ".join(assets[:12]), "...")
+          need = ["game/world.cdsx", "game/OCEAN.CDSX", "game/CITYCG.CDSX", "game/DISCOVER.CDSX",
+                  "game/MALE.CDSX", "asset/sfx/sfx-00.wav", "asset/ALL_FONT.16P", "cities.json", "exe-tables/바람표.json",
+                  "exe-tables/지형표.json", "exe-tables/돛효율표.json", "ship-g1/ship_0.png",
+                  "bgm/Track23.mp3", "ui/band/button-mid.png", "title/title-tile.png",
+                  "font/ALL_FONT.16P", "font/ANKFONT.DAT", "root/발견이벤트.json", "root/이야기0.json",
+                  "root/patrons.json", "root/인물표.json"]
+          missing = [n for n in need if "assets/" + n not in names]
+          if missing: sys.exit("APK 에 빠진 자료: " + ", ".join(missing))
+          # 배경음악은 APK 안에서 바로 열어 튼다 — 눌러 담겼으면 못 연다.
+          packed = [i.filename for i in zipfile.ZipFile(sys.argv[1]).infolist()
+                    if i.filename.startswith("assets/bgm/") and i.compress_type != zipfile.ZIP_STORED]
+          if packed: sys.exit("눌러 담긴 배경음악: " + ", ".join(packed))
+          PY
+          echo "path=$dst" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: CostaDelSol-apk
+          path: ${{ steps.apk.outputs.path }}
+
+      - name: Upload to GitHub Releases
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${{ steps.apk.outputs.path }}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" "${{ steps.apk.outputs.path }}" --repo "$GITHUB_REPOSITORY" \
+              --title "안드로이드 $tag" \
+              --notes "대항해시대3 리메이크 안드로이드판 APK. 디버그 키로 서명했으므로 새 버전을 깔 때는 옛 앱을 먼저 지워 주세요."
+          fi

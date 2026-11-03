@@ -2,7 +2,9 @@ using System.IO;
 using System.Text.Json.Serialization;
 using CdsHelper.Support.Local.Helpers;
 using CdsHelper.Support.Local.Models;
+#if !ANDROID
 using Prism.Ioc;
+#endif
 
 namespace CdsHelper.Game.Local.Helpers;
 
@@ -105,6 +107,7 @@ public sealed class CityTable
     /// </summary>
     private static Snapshot? FromApp()
     {
+#if !ANDROID
         try
         {
             var service = ContainerLocator.Container?.Resolve<CityService>();
@@ -115,13 +118,18 @@ public sealed class CityTable
         {
             LastError = ex.Message;
         }
+#endif
 
         try
         {
             string path = Path.Combine(AppContext.BaseDirectory, "cities.json");
             if (File.Exists(path))
             {
+#if ANDROID
+                var cities = System.Text.Json.JsonSerializer.Deserialize<List<City>>(File.ReadAllText(path)) ?? [];
+#else
                 var cities = new CityService().LoadCities(path);
+#endif
                 if (cities.Count > 0) return ToSnapshot(cities);
             }
         }

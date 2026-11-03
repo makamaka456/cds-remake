@@ -5,7 +5,9 @@ using CdsHelper.Game.Local.Helpers;
 using CdsHelper.Support.Local.Helpers;
 using CdsHelper.Support.Local.Models;
 using CdsHelper.Support.Local.Settings;
+#if !ANDROID
 using Prism.Ioc;
+#endif
 
 namespace CdsHelper.Game.Engine;
 
@@ -864,6 +866,7 @@ public sealed class Game
         if (_hintNames == null)
         {
             _hintNames = [];
+#if !ANDROID
             try
             {
                 var service = ContainerLocator.Container.Resolve<HintService>();
@@ -875,6 +878,7 @@ public sealed class Game
             {
                 Debug.WriteLine($"[Game] 힌트 이름 로드 실패: {ex.Message}");
             }
+#endif
         }
         return _hintNames.TryGetValue(id, out var found) && found.Length > 0 ? found : $"힌트 {id}";
     }

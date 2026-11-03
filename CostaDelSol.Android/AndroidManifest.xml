@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      세이브를 내장 저장소/CostaDelSol(또는 사람이 고른 폴더)에 적어 윈도우판과 옮겨 쓰려고 받는다.
+      안드로이드 11 부터는 「모든 파일 접근」(MANAGE_EXTERNAL_STORAGE), 그 앞은 쓰기 권한이다.
+    -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <application android:allowBackup="true"
+                 android:icon="@mipmap/appicon"
+                 android:label="대항해시대3"
+                 android:requestLegacyExternalStorage="true"
+                 android:supportsRtl="true" />
+</manifest>

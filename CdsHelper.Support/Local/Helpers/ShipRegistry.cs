@@ -1,7 +1,9 @@
 ﻿using System.IO;
 using System.Text.Json;
+#if !ANDROID
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+#endif
 using CdsHelper.Support.Local.Models;
 
 namespace CdsHelper.Support.Local.Helpers;
@@ -327,6 +329,7 @@ public static class ShipRegistry
         Cities: design.Cities,
         Key: design.Id);
 
+#if !ANDROID   // 그림을 굽고 읽는 쪽은 WPF 다 — 안드로이드판은 제 것으로 읽는다(CostaDelSol.Android).
     /// <summary>
     /// 그림 한 장을 배의 그림 폴더에 <see cref="SpriteWidth"/> 크기로 맞춰 넣는다.
     /// </summary>
@@ -353,6 +356,8 @@ public static class ShipRegistry
         File.Move(temp, target, overwrite: true);
     }
 
+#endif
+
     /// <summary>넣어 둔 그림 한 장을 읽는다. 없으면 null.</summary>
     /// <summary>
     /// 붙박이 선체가 쓰는 그림 자리 — <c>asset/ship-g{벌}/ship_{쪽}.png</c> 다.
@@ -362,6 +367,7 @@ public static class ShipRegistry
         AppDomain.CurrentDomain.BaseDirectory, "asset", $"ship-g{Math.Max(0, skin)}",
         $"ship_{direction}.png");
 
+#if !ANDROID
     /// <summary>붙박이 선체의 그 쪽 그림. 없으면 null.</summary>
     public static BitmapSource? ReadBuiltinSprite(int skin, int direction) =>
         ReadFrom(BuiltinSpritePath(skin, direction));
@@ -448,4 +454,5 @@ public static class ShipRegistry
         fitted.Freeze();
         return fitted;
     }
+#endif
 }

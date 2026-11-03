@@ -269,6 +269,12 @@ public sealed class BgmPlayer : IDisposable
         };
     }
 
+    /// <summary>
+    /// 곡 번호 → 열 주소. 걸어 두면 게임 폴더·내려받은 곳을 보지 않고 이 주소를 연다(안드로이드판: APK 안의 곡).
+    /// PC 판은 비워 둔다.
+    /// </summary>
+    public static Func<int, string?>? Locate { get; set; }
+
     /// <summary>지금 곡이 끝나면 갈아탈 곡. 없으면 -1.</summary>
     private int _queued = -1;
 
@@ -340,12 +346,14 @@ public sealed class BgmPlayer : IDisposable
         string? custom = Settings.GameSettings.CustomBgmEnabled
             ? Settings.GameSettings.CustomBgmTrackPath(track)
             : null;
-        string path = custom != null && File.Exists(custom)
-            ? custom
-            : Path.Combine(_dir, "bgm", $"Track{track:D2}.mp3");
-        if (!File.Exists(path))
+        bool useCustom = custom != null && File.Exists(custom);
+        // 안드로이드판은 곡을 APK 안에 싣고 그 자리(asset 주소)를 일러 준다 — PC 판은 비워 둔다.
+        string? located = useCustom ? null : Locate?.Invoke(track);
+        string path = useCustom ? custom!
+            : located ?? Path.Combine(_dir, "bgm", $"Track{track:D2}.mp3");
+        if (located == null && !File.Exists(path))
             path = BgmAssetDownloader.Existing(track) ?? BgmAssetDownloader.CachePath(track);
-        if (!File.Exists(path))
+        if (located == null && !File.Exists(path))
         {
             LastError = $"{path} 없음";
             return;

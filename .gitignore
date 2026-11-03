@@ -79,3 +79,7 @@ asset/bgm/
 
 # WPF 임시 프로젝트 — 빌드 중에 생겼다 사라진다
 *_wpftmp.csproj
+
+# 안드로이드 APK 에 넣는 원본 자료 — 빌드 때 map-assets 릴리즈에서 받는다
+CostaDelSol.Android/Assets/game/
+CostaDelSol.Android/Assets/bgm/

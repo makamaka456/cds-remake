@@ -1,0 +1,413 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!--
+      안드로이드판 놀이 앱. 1단계는 세계지도만 띄운다.
+      cds-helper.sln 에는 넣지 않는다 — 안드로이드 워크로드가 없는 Windows PC 에서
+      sln 빌드(run-game · port-original 스킬)가 깨지기 때문이다. 따로 빌드한다:
+        dotnet publish CostaDelSol.Android/CostaDelSol.Android.csproj -c Release -f net10.0-android
+    -->
+    <PropertyGroup>
+        <TargetFramework>net10.0-android</TargetFramework>
+        <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+        <OutputType>Exe</OutputType>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <!-- 'CostaDelSol.Android' 로 하면 안에서 Android.* 이름을 가린다. -->
+        <RootNamespace>CostaDelSol.Droid</RootNamespace>
+        <AssemblyName>CostaDelSol</AssemblyName>
+        <ApplicationId>io.github.makamaka456.costadelsol</ApplicationId>
+        <ApplicationTitle>대항해시대3</ApplicationTitle>
+        <!-- CI 에서 -p:ApplicationVersion=실행번호 -p:ApplicationDisplayVersion=태그 로 덮는다. -->
+        <ApplicationVersion>1</ApplicationVersion>
+        <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
+        <!-- 릴리즈에 바로 올려 설치할 수 있게 aab 가 아니라 apk 로 낸다. 서명은 디버그 키다. -->
+        <AndroidPackageFormat>apk</AndroidPackageFormat>
+        <!--
+          엔진의 표는 System.Text.Json 리플렉션으로 읽는다. 릴리즈 빌드의 트리밍이 그 길을 끄지 않게 켜 두고,
+          우리 어셈블리는 손대지 않게 한다(partial: 프레임워크만 깎는다).
+        -->
+        <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+        <TrimMode>partial</TrimMode>
+        <!-- 배경음악은 APK 안에서 바로 튼다(파일로 꺼내지 않는다) — 눌러 담으면 그 자리에서 못 연다. -->
+        <AndroidStoreUncompressedFileExtensions>.mp3</AndroidStoreUncompressedFileExtensions>
+    </PropertyGroup>
+
+    <!--
+      PC 판 게임 엔진 가운데 WPF 를 안 쓰는 것들은 원본 파일을 그대로 끌어다 쓴다 — 고치면 양쪽에 같이 들어간다.
+      제독(Player) · 배 · 보급 · 항해 속도(Sailing) · 바람/해류(WindTable) · 지형(TerrainTable) · 돛 효율 ·
+      도시 표 · 하루치 바다 사건(SeaEvents) 이 여기 든다. WPF 가 섞인 자리는 원본에서 #if !ANDROID 로 가렸다.
+    -->
+    <ItemGroup>
+        <!-- devtools/ 는 개발 도구(시뮬레이터·검사 스크립트)라 APK 에 컴파일하지 않는다 -->
+        <Compile Remove="devtools\**" />
+        <None Remove="devtools\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Include="..\CdsHelper.Game\Engine\Beginner.cs" Link="Shared\CdsHelper.Game\Engine\Beginner.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\Figureheads.cs" Link="Shared\CdsHelper.Game\Engine\Sea\Figureheads.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\Sailing.cs" Link="Shared\CdsHelper.Game\Engine\Sea\Sailing.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\SeaEvents.cs" Link="Shared\CdsHelper.Game\Engine\Sea\SeaEvents.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\CityCultureEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\CityCultureEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\CityExeTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\CityExeTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\CityFounding.cs" Link="Shared\CdsHelper.Game\Engine\Table\CityFounding.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\CityNationEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\CityNationEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\FigureheadEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\FigureheadEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\GoodsTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\GoodsTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\ItemTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\ItemTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\NationEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\NationEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\NationTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\NationTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\SailTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\SailTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\TableCache.cs" Link="Shared\CdsHelper.Game\Engine\Table\TableCache.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\TerrainTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\TerrainTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\WindTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\WindTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Vitality.cs" Link="Shared\CdsHelper.Game\Engine\Town\Vitality.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\ExeTable.cs" Link="Shared\CdsHelper.Game\Local\Helpers\ExeTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\PeImage.cs" Link="Shared\CdsHelper.Game\Local\Helpers\PeImage.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\CdsAssetPath.cs" Link="Shared\CdsHelper.Support\Local\Helpers\CdsAssetPath.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\Ls12Reader.cs" Link="Shared\CdsHelper.Support\Local\Helpers\Ls12Reader.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\OceanPalette.cs" Link="Shared\CdsHelper.Support\Local\Helpers\OceanPalette.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\OceanTiles.cs" Link="Shared\CdsHelper.Support\Local\Helpers\OceanTiles.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\ShipRegistry.cs" Link="Shared\CdsHelper.Support\Local\Helpers\ShipRegistry.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Cannon.cs" Link="Shared\CdsHelper.Support\Local\Models\Cannon.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Contract.cs" Link="Shared\CdsHelper.Support\Local\Models\Contract.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\ExploredMap.cs" Link="Shared\CdsHelper.Support\Local\Models\ExploredMap.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Hull.cs" Link="Shared\CdsHelper.Support\Local\Models\Hull.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Job.cs" Link="Shared\CdsHelper.Support\Local\Models\Job.cs" />
+        <Compile Include="..\CdsHelper.Maze\MazeGame.cs" Link="Shared\CdsHelper.Maze\MazeGame.cs" />
+        <Compile Include="..\CdsHelper.Maze\MazePuzzle.cs" Link="Shared\CdsHelper.Maze\MazePuzzle.cs" />
+        <Compile Include="..\CdsHelper.Maze\MazePuzzleDialog.cs" Link="Shared\CdsHelper.Maze\MazePuzzleDialog.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Player.cs" Link="Shared\CdsHelper.Support\Local\Models\Player.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Ship.cs" Link="Shared\CdsHelper.Support\Local\Models\Ship.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\ShipNames.cs" Link="Shared\CdsHelper.Support\Local\Models\ShipNames.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Skill.cs" Link="Shared\CdsHelper.Support\Local\Models\Skill.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Supply.cs" Link="Shared\CdsHelper.Support\Local\Models\Supply.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\SeaPathfinder.cs" Link="Shared\CdsHelper.Game\Engine\Sea\SeaPathfinder.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\WorldMapRenderer.cs" Link="Shared\CdsHelper.Support\Local\Helpers\WorldMapRenderer.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\GameSave.cs" Link="Shared\CdsHelper.Game\Engine\GameSave.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\CityCoordinates.cs" Link="Shared\CdsHelper.Game\Engine\Sea\CityCoordinates.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\BgmPlayer.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BgmPlayer.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\BgmAssetDownloader.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BgmAssetDownloader.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Settings\GameSettings.cs" Link="Shared\CdsHelper.Game\Local\Settings\GameSettings.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Settings\CityOpenEffect.cs" Link="Shared\CdsHelper.Game\Local\Settings\CityOpenEffect.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\GameFont.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GameFont.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\GamePalette.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GamePalette.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\FrameArt.cs" Link="Shared\CdsHelper.Game\UI\Views\FrameArt.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\CharacterData.cs" Link="Shared\CdsHelper.Support\Local\Models\CharacterData.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\DiscoveryData.cs" Link="Shared\CdsHelper.Support\Local\Models\DiscoveryData.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\HintData.cs" Link="Shared\CdsHelper.Support\Local\Models\HintData.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\PlayerData.cs" Link="Shared\CdsHelper.Support\Local\Models\PlayerData.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Figurehead.cs" Link="Shared\CdsHelper.Support\Local\Models\Figurehead.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\FigureheadService.cs" Link="Shared\CdsHelper.Support\Local\Helpers\FigureheadService.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\ItemService.cs" Link="Shared\CdsHelper.Support\Local\Helpers\ItemService.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\SaveDataService.cs" Link="Shared\CdsHelper.Support\Local\Helpers\SaveDataService.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\SaveGameInfo.cs" Link="Shared\CdsHelper.Support\Local\Models\SaveGameInfo.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\Ls12Writer.cs" Link="Shared\CdsHelper.Support\Local\Helpers\Ls12Writer.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\PortraitImport.cs" Link="Shared\CdsHelper.Game\Local\Helpers\PortraitImport.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\SkillDisplayItem.cs" Link="Shared\CdsHelper.Support\Local\Models\SkillDisplayItem.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\FocusWatch.cs" Link="Shared\CdsHelper.Game\Local\Helpers\FocusWatch.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Discovery\ItemHintReading.cs" Link="Shared\CdsHelper.Game\Engine\Discovery\ItemHintReading.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\NameListDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\NameListDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\BattleLoot.cs" Link="Shared\CdsHelper.Game\Engine\Sea\BattleLoot.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\CoinPuzzle.cs" Link="Shared\CdsHelper.Support\Local\Models\CoinPuzzle.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\CombatArt.cs" Link="Shared\CdsHelper.Game\Local\Helpers\CombatArt.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\CubePuzzle.cs" Link="Shared\CdsHelper.Support\Local\Models\CubePuzzle.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\DuelMotions.cs" Link="Shared\CdsHelper.Game\Local\Helpers\DuelMotions.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\EncyclopediaArt.cs" Link="Shared\CdsHelper.Game\Local\Helpers\EncyclopediaArt.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\FishingGame.cs" Link="Shared\CdsHelper.Support\Local\Models\FishingGame.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GameList.cs" Link="Shared\CdsHelper.Game\UI\Views\GameList.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\GrailPuzzle.cs" Link="Shared\CdsHelper.Support\Local\Models\GrailPuzzle.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\SphinxQuiz.cs" Link="Shared\CdsHelper.Support\Local\Models\SphinxQuiz.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\TowerPuzzle.cs" Link="Shared\CdsHelper.Support\Local\Models\TowerPuzzle.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\TrampArt.cs" Link="Shared\CdsHelper.Game\Local\Helpers\TrampArt.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\HostileCityMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\HostileCityMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\WorldRouteScene.cs" Link="Shared\CdsHelper.Game\UI\Views\WorldRouteScene.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\SeaWeather.cs" Link="Shared\CdsHelper.Game\Engine\Sea\SeaWeather.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Land\Foraging.cs" Link="Shared\CdsHelper.Game\Engine\Land\Foraging.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Land\LandFieldFoes.cs" Link="Shared\CdsHelper.Game\Engine\Land\LandFieldFoes.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\ShoreRepair.cs" Link="Shared\CdsHelper.Game\Engine\Sea\ShoreRepair.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Land\LandEvents.cs" Link="Shared\CdsHelper.Game\Engine\Land\LandEvents.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\AnchorSprite.cs" Link="Shared\CdsHelper.Game\Local\Helpers\AnchorSprite.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\CloudSprites.cs" Link="Shared\CdsHelper.Game\Local\Helpers\CloudSprites.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\GameMapCoords.cs" Link="Shared\CdsHelper.Support\Local\Helpers\GameMapCoords.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\ShipSprites.cs" Link="Shared\CdsHelper.Game\Local\Helpers\ShipSprites.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\BookShelf.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BookShelf.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\LandFormationEdits.cs" Link="Shared\CdsHelper.Game\Local\Helpers\LandFormationEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Land\LandFormations.cs" Link="Shared\CdsHelper.Game\Engine\Land\LandFormations.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Land\LandUnits.cs" Link="Shared\CdsHelper.Game\Engine\Land\LandUnits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\RuseEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\RuseEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Land\LandRoster.cs" Link="Shared\CdsHelper.Game\Engine\Land\LandRoster.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Land\LandBattle.cs" Link="Shared\CdsHelper.Game\Engine\Land\LandBattle.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevArchive.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevArchive.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevBook.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevBook.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevCommand.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevCommand.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevFlow.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevFlow.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevForm.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevForm.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevPart.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevPart.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevRunner.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevRunner.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevTree.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevTree.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Discovery\StoryLog.cs" Link="Shared\CdsHelper.Game\Engine\Discovery\StoryLog.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\EnemyFleet.cs" Link="Shared\CdsHelper.Game\Engine\Sea\EnemyFleet.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\SeaBattle.cs" Link="Shared\CdsHelper.Game\Engine\Sea\SeaBattle.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\Encounter.cs" Link="Shared\CdsHelper.Game\Engine\Sea\Encounter.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PersonInfoMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\PersonInfoMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Menu\CityMenus.cs" Link="Shared\CdsHelper.Game\Engine\Menu\CityMenus.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ItemGain.cs" Link="Shared\CdsHelper.Game\UI\Views\ItemGain.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\PatronDisplay.cs" Link="Shared\CdsHelper.Support\Local\Models\PatronDisplay.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\DuelArt.cs" Link="Shared\CdsHelper.Game\Local\Helpers\DuelArt.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\FleetRaid.cs" Link="Shared\CdsHelper.Game\Engine\Sea\FleetRaid.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\GameInfo.cs" Link="Shared\CdsHelper.Game\Engine\GameInfo.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\MovieFiles.cs" Link="Shared\CdsHelper.Game\Local\Helpers\MovieFiles.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\PatronService.cs" Link="Shared\CdsHelper.Support\Local\Helpers\PatronService.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\PlayerNameTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\PlayerNameTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\PortraitAges.cs" Link="Shared\CdsHelper.Game\Local\Helpers\PortraitAges.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Menu\ITownScreen.cs" Link="Shared\CdsHelper.Game\Engine\Menu\ITownScreen.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Patron.cs" Link="Shared\CdsHelper.Support\Local\Models\Patron.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GameUi.cs" Link="Shared\CdsHelper.Game\UI\Views\GameUi.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GameButton.cs" Link="Shared\CdsHelper.Game\UI\Views\GameButton.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GameWindow.cs" Link="Shared\CdsHelper.Game\UI\Views\GameWindow.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\InfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\InfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\UiSprites.cs" Link="Shared\CdsHelper.Game\Local\Helpers\UiSprites.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LandDeployDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LandDeployDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LandBattleScene.cs" Link="Shared\CdsHelper.Game\UI\Views\LandBattleScene.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\LandArt.cs" Link="Shared\CdsHelper.Game\Local\Helpers\LandArt.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Land\LandFight.cs" Link="Shared\CdsHelper.Game\Engine\Land\LandFight.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LandSparDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LandSparDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LandFormationDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LandFormationDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\FleetInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\FleetInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\BelongingsDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\BelongingsDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\HintDetailDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\HintDetailDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MateRosterDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MateRosterDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PlayerInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PlayerInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PatronInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PatronInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ContractDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ContractDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CityInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CityInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\StorageDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\StorageDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\EncyclopediaDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\EncyclopediaDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\EncyclopediaPageDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\EncyclopediaPageDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ChronicleDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ChronicleDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GoodsInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\GoodsInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ShipInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ShipInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SkillLearnDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SkillLearnDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SkillSheetDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SkillSheetDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MapPointDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MapPointDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DiscoveryDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\DiscoveryDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GameOverDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\GameOverDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\TradePostDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\TradePostDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LootDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LootDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PrizeFleetMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\PrizeFleetMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\TowerPuzzleDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\TowerPuzzleDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SphinxQuizDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SphinxQuizDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GrailPuzzleDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\GrailPuzzleDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\FishingGameDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\FishingGameDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CubePuzzleDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CubePuzzleDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CubeArt.cs" Link="Shared\CdsHelper.Game\UI\Views\CubeArt.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CoinPuzzleDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CoinPuzzleDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PokerDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PokerDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DuelDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\DuelDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DuelStage.cs" Link="Shared\CdsHelper.Game\UI\Views\DuelStage.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DuelFoeDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\DuelFoeDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SeaCombatDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SeaCombatDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SeaBattleInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SeaBattleInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SeaShipInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SeaShipInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CharacterMakeDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CharacterMakeDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\AbilityMakeDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\AbilityMakeDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SkillMakeDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SkillMakeDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CharacterSheetDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CharacterSheetDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\EventStillPopup.cs" Link="Shared\CdsHelper.Game\UI\Views\EventStillPopup.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\EffectPopup.cs" Link="Shared\CdsHelper.Game\UI\Views\EffectPopup.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GateScene.cs" Link="Shared\CdsHelper.Game\UI\Views\GateScene.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PersonInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PersonInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\BuildingPhotoWindow.cs" Link="Shared\CdsHelper.Game\UI\Views\BuildingPhotoWindow.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ItemInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ItemInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MarketBuyDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MarketBuyDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MarketSellDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MarketSellDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\HullSelectDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\HullSelectDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ShipRepairDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ShipRepairDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ShipSellDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ShipSellDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DayPass.cs" Link="Shared\CdsHelper.Game\UI\Views\DayPass.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SupplyDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SupplyDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CargoDropDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CargoDropDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LibraryDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LibraryDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\OpenBookDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\OpenBookDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\AutoSailDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\AutoSailDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CrewShareDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CrewShareDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\FormationDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\FormationDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SeaChartDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SeaChartDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DiscoveryMapDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\DiscoveryMapDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DevDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\DevDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ModDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ModDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\BarmaidBookDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\BarmaidBookDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PersonMoveDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PersonMoveDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SettingsDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SettingsDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\RuseEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\RuseEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MoviePlayer.cs" Link="Shared\CdsHelper.Game\UI\Views\MoviePlayer.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DiscoveryClipPlayer.cs" Link="Shared\CdsHelper.Game\UI\Views\DiscoveryClipPlayer.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MiniMapView.cs" Link="Shared\CdsHelper.Game\UI\Views\MiniMapView.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\FleetLabelWindow.cs" Link="Shared\CdsHelper.Game\UI\Views\FleetLabelWindow.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SkillOverlayWindow.cs" Link="Shared\CdsHelper.Game\UI\Views\SkillOverlayWindow.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SkillBoardDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SkillBoardDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GameDataDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\GameDataDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\UiSpriteDump.cs" Link="Shared\CdsHelper.Game\UI\Views\UiSpriteDump.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PortraitBookDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PortraitBookDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CityCultureDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CityCultureDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\NationEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\NationEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\FigureheadEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\FigureheadEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CityCultureEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CityCultureEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DisevEditorDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\DisevEditorDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DisevFlowView.cs" Link="Shared\CdsHelper.Game\UI\Views\DisevFlowView.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\VoyagerEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\VoyagerEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\BuildingListDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\BuildingListDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PersonEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PersonEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\FortuneDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\FortuneDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MenuDesignerDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MenuDesignerDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\TavernHintEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\TavernHintEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DiscoveryEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\DiscoveryEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\BookEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\BookEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MotionMakerDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MotionMakerDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PortraitAddDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PortraitAddDialog.cs" />
+        <Compile Include="..\CdsHelper.Main\Local\ViewModels\ItemContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\ItemContentViewModel.cs" />
+        <Compile Include="..\CdsHelper.Main\Local\ViewModels\FigureheadContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\FigureheadContentViewModel.cs" />
+        <Compile Include="..\CdsHelper.Main\Local\ViewModels\PatronContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\PatronContentViewModel.cs" />
+        <Compile Include="..\CdsHelper.Main\Local\ViewModels\SphinxCalculatorContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\SphinxCalculatorContentViewModel.cs" />
+        <Compile Include="..\CdsHelper.Main\Local\ViewModels\DiscoveryStillContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\DiscoveryStillContentViewModel.cs" />
+        <Compile Include="..\CdsHelper.Main\UI\Views\WaveBankDialog.cs" Link="Shared\CdsHelper.Main\UI\Views\WaveBankDialog.cs" />
+        <Compile Include="..\CdsHelper.Main\UI\Views\MovieBankDialog.cs" Link="Shared\CdsHelper.Main\UI\Views\MovieBankDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\HarborMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\HarborMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ShipyardMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\ShipyardMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\TavernMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\TavernMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\HomeMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\HomeMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MarketMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\MarketMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LibraryMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\LibraryMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PatronMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\PatronMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\TrainingMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\TrainingMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\GameSystemMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\GameSystemMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CityInfoMenu.cs" Link="Shared\CdsHelper.Game\UI\Views\CityInfoMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Menu\TownMenu.cs" Link="Shared\CdsHelper.Game\Engine\Menu\TownMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Menu\CityCommandMenu.cs" Link="Shared\CdsHelper.Game\Engine\Menu\CityCommandMenu.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Models\Facility.cs" Link="Shared\CdsHelper.Game\Engine\Models\Facility.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Barmaids.cs" Link="Shared\CdsHelper.Game\Engine\Town\Barmaids.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\CrewHire.cs" Link="Shared\CdsHelper.Game\Engine\Town\CrewHire.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Duel.cs" Link="Shared\CdsHelper.Game\Engine\Town\Duel.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\FamilyVisit.cs" Link="Shared\CdsHelper.Game\Engine\Town\FamilyVisit.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Harbor.cs" Link="Shared\CdsHelper.Game\Engine\Town\Harbor.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Home.cs" Link="Shared\CdsHelper.Game\Engine\Town\Home.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Inspector.cs" Link="Shared\CdsHelper.Game\Engine\Town\Inspector.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\LentShips.cs" Link="Shared\CdsHelper.Game\Engine\Town\LentShips.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Library.cs" Link="Shared\CdsHelper.Game\Engine\Town\Library.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Mastery.cs" Link="Shared\CdsHelper.Game\Engine\Town\Mastery.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Oracle.cs" Link="Shared\CdsHelper.Game\Engine\Town\Oracle.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Palace.cs" Link="Shared\CdsHelper.Game\Engine\Town\Palace.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Persuasion.cs" Link="Shared\CdsHelper.Game\Engine\Town\Persuasion.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Poker.cs" Link="Shared\CdsHelper.Game\Engine\Town\Poker.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Shipyard.cs" Link="Shared\CdsHelper.Game\Engine\Town\Shipyard.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\ShipyardStock.cs" Link="Shared\CdsHelper.Game\Engine\Town\ShipyardStock.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Standoff.cs" Link="Shared\CdsHelper.Game\Engine\Town\Standoff.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\StrangerTalk.cs" Link="Shared\CdsHelper.Game\Engine\Town\StrangerTalk.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\TavernRumors.cs" Link="Shared\CdsHelper.Game\Engine\Town\TavernRumors.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\TownWork.cs" Link="Shared\CdsHelper.Game\Engine\Town\TownWork.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Inn\Lodging.cs" Link="Shared\CdsHelper.Game\Engine\Inn\Lodging.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Market\GoodsTrend.cs" Link="Shared\CdsHelper.Game\Engine\Market\GoodsTrend.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Market\Market.cs" Link="Shared\CdsHelper.Game\Engine\Market\Market.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Market\TradePost.cs" Link="Shared\CdsHelper.Game\Engine\Market\TradePost.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\AccData.cs" Link="Shared\CdsHelper.Game\Engine\AccData.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Settings\AppSettings.cs" Link="Shared\CdsHelper.Support\Local\Settings\AppSettings.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\BarmaidEdits.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BarmaidEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\BookEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\BookEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Market\CityState.cs" Link="Shared\CdsHelper.Game\Engine\Market\CityState.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\DiscoveryEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\DiscoveryEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevMinigame.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevMinigame.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\FortuneCodes.cs" Link="Shared\CdsHelper.Game\Local\Helpers\FortuneCodes.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\GameRandom.cs" Link="Shared\CdsHelper.Game\Engine\GameRandom.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\HintEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\HintEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\NameToken.cs" Link="Shared\CdsHelper.Game\Engine\Disev\NameToken.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\PersonFile.cs" Link="Shared\CdsHelper.Game\Local\Helpers\PersonFile.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\PortraitStore.cs" Link="Shared\CdsHelper.Support\Local\Helpers\PortraitStore.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Tavern.cs" Link="Shared\CdsHelper.Game\Engine\Town\Tavern.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Discovery\VoyagerEdits.cs" Link="Shared\CdsHelper.Game\Engine\Discovery\VoyagerEdits.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\WaveNotes.cs" Link="Shared\CdsHelper.Support\Local\Helpers\WaveNotes.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Game.cs" Link="Shared\CdsHelper.Game\Engine\Game.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\BarmaidTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\BarmaidTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\BookTable.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BookTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\BuildingPhoto.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BuildingPhoto.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\CityBuildingTable.cs" Link="Shared\CdsHelper.Game\Local\Helpers\CityBuildingTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Market\CityHistory.cs" Link="Shared\CdsHelper.Game\Engine\Market\CityHistory.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\CityPictures.cs" Link="Shared\CdsHelper.Game\Local\Helpers\CityPictures.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\CityTable.cs" Link="Shared\CdsHelper.Game\Local\Helpers\CityTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\DiscoveryClips.cs" Link="Shared\CdsHelper.Game\Local\Helpers\DiscoveryClips.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\DiscoveryDescriptions.cs" Link="Shared\CdsHelper.Game\Local\Helpers\DiscoveryDescriptions.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Discovery\DiscoveryLog.cs" Link="Shared\CdsHelper.Game\Engine\Discovery\DiscoveryLog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\DiscoveryStills.cs" Link="Shared\CdsHelper.Game\Local\Helpers\DiscoveryStills.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\DrinkTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\DrinkTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\MpEffect\EffectAnim.cs" Link="Shared\CdsHelper.Game\Engine\MpEffect\EffectAnim.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\EventAnimation.cs" Link="Shared\CdsHelper.Game\Local\Helpers\EventAnimation.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\FighterSprites.cs" Link="Shared\CdsHelper.Game\Local\Helpers\FighterSprites.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\HintTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\HintTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Discovery\HistoryVoyages.cs" Link="Shared\CdsHelper.Game\Engine\Discovery\HistoryVoyages.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\ItemArt.cs" Link="Shared\CdsHelper.Game\Local\Helpers\ItemArt.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\ItemDescriptions.cs" Link="Shared\CdsHelper.Game\Local\Helpers\ItemDescriptions.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Market\MarketRates.cs" Link="Shared\CdsHelper.Game\Engine\Market\MarketRates.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\OpenBookArt.cs" Link="Shared\CdsHelper.Game\Local\Helpers\OpenBookArt.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\PersonTemplate.cs" Link="Shared\CdsHelper.Game\Local\Helpers\PersonTemplate.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\PersonWorld.cs" Link="Shared\CdsHelper.Game\Engine\Table\PersonWorld.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\Portraits.cs" Link="Shared\CdsHelper.Game\Local\Helpers\Portraits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\RumorTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\RumorTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\SoundBank.cs" Link="Shared\CdsHelper.Game\Local\Helpers\SoundBank.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\SpeakerFaceTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\SpeakerFaceTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\SponsorTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\SponsorTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\TavernGuests.cs" Link="Shared\CdsHelper.Game\Local\Helpers\TavernGuests.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\TavernRoster.cs" Link="Shared\CdsHelper.Game\Local\Helpers\TavernRoster.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\TownFolkTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\TownFolkTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\TradeTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\TradeTable.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\WorldCells.cs" Link="Shared\CdsHelper.Game\Local\Helpers\WorldCells.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\City.cs" Link="Shared\CdsHelper.Support\Local\Models\City.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\DiscoveryTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\DiscoveryTable.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Models\Item.cs" Link="Shared\CdsHelper.Support\Local\Models\Item.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\PersonTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\PersonTable.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\WaveBank.cs" Link="Shared\CdsHelper.Support\Local\Helpers\WaveBank.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\AccReplay.cs" Link="Shared\CdsHelper.Game\Engine\AccReplay.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevScript.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevScript.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\SpeakerNameTable.cs" Link="Shared\CdsHelper.Game\Engine\Table\SpeakerNameTable.cs" />
+    </ItemGroup>
+
+    <!-- 표(exe-tables) · 배 그림 · 도시 이름은 APK 의 Assets 로 넣는다. 처음 켤 때 앱 폴더로 꺼내 쓴다. -->
+    <ItemGroup>
+        <AndroidAsset Include="..\exe-tables\*.json" Link="Assets\exe-tables\%(Filename)%(Extension)" />
+        <AndroidAsset Include="..\asset\ship-g0\*.png" Link="Assets\ship-g0\%(Filename)%(Extension)" />
+        <AndroidAsset Include="..\asset\ship-g1\*.png" Link="Assets\ship-g1\%(Filename)%(Extension)" />
+        <AndroidAsset Include="..\asset\ship-g2\*.png" Link="Assets\ship-g2\%(Filename)%(Extension)" />
+        <AndroidAsset Include="..\asset\ship-g3\*.png" Link="Assets\ship-g3\%(Filename)%(Extension)" />
+        <AndroidAsset Include="..\CdsHelper\cities.json" Link="Assets\cities.json" />
+        <!-- PC 판이 실행 파일 옆에서 읽는 자료(후원자 · 힌트 · 아이템 · 책 · 발견물 · 인물표 · 사건 · 이야기 대본) — 앱 폴더로 꺼낸다 -->
+        <AndroidAsset Include="..\CdsHelper\*.json" Link="Assets\root\%(Filename)%(Extension)" />
+        <!-- 원본 화면 조각 — 메뉴 띠와 타이틀 바탕 -->
+        <AndroidAsset Include="..\asset\ui\band\*.png" Link="Assets\ui\band\%(Filename)%(Extension)" />
+        <AndroidAsset Include="..\asset\title\*.png" Link="Assets\title\%(Filename)%(Extension)" />
+        <!-- 원본 글꼴 — 한글 ALL_FONT.16P(16x14) · 반각 ANKFONT.DAT(8x16) -->
+        <AndroidAsset Include="..\asset\ALL_FONT.16P" Link="Assets\font\ALL_FONT.16P" />
+        <AndroidAsset Include="..\asset\ANKFONT.DAT" Link="Assets\font\ANKFONT.DAT" />
+    </ItemGroup>
+
+    <!--
+      원본 자료 — map-assets 릴리즈의 CDSX 스무 개(world · OCEAN · CITYCG · DISCOVER · …)를 Assets/game 에,
+      배경음악 28곡을 Assets/bgm 에 둔다. 저장소에는 넣지 않고(.gitignore) 빌드 전에 받는다(워크플로).
+      로컬에서 빌드하려면 같은 자리에 받아 두면 된다.
+    -->
+    <ItemGroup>
+        <!-- asset 폴더 전부(효과음 · 아이템 · 해전 · 일기토 · 포커 · 미니게임 · 영상 …). 배경음악은 따로 싣는다. -->
+        <AndroidAsset Include="..\asset\**\*" Exclude="..\asset\bgm\**;..\asset\**\*.md"
+                      Link="Assets\asset\%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+
+    <!-- PC 판 화면 코드(WPF)와 이름이 겹치는 것(Button · Application · Orientation …)이 많아 Android.App · Android.Widget 은 파일마다 따로 부른다 -->
+    <ItemGroup>
+        <Using Remove="Android.App" />
+        <Using Remove="Android.Widget" />
+    </ItemGroup>
+
+    <!-- 도구 앱 화면들의 뷰모델(PC 판 그대로)이 쓴다 -->
+    <ItemGroup>
+        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    </ItemGroup>
+
+</Project>
