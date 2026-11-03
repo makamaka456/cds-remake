@@ -131,6 +131,18 @@ namespace System.Windows.Controls
         private double? _grabY;
         private double _grab0;
         private bool _dragged;
+        // 옆으로 밀기 — 칸 폭 합이 표보다 넓으면(나라 · 인물 · 책 편집 따위) 손가락으로 옆으로 민다.
+        private double _hscroll, _grabX, _grabH;
+        private int _axis;   // 0 아직 모름, 1 위아래, 2 옆
+
+        /// <summary>진단 — 지금 굴린 양(위아래 · 옆).</summary>
+        internal (double Y, double X) Scrolled => (_scroll, _hscroll);
+
+        private double MostSideways()
+        {
+            double room = ActualWidth - BorderThickness.W;
+            return Math.Max(0, Widths(room).Sum() - room);
+        }
 
         internal override IEnumerable<UIElement> VisualChildren => [];
 
@@ -194,7 +206,7 @@ namespace System.Windows.Controls
                     Brush? back = i == SelectedIndex ? SelectedBrush : i % 2 == 1 ? AlternatingRowBackground ?? RowBackground : RowBackground;
                     Ink.Rect(c, back, t.Left, y, room, Line);
                     text.Color = i == SelectedIndex ? Android.Graphics.Color.White : Ink.ColorOf(Foreground);
-                    double x = t.Left;
+                    double x = t.Left - _hscroll;
                     for (int col = 0; col < Columns.Count; col++)
                     {
                         c.Save();
@@ -215,7 +227,7 @@ namespace System.Windows.Controls
                 var headBack = new SolidColorBrush(Color.FromRgb(0xEE, 0xEE, 0xEE));
                 Ink.Rect(c, headBack, t.Left, t.Top, room, Head);
                 text.Color = Android.Graphics.Color.Black;
-                double x = t.Left;
+                double x = t.Left - _hscroll;
                 for (int col = 0; col < Columns.Count; col++)
                 {
                     c.DrawText(Columns[col].Header?.ToString() ?? "", (float)(x + 3), Base(t.Top, Head), text);
@@ -244,18 +256,31 @@ namespace System.Windows.Controls
             {
                 case "MouseLeftButtonDown":
                     _grabY = local.Y; _grab0 = _scroll; _dragged = false;
+                    _grabX = local.X; _grabH = _hscroll; _axis = 0;
                     CaptureMouse();
                     e.Handled = true;
                     break;
                 case "MouseMove" when _grabY is { } g0:
-                    if (Math.Abs(local.Y - g0) > 6)
+                {
+                    double dy = local.Y - g0, dx = local.X - _grabX;
+                    double side = MostSideways();
+                    if (_axis == 0 && Math.Max(Math.Abs(dx), Math.Abs(dy)) > 6)
+                        _axis = Math.Abs(dx) > Math.Abs(dy) && side > 0 ? 2 : 1;
+                    if (_axis == 1)
                     {
                         _dragged = true;
                         double most = Math.Max(0, Head + Line * AllItems.Count() - (ActualHeight - BorderThickness.H));
-                        _scroll = Math.Clamp(_grab0 - (local.Y - g0), 0, most);
+                        _scroll = Math.Clamp(_grab0 - dy, 0, most);
+                        WpfHost.Touch();
+                    }
+                    else if (_axis == 2)
+                    {
+                        _dragged = true;
+                        _hscroll = Math.Clamp(_grabH - dx, 0, side);
                         WpfHost.Touch();
                     }
                     break;
+                }
                 case "MouseLeftButtonUp":
                     if (_grabY == null) break;
                     _grabY = null;
@@ -276,7 +301,7 @@ namespace System.Windows.Controls
         {
             if (IsReadOnly) return;
             var widths = Widths(ActualWidth - BorderThickness.W);
-            double at = BorderThickness.Left;
+            double at = BorderThickness.Left - _hscroll;
             for (int col = 0; col < Columns.Count; col++)
             {
                 if (x >= at && x < at + widths[col])

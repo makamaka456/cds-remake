@@ -143,6 +143,21 @@ namespace System.Windows
                 Rendering?.Invoke(null, new RenderingEventArgs { RenderingTime = TimeSpan.FromMilliseconds(now) });
             }
             if (_dirty) LayoutNow();
+            else if (_renderPending && now - _lastRender >= 16) RenderAll();
+        }
+
+        /// <summary>자리는 잡았는데 아직 안 그린 것이 있는지 — 다음 틱(화면 한 장)에 한 번 그린다.</summary>
+        private static bool _renderPending;
+        private static long _lastRender;
+
+        private static void RenderAll()
+        {
+            _renderPending = false;
+            long began = Now;
+            foreach (var w in Shown.ToList()) Render(w);
+            _lastRender = Now;
+            StatRenders++;
+            StatRenderMs += _lastRender - began;
         }
 
         /// <summary>다음 시계가 울릴 때까지 남은 ms(없으면 16).</summary>
@@ -162,7 +177,11 @@ namespace System.Windows
         /// <summary>진단 — 자리 잡기 · 그리기 횟수와 걸린 시간(ms). 시험기가 렉을 잰다.</summary>
         internal static long StatLayouts, StatRounds, StatMaxedOut, StatLayoutMs, StatRenders, StatRenderMs;
 
-        internal static void LayoutNow()
+        /// <param name="render">
+        /// 거짓이면 자리만 잡고 그리기는 미룬다 — 손가락이 움직일 때마다(1초에 수십 번) 창 전체를 그리면 그림 많은 창
+        /// (초상화 도감 따위)이 밀렸다. 미룬 것은 다음 틱에 한 번 그린다.
+        /// </param>
+        internal static void LayoutNow(bool render = true)
         {
             StatLayouts++;
             long began = Now;
@@ -203,11 +222,9 @@ namespace System.Windows
             _inLayout = false;
             StatRounds += rounds;
             if (_dirty) StatMaxedOut++;   // 넷을 돌고도 여전히 바뀜 — 자리 잡기가 스스로 「바뀜」을 다시 거는 것
-            long laid = Now;
-            StatLayoutMs += laid - began;
-            foreach (var w in Shown.ToList()) Render(w);
-            StatRenders++;
-            StatRenderMs += Now - laid;
+            StatLayoutMs += Now - began;
+            if (render) RenderAll();
+            else _renderPending = true;
         }
 
         private static Size Fit(Window w)
@@ -353,7 +370,7 @@ namespace System.Windows
         internal static void Pointer(Window w, Touching kind, Point p, int wheel = 0)
         {
             if (!w.IsShown) return;
-            if (_dirty) LayoutNow();
+            if (_dirty) LayoutNow(render: false);   // 손 · 글쇠를 받을 때는 자리만 잡고, 그리기는 다음 틱에 한 번
             LastPoint = p;
             var target = Input.Mouse.Captured as UIElement ?? HitTest(w, p) ?? w;
             UpdateHover(w, p);
@@ -412,7 +429,7 @@ namespace System.Windows
                     break;
                 }
             }
-            if (_dirty) LayoutNow();
+            if (_dirty) LayoutNow(render: false);   // 손 · 글쇠를 받을 때는 자리만 잡고, 그리기는 다음 틱에 한 번
         }
 
         private static MouseButtonEventArgs Args(Window w, Point p, MouseButton b, MouseButtonState s, int clicks, UIElement target) =>
@@ -461,7 +478,7 @@ namespace System.Windows
         internal static bool Key(Window w, Key key)
         {
             if (!w.IsShown) return false;
-            if (_dirty) LayoutNow();
+            if (_dirty) LayoutNow(render: false);   // 손 · 글쇠를 받을 때는 자리만 잡고, 그리기는 다음 틱에 한 번
             var focused = Keyboard.FocusedElement as UIElement;
             if (focused == null || !ReferenceEquals(focused.Root(), w)) focused = w;
             var route = Route(focused);
@@ -475,7 +492,7 @@ namespace System.Windows
             var up = new KeyEventArgs(key) { OriginalSource = focused, Source = focused, IsDown = false };
             Tunnel(route, up, "PreviewKeyUp");
             Bubble(route, up, "KeyUp");
-            if (_dirty) LayoutNow();
+            if (_dirty) LayoutNow(render: false);   // 손 · 글쇠를 받을 때는 자리만 잡고, 그리기는 다음 틱에 한 번
             return handled;
         }
 
@@ -695,13 +712,20 @@ namespace System.Windows
                     }), null, LongPressMs, System.Threading.Timeout.Infinite);
                     break;
                 case Android.Views.MotionEventActions.Move:
-                    if (_longFired) break;
+                    if (_longFired)
+                    {
+                        // 길게 누른 뒤에도(오른쪽 딸깍은 이미 갔다) 손가락이 움직이면 끌기로 잇는다 — 대고 잠깐 멈췄다가
+                        // 밀면 목록 · 표가 안 굴러 「될 때도 안 될 때도」 있었다.
+                        if (Math.Abs(p.X - _downAt.X) < Slop && Math.Abs(p.Y - _downAt.Y) < Slop) break;
+                        _longFired = false;
+                        Press();
+                    }
                     if (_pending)
                     {
                         if (Math.Abs(p.X - _downAt.X) < Slop && Math.Abs(p.Y - _downAt.Y) < Slop) break;
                         Press();   // 끌기 시작 — 미뤄 둔 누름을 먼저 보낸다
                     }
-                    GameThread.Post(() => WpfHost.Pointer(_window, WpfHost.Touching.Move, p));
+                    PostMove(p);
                     break;
                 case Android.Views.MotionEventActions.Up:
                     _longTimer?.Dispose();
@@ -715,6 +739,17 @@ namespace System.Windows
                     GameThread.Post(() => WpfHost.Pointer(_window, WpfHost.Touching.Up, new Point(-9999, -9999)));
                     break;
             }
+        }
+
+        // 움직임 모으기 — 게임 줄이 아직 앞 움직임을 처리하지 못했으면 가장 새 자리만 남긴다(쌓여 밀리지 않게).
+        private Point _latestMove;
+        private volatile bool _movePosted;
+        private void PostMove(Point p)
+        {
+            _latestMove = p;
+            if (_movePosted) return;
+            _movePosted = true;
+            GameThread.Post(() => { _movePosted = false; WpfHost.Pointer(_window, WpfHost.Touching.Move, _latestMove); });
         }
 
         private const int LongPressMs = 500;

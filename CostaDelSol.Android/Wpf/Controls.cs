@@ -1108,13 +1108,18 @@ namespace System.Windows.Controls
     {
         public static readonly DependencyProperty VerticalScrollBarVisibilityProperty = DependencyProperty.RegisterAttached("VerticalScrollBarVisibility", typeof(ScrollBarVisibility), typeof(ScrollViewer));
         public static readonly DependencyProperty HorizontalScrollBarVisibilityProperty = DependencyProperty.RegisterAttached("HorizontalScrollBarVisibility", typeof(ScrollBarVisibility), typeof(ScrollViewer));
-        /// <summary>보이는 폭 — 가로로 밀지 않으므로 자기 폭이다.</summary>
-        public double ViewportWidth => ActualWidth;
+        /// <summary>보이는 폭.</summary>
+        public double ViewportWidth => _viewportW > 0 ? _viewportW : ActualWidth;
         private double _offset, _extent, _viewport;
+        // 가로 — 가로 스크롤을 켠 칸(HorizontalScrollBarVisibility 가 Disabled 가 아님)만 안을 넓게 재고 옆으로 민다.
+        private double _hoffset, _extentW, _viewportW;
+        public double ExtentWidth => _extentW;
+        public double ScrollableWidth => Math.Max(0, _extentW - _viewportW);
+        private bool Sideways => HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled;
         public ScrollBarVisibility VerticalScrollBarVisibility { get; set; } = ScrollBarVisibility.Visible;
         public ScrollBarVisibility HorizontalScrollBarVisibility { get; set; } = ScrollBarVisibility.Disabled;
         public double VerticalOffset => _offset;
-        public double HorizontalOffset => 0;
+        public double HorizontalOffset => _hoffset;
         public double ExtentHeight => _extent;
         public double ViewportHeight => _viewport;
         public double ScrollableHeight => Math.Max(0, _extent - _viewport);
@@ -1122,6 +1127,12 @@ namespace System.Windows.Controls
         public event ScrollChangedEventHandler? ScrollChanged;
 
         public ScrollViewer() { ClipToBounds = true; }
+
+        /// <summary>
+        /// 안의 것 사이 빈 곳을 눌러도 이 칸이 손을 받는다 — 안 그러면 그림 · 글 사이 빈칸에서 손가락으로 끌 때 굴지 않았다
+        /// (초상화 도감, 도시 · 문화권 · 왕국의 인물 칸에서 「될 때도 안 될 때도」).
+        /// </summary>
+        internal override bool HitSelf(Point p) => ScrollableHeight > 0 || ScrollableWidth > 0;
 
         public void ScrollToVerticalOffset(double at)
         {
@@ -1133,7 +1144,7 @@ namespace System.Windows.Controls
         /// <summary>그 요소가 보이는 자리까지 굴린다(BringIntoView).</summary>
         internal void Reveal(UIElement e)
         {
-            WpfHost.LayoutNow();
+            WpfHost.LayoutNow(render: false);
             double top = e.ToWindow(new Point(0, 0), false).Y - ToWindow(new Point(0, 0), false).Y + _offset;
             double bottom = top + e.RenderSize.Height;
             if (top < _offset) ScrollToVerticalOffset(top);
@@ -1147,16 +1158,23 @@ namespace System.Windows.Controls
         public void LineDown() => ScrollToVerticalOffset(_offset + 16);
         public void PageUp() => ScrollToVerticalOffset(_offset - _viewport);
         public void PageDown() => ScrollToVerticalOffset(_offset + _viewport);
-        public void ScrollToHorizontalOffset(double at) { }
+        public void ScrollToHorizontalOffset(double at)
+        {
+            double was = _hoffset;
+            _hoffset = Math.Clamp(at, 0, ScrollableWidth);
+            if (_hoffset != was) { WpfHost.Touch(); WpfHost.Later(() => ScrollChanged?.Invoke(this, new ScrollChangedEventArgs())); }
+        }
+        public void ScrollToLeftEnd() => ScrollToHorizontalOffset(0);
+        public void ScrollToRightEnd() => ScrollToHorizontalOffset(double.MaxValue);
 
         private UIElement? Inner => VisualChildren.FirstOrDefault();
 
         protected override Size MeasureOverride(Size available)
         {
             if (Inner is not { } child) return new Size(0, 0);
-            child.Measure(new Size(available.Width, double.PositiveInfinity));
+            child.Measure(new Size(Sideways ? double.PositiveInfinity : available.Width, double.PositiveInfinity));
             var d = child.DesiredSize;
-            return new Size(d.Width, Math.Min(d.Height, available.Height));
+            return new Size(Math.Min(d.Width, available.Width), Math.Min(d.Height, available.Height));
         }
 
         protected override Size ArrangeOverride(Size final)
@@ -1166,13 +1184,19 @@ namespace System.Windows.Controls
             _extent = child.DesiredSize.Height;
             _viewport = final.Height;
             _offset = Math.Clamp(_offset, 0, ScrollableHeight);
-            child.Arrange(new Rect(0, -_offset, final.Width, Math.Max(final.Height, _extent)));
+            _extentW = Sideways ? Math.Max(final.Width, child.DesiredSize.Width) : final.Width;
+            _viewportW = final.Width;
+            _hoffset = Math.Clamp(_hoffset, 0, ScrollableWidth);
+            child.Arrange(new Rect(-_hoffset, -_offset, _extentW, Math.Max(final.Height, _extent)));
             if (was != _extent + _viewport * 7919) WpfHost.Later(() => ScrollChanged?.Invoke(this, new ScrollChangedEventArgs()));
             return final;
         }
 
         private double? _grabY;
-        private double _grabOffset;
+        private double _grabX;
+        private double _grabOffset, _grabH;
+        /// <summary>끄는 방향 — 0 아직 모름, 1 위아래, 2 옆. 처음 크게 움직인 쪽으로 정해 한 번 끄는 동안 바꾸지 않는다.</summary>
+        private int _axis;
 
         internal override void OnRaised(string name, RoutedEventArgs e)
         {
@@ -1182,12 +1206,16 @@ namespace System.Windows.Controls
                 e.Handled = true;
             }
             // 손가락으로 끌어 굴린다(안드로이드) — 안의 것이 누름을 안 먹었을 때만.
-            else if (name == "PreviewMouseLeftButtonDown" && e is System.Windows.Input.MouseEventArgs d && ScrollableHeight > 0)
-            { _grabY = d.WindowPoint.Y; _grabOffset = _offset; }
+            else if (name == "PreviewMouseLeftButtonDown" && e is System.Windows.Input.MouseEventArgs d && (ScrollableHeight > 0 || ScrollableWidth > 0))
+            { _grabY = d.WindowPoint.Y; _grabX = d.WindowPoint.X; _grabOffset = _offset; _grabH = _hoffset; _axis = 0; }
             else if (name == "PreviewMouseMove" && e is System.Windows.Input.MouseEventArgs m && _grabY is { } y0
                      && System.Windows.Input.Mouse.LeftButton == System.Windows.Input.MouseButtonState.Pressed)
             {
-                if (Math.Abs(m.WindowPoint.Y - y0) > 6) ScrollToVerticalOffset(_grabOffset - (m.WindowPoint.Y - y0));
+                double dy = m.WindowPoint.Y - y0, dx = m.WindowPoint.X - _grabX;
+                if (_axis == 0 && Math.Max(Math.Abs(dx), Math.Abs(dy)) > 6)
+                    _axis = Math.Abs(dx) > Math.Abs(dy) && ScrollableWidth > 0 ? 2 : ScrollableHeight > 0 ? 1 : 2;
+                if (_axis == 1) ScrollToVerticalOffset(_grabOffset - dy);
+                else if (_axis == 2) ScrollToHorizontalOffset(_grabH - dx);
             }
             else if (name == "PreviewMouseLeftButtonUp") _grabY = null;
         }
@@ -1215,11 +1243,24 @@ namespace System.Windows.Controls
     public class ItemsControl : Control
     {
         private readonly StackPanel _stack = new();
+        /// <summary>목록 상자(ListBox)는 WPF 처럼 제 안에 스크롤 칸을 둔다 — 줄이 칸보다 많으면 손가락으로 굴린다.</summary>
+        private ScrollViewer? _scroller;
         protected ItemsControl()
         {
             Items = new ItemCollection { Changed = Rebuild };
             Adopt(_stack);
         }
+
+        /// <summary>줄 판을 스크롤 칸에 담는다(ListBox · ListView 따위가 생성자에서 부른다).</summary>
+        protected void ScrollsItself()
+        {
+            if (_scroller != null) return;
+            _scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            _scroller.Content = _stack;
+            Adopt(_scroller);
+        }
+
+        private UIElement Body => _scroller ?? (UIElement)_stack;
         public ItemCollection Items { get; }
         private IEnumerable? _source;
         public IEnumerable? ItemsSource { get => _source; set { _source = value; Rebuild(); } }
@@ -1262,19 +1303,21 @@ namespace System.Windows.Controls
             }
         }
 
-        internal override IEnumerable<UIElement> VisualChildren => [_stack];
+        internal override IEnumerable<UIElement> VisualChildren => [Body];
 
         protected override Size MeasureOverride(Size available)
         {
             var t = BorderThickness; var p = Padding;
-            _stack.Measure(new Size(Math.Max(0, available.Width - t.W - p.W), double.PositiveInfinity));
-            return new Size(_stack.DesiredSize.Width + t.W + p.W, Math.Min(available.Height, _stack.DesiredSize.Height + t.H + p.H));
+            double h = _scroller != null ? Math.Max(0, available.Height - t.H - p.H) : double.PositiveInfinity;
+            Body.Measure(new Size(Math.Max(0, available.Width - t.W - p.W), h));
+            return new Size(Body.DesiredSize.Width + t.W + p.W, Math.Min(available.Height, Body.DesiredSize.Height + t.H + p.H));
         }
 
         protected override Size ArrangeOverride(Size final)
         {
             var t = BorderThickness; var p = Padding;
-            _stack.Arrange(new Rect(t.Left + p.Left, t.Top + p.Top, Math.Max(0, final.Width - t.W - p.W), _stack.DesiredSize.Height));
+            double h = _scroller != null ? Math.Max(0, final.Height - t.H - p.H) : _stack.DesiredSize.Height;
+            Body.Arrange(new Rect(t.Left + p.Left, t.Top + p.Top, Math.Max(0, final.Width - t.W - p.W), h));
             return final;
         }
     }
@@ -1286,6 +1329,7 @@ namespace System.Windows.Controls
 
     public class ListBox : Primitives.Selector
     {
+        public ListBox() { ScrollsItself(); }
         public SelectionMode SelectionMode { get; set; }
         public void ScrollIntoView(object item)
         {

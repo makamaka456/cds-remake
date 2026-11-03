@@ -198,6 +198,80 @@ if (Environment.GetEnvironmentVariable("MODE") == "qa-long")
     Log.W($"[긴 항해 끝] 입항 {ports} · 오류 {errs} · {clock.Elapsed.TotalMinutes:F1}분 · {State()} · 발견 {player().Discoveries.Count} · 억지로 닫음 {string.Join(",", Drive.Stuck)}");
     return;
 }
+if (Environment.GetEnvironmentVariable("MODE") == "edits")
+{
+    // 도구에서 고친 것이 게임에 드는지 — 나라 이름을 고쳐 보고, 게임 표에서 다시 읽고, 적힌 파일을 본다.
+    var g = map.Game;
+    string before = g.Nations?.Find(0)?.Name ?? "?";
+    CdsHelper.Game.Local.Helpers.NationEdits.Set(0, "시험왕국", null, null);
+    string after = g.Nations?.Find(0)?.Name ?? "?";
+    string file = CdsHelper.Game.Local.Helpers.TableCache.PathFor("나라-고친것");
+    Log.W($"[고친 것] 나라 0: 고치기 전 {before} → 고친 뒤 게임 표 {after} · 적힌 파일 {file} 있음={File.Exists(file)}");
+    CdsHelper.Game.Local.Helpers.NationEdits.Reset(0);
+    Log.W($"[되돌림] 나라 0: {g.Nations?.Find(0)?.Name}");
+    return;
+}
+if (Environment.GetEnvironmentVariable("MODE") == "toolinfo")
+{
+    // 도구 창의 스크롤 · 목록 · 표 부품과 크기를 적는다(손가락 스크롤 문제 찾기).
+    Leave();
+    Drive.Dir = Environment.GetEnvironmentVariable("SHOTS") ?? ".";
+    Drive.Install();
+    var pick = (Environment.GetEnvironmentVariable("ONLY") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToHashSet();
+    void Dump(System.Windows.UIElement e, int depth, System.Windows.UIElement root)
+    {
+        string kind = e.GetType().Name;
+        if (e is System.Windows.Controls.ScrollViewer or System.Windows.Controls.ListBox or System.Windows.Controls.DataGrid or System.Windows.Controls.ItemsControl
+            || (e is System.Windows.Controls.Panel pnl && pnl.Children.Count > 15))
+        {
+            var at = e.ToWindow(new System.Windows.Point(0, 0), false);
+            string extra = e switch
+            {
+                System.Windows.Controls.ScrollViewer sv => $" 내용높이 {sv.ExtentHeight:F0} 보임 {sv.ViewportHeight:F0} 굴림가능 {sv.ScrollableHeight:F0} 가로={sv.HorizontalScrollBarVisibility}",
+                System.Windows.Controls.ItemsControl ic => $" 줄 {ic.AllItems.Count()} 원하는높이 {ic.DesiredSize.Height:F0}",
+                System.Windows.Controls.Panel pn => $" 아이 {pn.Children.Count} 원하는 {pn.DesiredSize.Width:F0}x{pn.DesiredSize.Height:F0}",
+                _ => "",
+            };
+            Log.W($"    {new string(' ', depth)}{kind} 자리 {at.X:F0},{at.Y:F0} 크기 {e.RenderSize.Width:F0}x{e.RenderSize.Height:F0}{extra}");
+        }
+        foreach (var c in e.VisualChildren) Dump(c, depth + 1, root);
+    }
+    for (int i = 0; i < WorldMapWindow.Tools.Length; i++)
+    {
+        if (pick.Count > 0 && !pick.Contains(i)) continue;
+        string name = WorldMapWindow.Tools[i].Name;
+        Drive.Steps.Clear();
+        Drive.Add("부품 적기", w =>
+        {
+            System.Windows.WpfHost.LayoutNow();
+            Log.W($"--- {i} {name}: 창 {w.ActualWidth:F0}x{w.ActualHeight:F0}");
+            Dump(w, 0, w);
+            // 끌어 보기 — 굴릴 것마다 가운데에서 위로 200 · 왼쪽으로 200 끈다.
+            var targets = new List<System.Windows.UIElement>();
+            void Find(System.Windows.UIElement e) { if (e is System.Windows.Controls.ScrollViewer or System.Windows.Controls.DataGrid) targets.Add(e); foreach (var c in e.VisualChildren) Find(c); }
+            Find(w);
+            foreach (var t in targets)
+            {
+                var o = t.ToWindow(new System.Windows.Point(0, 0), false);
+                double cx = o.X + t.RenderSize.Width / 2, cy = o.Y + t.RenderSize.Height / 2;
+                string Now() => t switch
+                {
+                    System.Windows.Controls.ScrollViewer sv => $"위아래 {sv.VerticalOffset:F0} 옆 {sv.HorizontalOffset:F0} (최대 {sv.ScrollableHeight:F0}/{sv.ScrollableWidth:F0})",
+                    System.Windows.Controls.DataGrid dg => $"위아래 {dg.Scrolled.Y:F0} 옆 {dg.Scrolled.X:F0}",
+                    _ => "",
+                };
+                Drive.Drag(w, cx, cy + 100, cx, cy - 100); GameThread.Drain(); string v = Now();
+                Drive.Drag(w, cx + 100, cy, cx - 100, cy); GameThread.Drain(); string h = Now();
+                Log.W($"    끌기 {t.GetType().Name}({t.VisualParent?.GetType().Name}) 자리 {o.X:F0},{o.Y:F0}: 위로 끈 뒤 [{v}] · 왼쪽으로 끈 뒤 [{h}]");
+            }
+            Drive.Shot(w, $"info-{i:D2}");
+            w.Close();
+        });
+        try { map.OpenTool(i); } catch (Exception ex) { Log.W($"  !! {name}: {ex.Message}"); }
+        GameThread.Drain();
+    }
+    return;
+}
 if (Environment.GetEnvironmentVariable("MODE") == "tools")
 {
     // 도구 창마다: 띄우고 → 찍고 → 「뒤로/취소」(창 판의 Cancel)를 눌러 닫히는지 본다.
@@ -249,6 +323,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "lag")
         Drive.Steps.Clear();   // 앞서 걸어 둔 걸음(책 읽기 따위)이 이 창에 먹히지 않게
         Drive.Add("1초 가만히", w => { Stat("열기"); for (int i = 0; i < 60; i++) { System.Windows.WpfHost.Tick(); Thread.Sleep(16); } Stat("가만히 1초"); });
         Drive.Add("손가락 끌기 30번", w => { for (int i = 0; i < 30; i++) { System.Windows.WpfHost.Pointer(w, System.Windows.WpfHost.Touching.Move, new System.Windows.Point(100 + i * 5, 200)); System.Windows.WpfHost.Tick(); } Stat("끌기 30"); });
+        Drive.Add("굴리기 10번", w => { Stat("-"); for (int i = 0; i < 10; i++) { Drive.Drag(w, 400, 400, 400, 300); System.Windows.WpfHost.Tick(); } Stat("굴리기 10"); });
         Drive.Add("찍기", w =>
         {
             Drive.Shot(w, name);
@@ -265,6 +340,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "lag")
     if (only == null || only.Contains("모드")) Measure("모드", map.ShowModDialog);
     if (only == null || only.Contains("개발")) Measure("개발", map.ShowDevDialog);
     if (only == null || only.Contains("설정")) Measure("설정", map.ShowSettingsDialog);
+    if (only == null || only.Contains("초상화")) Measure("초상화", () => map.OpenTool(1));
     return;
 }
 if (Environment.GetEnvironmentVariable("MODE") == "gallery")

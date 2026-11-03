@@ -486,7 +486,7 @@ namespace System.Windows
         public void InvalidateVisual() => WpfHost.Touch();
         public void InvalidateMeasure() => WpfHost.Touch();
         public void InvalidateArrange() => WpfHost.Touch();
-        public void UpdateLayout() => WpfHost.LayoutNow();
+        public void UpdateLayout() => WpfHost.LayoutNow(render: false);
         public void BeginAnimation(DependencyProperty p, Media.Animation.AnimationTimeline? a) => Media.Animation.Animator.Begin(this, p, a);
 
         public void Measure(Size available) => Desired = MeasureCore(available);
@@ -731,8 +731,9 @@ namespace System.Windows
         /// <summary>둘러싼 굴림 판(ScrollViewer)을 굴려 이 요소가 보이게 한다.</summary>
         public void BringIntoView()
         {
+            // 굴릴 수 있는 가장 가까운 스크롤 칸에서 보이게 한다(목록 상자가 바깥 스크롤 칸 안에 있으면 바깥이 굴린다).
             for (var e = VisualParent; e != null; e = e.VisualParent)
-                if (e is System.Windows.Controls.ScrollViewer sv) { sv.Reveal(this); return; }
+                if (e is System.Windows.Controls.ScrollViewer sv && sv.ScrollableHeight > 0) { sv.Reveal(this); return; }
         }
         public void SetResourceReference(DependencyProperty p, object key) { }
         public object? FindResource(object key) => null;
