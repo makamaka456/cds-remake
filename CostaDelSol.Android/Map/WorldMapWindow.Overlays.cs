@@ -47,6 +47,18 @@ public sealed partial class WorldMapWindow
     private Popup? _coordBox, _peopleBox, _vitalBox, _miniBox;
     private MiniMapView? _miniView;
     private DateTime? _miniQuietSince;
+
+    /// <summary>배가 미니맵 자리에 들어와 있는지 — 그리기 판 실픽셀을 덧그림 판 좌표로 옮겨 견준다(PC 판 ShipUnderMiniMap).</summary>
+    private bool ShipUnderMiniMap()
+    {
+        var (pixelW, pixelH) = _host.SurfaceSize;
+        if (_miniBox == null || pixelW <= 0 || pixelH <= 0 || _host.ShipOnSurface is not { } p) return false;
+        const double half = 24;
+        double x = p.X * MapBoardWidth / pixelW, y = MapTop + p.Y * MapHeight / pixelH;
+        double left = _miniBox.HorizontalOffset, top = _miniBox.VerticalOffset;
+        return x + half >= left && x - half <= left + MiniMapView.ViewW
+            && y + half >= top && y - half <= top + MiniMapView.ViewH;
+    }
     private const double VitalWidth = 220;
 
     private static TextBlock BoxText() => new() { Foreground = Brushes.White, FontSize = 11, LineHeight = 14 };
@@ -110,10 +122,31 @@ public sealed partial class WorldMapWindow
             }
             if (mini && _host.ShipCell is { } cell)
             {
-                _miniView.Update(_game.Discoveries?.Table, _game.Player, cell.CellX, cell.CellY);
+                // PC 판 SyncMiniMap 그대로 — 사건으로 찾은 발견물 · 표식 켬/끔 · 아는 도시 · 풍향 · 해류.
+                _miniView.Update(_game.Discoveries?.Table, _game.Player, cell.CellX, cell.CellY, EventsDoneDiscoveries);
+                _miniView.SyncMarks();
+                var now = DateTime.UtcNow;
+                if (GameSettings.MiniMapCities && (_miniCitiesAt is not { } last || now - last >= MiniCityEvery))
+                {
+                    _miniCitiesAt = now;
+                    var known = new List<(double X, double Y)>();
+                    for (int id = 0; id < GameMapCoords.CityCount; id++)
+                        if (_game.CityVisible(id) && GameMapCoords.TryCityCell(id, out double cx, out double cy))
+                            known.Add((cx, cy));
+                    if (known.Count != _miniCityCount)
+                    {
+                        _miniCityCount = known.Count;
+                        _miniView.SetCities(known);
+                    }
+                }
+                _miniView.SetFlows(_miniWind ??= WindTable.Open(_game.Directory), _game.Player.Date.Month);
                 _miniBox ??= MapPopup(_miniView);
                 _miniBox.HorizontalOffset = Math.Max(0, MapBoardWidth - MiniMapView.ViewW - 6);
                 _miniBox.VerticalOffset = MapTop + MapHeight - MiniMapView.ViewH - 6;
+                // 투명도 — 모드 「투명도」, 배가 미니맵 밑에 들어오면 「올림 투명도」(PC 판 SyncMiniOpacity).
+                _miniView.SetOpacity(ShipUnderMiniMap()
+                    ? Math.Min(GameSettings.MiniMapOpacity, GameSettings.MiniMapHoverOpacity)
+                    : GameSettings.MiniMapOpacity);
             }
         }
         if (_miniBox != null) _miniBox.IsOpen = mini;

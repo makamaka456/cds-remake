@@ -451,6 +451,8 @@ if (Environment.GetEnvironmentVariable("MODE") == "sea")
 if (Environment.GetEnvironmentVariable("MODE") == "overlay")
 {
     CdsHelper.Game.Local.Settings.GameSettings.ShowMiniMap = true;
+    CdsHelper.Game.Local.Settings.GameSettings.MiniMapCities = true;
+    CdsHelper.Game.Local.Settings.GameSettings.MiniMapOpacity = 0.5;
     CdsHelper.Game.Local.Settings.GameSettings.ShowCoordOverlay = true;
     CdsHelper.Game.Local.Settings.GameSettings.ShowPeopleOverlay = true;
     for (int f = 0; f < 60; f++) { map.Frame(0.05, 640, 422); GameThread.Drain(); System.Windows.WpfHost.Tick(); Thread.Sleep(30); }
@@ -459,7 +461,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "overlay")
     System.Windows.WpfHost.LayoutNow();
     System.Windows.WpfHost.DrawMapLayers(new Android.Graphics.Canvas(shot), 1, 29);
     Png.Save(shot, Path.Combine(Drive.Dir, "overlay.png"));
-    Log.W($"덧그림 {System.Windows.WpfHost.MapLayers.Count}개");
+    Log.W($"덧그림 {System.Windows.WpfHost.MapLayers.Count}개 · 지도 {map.OnMap} 막힘 {map.Host.SeaBlocked} 칸 {map.Host.ShipCell?.CellX:F1} 뭍 {map.Host.IsOnLand} 멈춤 {map.Host.Paused} 물음판 {GameThread.Panel.IsOpen}");
     return;
 }
 if (Environment.GetEnvironmentVariable("MODE") == "walk")

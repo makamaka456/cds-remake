@@ -508,14 +508,28 @@ namespace System.Windows.Controls
 
         public class ToggleButton : ButtonBase
         {
-            public bool? IsChecked { get; set; } = false;
+            private bool? _checked = false;
+            /// <summary>WPF 처럼 값이 바뀌면(코드로 넣어도) Checked · Unchecked 를 울리고 다시 그린다.</summary>
+            public bool? IsChecked
+            {
+                get => _checked;
+                set
+                {
+                    if (_checked == value) return;
+                    _checked = value;
+                    WpfHost.Touch();
+                    (value == true ? Checked : value == false ? Unchecked : null)?.Invoke(this, new RoutedEventArgs());
+                }
+            }
             public event RoutedEventHandler? Checked, Unchecked;
             protected override void OnClick()
             {
                 IsChecked = IsChecked != true;
-                (IsChecked == true ? Checked : Unchecked)?.Invoke(this, new RoutedEventArgs());
                 base.OnClick();
             }
+
+            /// <summary>켬/끔은 건드리지 않고 Click 만 울린다(고르기 칸).</summary>
+            protected void RaiseClickOnly() => base.OnClick();
         }
 
         public class TextBoxBase : Control { }
@@ -790,19 +804,33 @@ namespace System.Windows.Controls
 
         internal override IEnumerable<UIElement> VisualChildren => _shown == null ? [] : [_shown];
 
+        /// <summary>내용 앞에 비워 둘 폭 — 켬/끔 칸 · 고르기 칸의 표시 자리.</summary>
+        internal virtual double LeadWidth => 0;
+
         protected override Size MeasureOverride(Size available)
         {
+            // 글로 받은 내용은 WPF 처럼 이 컨트롤의 글꼴 · 글색을 따른다 — 객체 초기화에서 Content 를 Foreground 보다
+            // 먼저 넣어도(모드 창의 켬/끔 줄) 글이 검게 남지 않게 잴 때마다 맞춘다.
+            if (_shown is TextBlock tb && _content is not UIElement)
+            {
+                tb.Foreground = Foreground; tb.FontSize = FontSize; tb.FontWeight = FontWeight;
+                if (FontFamily != null) tb.FontFamily = FontFamily;
+                tb.HorizontalAlignment = HorizontalContentAlignment;
+                tb.VerticalAlignment = VerticalContentAlignment;
+            }
             var t = BorderThickness; var p = Padding;
-            double ew = t.W + p.W, eh = t.H + p.H;
-            if (_shown == null) return new Size(ew, eh);
+            double lead = LeadWidth;
+            double ew = t.W + p.W + lead, eh = t.H + p.H;
+            if (_shown == null) return new Size(ew, eh + (lead > 0 ? lead - 6 : 0));
             _shown.Measure(new Size(Math.Max(0, available.Width - ew), Math.Max(0, available.Height - eh)));
-            return new Size(_shown.DesiredSize.Width + ew, _shown.DesiredSize.Height + eh);
+            return new Size(_shown.DesiredSize.Width + ew, Math.Max(_shown.DesiredSize.Height + eh, lead > 0 ? lead - 6 + t.H + p.H : 0));
         }
 
         protected override Size ArrangeOverride(Size final)
         {
             var t = BorderThickness; var p = Padding;
-            _shown?.Arrange(new Rect(t.Left + p.Left, t.Top + p.Top, Math.Max(0, final.Width - t.W - p.W), Math.Max(0, final.Height - t.H - p.H)));
+            double lead = LeadWidth;
+            _shown?.Arrange(new Rect(t.Left + p.Left + lead, t.Top + p.Top, Math.Max(0, final.Width - t.W - p.W - lead), Math.Max(0, final.Height - t.H - p.H)));
             return final;
         }
     }
@@ -832,8 +860,108 @@ namespace System.Windows.Controls
         }
     }
 
-    public class CheckBox : Primitives.ToggleButton { }
-    public class RadioButton : Primitives.ToggleButton { public string GroupName { get; set; } = ""; }
+    /// <summary>
+    /// 켬/끔 칸 — 글 앞에 WPF 기본 꼴처럼 흰 네모를 그리고, 켜면 그 안에 ✓ 를 긋는다.
+    /// (예전에는 글만 그려 켰는지 껐는지 보이지 않았다.)
+    /// </summary>
+    public class CheckBox : Primitives.ToggleButton
+    {
+        internal override double LeadWidth => MarkSize + 6;
+        internal double MarkSize => Math.Round(Math.Clamp(FontSize * 0.95, 12, 22));
+
+        internal override void Paint(ACanvas c, float k)
+        {
+            base.Paint(c, k);
+            ToggleMark.Draw(c, this, MarkSize, round: false);
+        }
+
+        internal override bool HitSelf(Point p) => true;
+    }
+
+    /// <summary>하나 고르기 칸 — 글 앞에 동그라미, 고르면 안에 점. 같은 무리(GroupName · 같은 부모)에서 하나만 켜진다.</summary>
+    public class RadioButton : Primitives.ToggleButton
+    {
+        public string GroupName { get; set; } = "";
+        internal override double LeadWidth => MarkSize + 6;
+        internal double MarkSize => Math.Round(Math.Clamp(FontSize * 0.95, 12, 22));
+
+        protected override void OnClick()
+        {
+            if (IsChecked != true)
+            {
+                IsChecked = true;
+                foreach (var other in Siblings()) other.IsChecked = false;
+            }
+            RaiseClickOnly();   // 라디오는 다시 눌러도 꺼지지 않는다
+        }
+
+        private IEnumerable<RadioButton> Siblings()
+        {
+            if (GroupName.Length == 0)
+                return (VisualParent as Panel)?.Children.Items.OfType<RadioButton>().Where(r => !ReferenceEquals(r, this)) ?? [];
+            UIElement root = this;
+            while (root.VisualParent is { } up) root = up;
+            return All(root).OfType<RadioButton>().Where(r => !ReferenceEquals(r, this) && r.GroupName == GroupName);
+        }
+
+        private static IEnumerable<UIElement> All(UIElement e)
+        {
+            yield return e;
+            foreach (var ch in e.VisualChildren)
+                foreach (var x in All(ch)) yield return x;
+        }
+
+        internal override void Paint(ACanvas c, float k)
+        {
+            base.Paint(c, k);
+            ToggleMark.Draw(c, this, MarkSize, round: true);
+        }
+
+        internal override bool HitSelf(Point p) => true;
+    }
+
+    /// <summary>켬/끔 칸 · 고르기 칸의 표시 그리기.</summary>
+    internal static class ToggleMark
+    {
+        [ThreadStatic] private static Android.Graphics.Paint? _mark;
+        private static Android.Graphics.Paint Mark => _mark ??= new Android.Graphics.Paint { AntiAlias = true };
+
+        internal static void Draw(ACanvas c, Primitives.ToggleButton b, double m, bool round)
+        {
+            float x = (float)b.BorderThickness.Left + (float)b.Padding.Left;
+            float y = (float)((b.ActualHeight - m) / 2);
+            float sz = (float)m;
+            bool on = b.IsChecked == true;
+            var face = b.IsEnabled ? new Android.Graphics.Color(250, 250, 250, 255) : new Android.Graphics.Color(170, 170, 170, 255);
+            var edge = new Android.Graphics.Color(60, 60, 60, 255);
+            var ink = b.IsEnabled ? new Android.Graphics.Color(30, 30, 30, 255) : new Android.Graphics.Color(90, 90, 90, 255);
+            var p = Mark;
+            p.SetShader(null);
+            p.SetStyle(Android.Graphics.Paint.Style.Fill);
+            p.Color = face;
+            var r = new Android.Graphics.RectF(x, y, x + sz, y + sz);
+            if (round) c.DrawOval(r, p); else c.DrawRect(r, p);
+            p.SetStyle(Android.Graphics.Paint.Style.Stroke);
+            p.StrokeWidth = Math.Max(1f, sz / 12f);
+            p.Color = edge;
+            if (round) c.DrawOval(r, p); else c.DrawRect(r, p);
+            if (!on) return;
+            p.Color = ink;
+            if (round)
+            {
+                p.SetStyle(Android.Graphics.Paint.Style.Fill);
+                float d = sz * 0.25f;
+                c.DrawOval(new Android.Graphics.RectF(x + sz / 2 - d, y + sz / 2 - d, x + sz / 2 + d, y + sz / 2 + d), p);
+                return;
+            }
+            p.StrokeWidth = Math.Max(2f, sz / 6f);
+            var path = new Android.Graphics.Path();
+            path.MoveTo(x + sz * 0.2f, y + sz * 0.52f);
+            path.LineTo(x + sz * 0.42f, y + sz * 0.74f);
+            path.LineTo(x + sz * 0.8f, y + sz * 0.28f);
+            c.DrawPath(path, p);
+        }
+    }
 
     public class Image : FrameworkElement
     {
