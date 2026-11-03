@@ -198,6 +198,40 @@ if (Environment.GetEnvironmentVariable("MODE") == "qa-long")
     Log.W($"[긴 항해 끝] 입항 {ports} · 오류 {errs} · {clock.Elapsed.TotalMinutes:F1}분 · {State()} · 발견 {player().Discoveries.Count} · 억지로 닫음 {string.Join(",", Drive.Stuck)}");
     return;
 }
+if (Environment.GetEnvironmentVariable("MODE") == "lag")
+{
+    // 렉 재기: 창을 띄우고 아무것도 안 할 때 · 손가락을 움직일 때 자리 잡기 · 그리기를 몇 번, 몇 ms 하는지 센다.
+    Leave();
+    Drive.Dir = Environment.GetEnvironmentVariable("SHOTS") ?? ".";
+    Drive.Install();
+    void Stat(string what)
+    {
+        Log.W($"  [{what}] 자리잡기 {System.Windows.WpfHost.StatLayouts}회({System.Windows.WpfHost.StatRounds}바퀴, 넷 다 돈 것 {System.Windows.WpfHost.StatMaxedOut}) {System.Windows.WpfHost.StatLayoutMs}ms · 그리기 {System.Windows.WpfHost.StatRenders}회 {System.Windows.WpfHost.StatRenderMs}ms");
+        System.Windows.WpfHost.StatLayouts = System.Windows.WpfHost.StatRounds = System.Windows.WpfHost.StatMaxedOut = System.Windows.WpfHost.StatLayoutMs = System.Windows.WpfHost.StatRenders = System.Windows.WpfHost.StatRenderMs = 0;
+    }
+    void Measure(string name, Action open)
+    {
+        Log.W($"--- {name}");
+        Drive.Add("1초 가만히", w => { Stat("열기"); for (int i = 0; i < 60; i++) { System.Windows.WpfHost.Tick(); Thread.Sleep(16); } Stat("가만히 1초"); });
+        Drive.Add("손가락 끌기 30번", w => { for (int i = 0; i < 30; i++) { System.Windows.WpfHost.Pointer(w, System.Windows.WpfHost.Touching.Move, new System.Windows.Point(100 + i * 5, 200)); System.Windows.WpfHost.Tick(); } Stat("끌기 30"); });
+        Drive.Add("찍기", w =>
+        {
+            Drive.Shot(w, name);
+            System.Windows.WpfHost.TraceTouch = true; System.Windows.WpfHost.TouchSources.Clear();
+            for (int i = 0; i < 3; i++) System.Windows.WpfHost.Tick();
+            System.Windows.WpfHost.TraceTouch = false;
+            foreach (var g in System.Windows.WpfHost.TouchSources.Select(t => string.Join(" ← ", t.Split('\n').Take(4).Select(l => l.Trim().Replace("at ", "")))).GroupBy(x => x).OrderByDescending(g => g.Count()).Take(6))
+                Log.W($"  [바뀜 건 곳 ×{g.Count()}] {g.Key}");
+        });
+        try { open(); } catch (Exception ex) { Log.W($"  !! {ex.GetType().Name}: {ex.Message}"); }
+        GameThread.Drain();
+    }
+    var only = Environment.GetEnvironmentVariable("ONLY");
+    if (only == null || only.Contains("모드")) Measure("모드", map.ShowModDialog);
+    if (only == null || only.Contains("개발")) Measure("개발", map.ShowDevDialog);
+    if (only == null || only.Contains("설정")) Measure("설정", map.ShowSettingsDialog);
+    return;
+}
 if (Environment.GetEnvironmentVariable("MODE") == "gallery")
 {
     var g = map.Game; var rnd = new Random(7);

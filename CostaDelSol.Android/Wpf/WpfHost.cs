@@ -1,4 +1,4 @@
-using System.Windows.Controls;
+﻿using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -35,7 +35,17 @@ namespace System.Windows
         internal static event EventHandler? Rendering;
 
         /// <summary>무엇이 바뀌었다 — 다음 틈에 다시 재고 그린다.</summary>
-        internal static void Touch() => _dirty = true;
+        internal static void Touch()
+        {
+            _dirty = true;
+            if (TraceTouch && _inLayout && TouchSources.Count < 4000)
+                TouchSources.Add(new System.Diagnostics.StackTrace(1, false).ToString());
+        }
+
+        /// <summary>진단 — 자리 잡기 도중 「바뀜」을 건 자리를 모은다(시험기 전용).</summary>
+        internal static bool TraceTouch;
+        internal static readonly List<string> TouchSources = [];
+        private static bool _inLayout;
 
         /// <summary>자리 잡기가 끝난 뒤에 할 일(크기 바뀜 알림 따위).</summary>
         internal static void Later(Action work) { lock (Pending) Pending.Add(work); }
@@ -149,10 +159,18 @@ namespace System.Windows
         [ThreadStatic] internal static bool SoftWrap;
         private static readonly List<Window> WrapNext = [];
 
+        /// <summary>진단 — 자리 잡기 · 그리기 횟수와 걸린 시간(ms). 시험기가 렉을 잰다.</summary>
+        internal static long StatLayouts, StatRounds, StatMaxedOut, StatLayoutMs, StatRenders, StatRenderMs;
+
         internal static void LayoutNow()
         {
+            StatLayouts++;
+            long began = Now;
+            int rounds = 0;
+            _inLayout = true;
             for (int round = 0; round < 4 && (_dirty || round == 0); round++)
             {
+                rounds++;
                 _dirty = false;
                 var events = new List<Action>();
                 foreach (var w in Shown.ToList())
@@ -182,7 +200,14 @@ namespace System.Windows
                 lock (Pending) { events.AddRange(Pending); Pending.Clear(); }
                 foreach (var e in events) e();
             }
+            _inLayout = false;
+            StatRounds += rounds;
+            if (_dirty) StatMaxedOut++;   // 넷을 돌고도 여전히 바뀜 — 자리 잡기가 스스로 「바뀜」을 다시 거는 것
+            long laid = Now;
+            StatLayoutMs += laid - began;
             foreach (var w in Shown.ToList()) Render(w);
+            StatRenders++;
+            StatRenderMs += Now - laid;
         }
 
         private static Size Fit(Window w)

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -294,6 +294,18 @@ public sealed class OpenBookDialog : GameWindow
                 e.Handled = true;
                 if (CanGoOn) Turn(_index + 1);
                 break;
+#if ANDROID
+            // 안드로이드판에만 있는 길(사용자 요청) — 패드 L2 · R2(기본 PgUp · PgDn)로 앞장 · 뒷장을 넘긴다.
+            // 원본 · 리메이크에는 없다. ← / → 와 같이 켜진 단추를 누른 것과 같다.
+            case Key.PageUp:
+                e.Handled = true;
+                if (CanGoBack) Turn(_index - 1);
+                break;
+            case Key.PageDown:
+                e.Handled = true;
+                if (CanGoOn) Turn(_index + 1);
+                break;
+#endif
             case Key.Escape or Key.Enter or Key.Space:
                 e.Handled = true;
                 Close();
