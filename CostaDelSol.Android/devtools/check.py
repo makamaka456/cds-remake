@@ -18,4 +18,4 @@ args=[T+'/dn/dotnet',T+'/pkgs/microsoft.net.compilers.toolset/tasks/netcore/binc
 r=subprocess.run(args,capture_output=True,text=True)
 out=[l for l in r.stdout.splitlines() if "error" in l or ": warning" in l]
 errs=[l for l in out if "error" in l]
-print('\n'.join(out[:150])); print('errors:',len(errs),'exit',r.returncode)
+print('\n'.join(out[:int(os.environ.get('MAXERR','150'))])); print('errors:',len(errs),'exit',r.returncode)

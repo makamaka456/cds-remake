@@ -1,4 +1,4 @@
-using Android.App;
+﻿using Android.App;
 using Android.Widget;
 using System.Windows;
 using CdsHelper.Game.Local.Helpers;
@@ -157,54 +157,23 @@ namespace CdsHelper.Game.UI.Views
         }
     }
 
-    /// <summary>목록 창(<c>HintListDialog</c>) — 취득 힌트 일람 · 스폰서 일람 · 배 고르기 ….</summary>
-    public static class HintListDialog
-    {
-        public static void Show(Window owner, IReadOnlyList<string> hints, string caption = "취득 힌트 일람",
-                                string whenEmpty = "설득 가능한 힌트가 없습니다")
-        {
-            if (hints.Count == 0) { NoticeDialog.Show(owner, whenEmpty); return; }
-            Open(caption, hints, false, false, "", null, null, null, null);
-        }
-
-        public static int Pick(Window owner, IReadOnlyList<string> items, string caption = "취득 힌트 일람",
-                               string whenEmpty = "설득 가능한 힌트가 없습니다", string header = "",
-                               IReadOnlyList<uint[]?>? faces = null, IReadOnlyList<string>? subtitles = null,
-                               IReadOnlyList<bool>? marks = null)
-        {
-            if (items.Count == 0) { NoticeDialog.Show(owner, whenEmpty); return -1; }
-            return Open(caption, items, true, false, header, faces, subtitles, marks, null).Picked;
-        }
-
-        public static IReadOnlyList<int> PickMany(Window owner, IReadOnlyList<string> items, string caption,
-                                                  IReadOnlyCollection<int>? preset = null)
-        {
-            if (items.Count == 0) return [];
-            return Open(caption, items, true, true, "", null, null, null, preset).Many;
-        }
-
-        private static (int Picked, IReadOnlyList<int> Many) Open(string caption, IReadOnlyList<string> items, bool choosing,
-            bool multi, string header, IReadOnlyList<uint[]?>? faces, IReadOnlyList<string>? subs,
-            IReadOnlyList<bool>? marks, IReadOnlyCollection<int>? preset)
-        {
-            // 초상화는 줄에서 40x48 로 줄여 붙는다 — 그림은 화면 줄에서 짓는다.
-            return GameThread.Wait<(int, IReadOnlyList<int>)>(reply =>
-            {
-                var bitmaps = faces?.Select(f => GameThread.Face(f)).ToArray();
-                ChoicePanel.Layer layer = null!;
-                var window = new ListWindow(caption, items, choosing, multi, header, bitmaps, subs, marks, preset,
-                    (picked, many) => { GameThread.Panel.Remove(layer); reply((picked, many)); });
-                layer = new ChoicePanel.Layer { Kind = ChoicePanel.Kind.Custom, Custom = window };
-                GameThread.Panel.Push(layer);
-            });
-        }
-    }
 }
 
 namespace CdsHelper.Game.Engine.Menu
 {
     /// <summary>메뉴 줄 하나(<c>GameMenuRow</c>). 손이 없으면 흐린 줄이다.</summary>
-    internal sealed record GameMenuRow(string Text, Action? Run = null, BandStyle? Style = null, bool Dim = false);
+    internal sealed record GameMenuRow(string Text, Action? Run = null, BandStyle? Style = null,
+                                       bool Dim = false, bool Grey = false);
+
+    /// <summary>차림표 줄 뒤로 글쇠 초점이 이어지는 것들(PC <c>IMenuRing</c>, 시설 화면의 사진 속 사람들).</summary>
+    internal interface IMenuRing
+    {
+        bool Active { get; }
+        bool Enter(int way);
+        bool Move(int way);
+        void Run();
+        void Clear();
+    }
 
     /// <summary>게임 명령 창 하나(<c>GameMenu</c>) — 안드로이드에서는 줄 목록만 들고 그리기는 <see cref="GameMenuHost"/> 가 한다.</summary>
     internal sealed class GameMenu
@@ -212,6 +181,9 @@ namespace CdsHelper.Game.Engine.Menu
         public string Title { get; }
         public IReadOnlyList<GameMenuRow> Rows { get; }
         public Action? OnClose { get; }
+
+        /// <summary>차림표 줄 뒤로 이어지는 초점 고리(PC 와 같은 이름). 안드로이드 차림표는 아직 이 고리를 돌지 않는다.</summary>
+        public Func<IMenuRing?>? Ring { get; set; }
 
         public GameMenu(string title, IReadOnlyList<GameMenuRow> rows, Action? onClose = null)
         {

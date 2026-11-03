@@ -11,13 +11,13 @@ using CdsHelper.Game.UI.Views;
 namespace CostaDelSol.Droid.Map;
 
 /// <summary>
-/// 지도 위 덧그림 — 내 배(말), 닻 · 대 둔 배, 남의 배, 자동항해 항로, 비 · 눈. 자리와 그림은 원본 지도 엔진(ShipMapHost)이
+/// 지도 위 덧그림 — 내 배(말), 닻 · 대 둔 배, 남의 배, 자동항해 항로, 비 · 눈. 자리와 그림은 원본 지도 엔진(WorldMapHost)이
 /// 프레임마다 짠 것 그대로다(화면 픽셀). GL 지도와 같은 크기 · 같은 자리에 겹쳐 선다.
 /// </summary>
 public sealed class MapOverlay : View
 {
     private static readonly Paint Pixel = new() { FilterBitmap = false, AntiAlias = false };
-    private readonly ShipMapWindow _map;
+    private readonly WorldMapWindow _map;
     private int _spriteSeen = -1, _overlaySeen = -1;
     private Bitmap? _sprite, _overlay;
     private Bitmap[]? _folk;
@@ -26,7 +26,7 @@ public sealed class MapOverlay : View
     private readonly Paint _rain = new() { AntiAlias = false, StrokeWidth = 2 };
     private readonly Random _dice = new();
 
-    public MapOverlay(Context context, ShipMapWindow map) : base(context)
+    public MapOverlay(Context context, WorldMapWindow map) : base(context)
     {
         _map = map;
         _route.Color = Color.Argb(200, 240, 220, 120);
@@ -108,7 +108,7 @@ public sealed class MapOverlay : View
     /// 바람(위 · 연노랑)과 해류(아래 · 하늘색) 화살표 — 50x25 격자 한 칸마다 하나씩(PC 판 셰이더 ArrowsAt 와 같은 자리 · 크기 · 색).
     /// 모드 창의 「바람 · 해류 화살표」로 켠다.
     /// </summary>
-    private void DrawArrows(Canvas canvas, ShipMapHost.Frame view, MapD3DRenderer layers, float k)
+    private void DrawArrows(Canvas canvas, WorldMapHost.Frame view, MapD3DRenderer layers, float k)
     {
         if (!layers.ShowArrows || layers.FlowGrid is not { } grid || _map.Host.Wind is not { } wind) return;
         const int Grid = WindTable.CellRaw / 16;          // 격자 한 칸 = 지도 50칸

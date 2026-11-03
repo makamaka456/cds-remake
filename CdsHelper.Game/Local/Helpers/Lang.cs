@@ -1,4 +1,4 @@
-using CdsHelper.Game.Local.Helpers.Languages;
+﻿using CdsHelper.Game.Local.Helpers.Languages;
 using CdsHelper.Game.Local.Settings;
 
 namespace CdsHelper.Game.Local.Helpers;
@@ -45,6 +45,10 @@ public static class Lang
     ///   Window.Title             창이 뜰 때
     /// </code>
     /// </remarks>
+#if ANDROID
+    // 안드로이드판: 윈도 글자 칸(WPF) 훅은 없다 — 게임 글꼴(GameFont)로 그리는 글은 Lang.T 를 그대로 지난다.
+    public static void InstallWpfHook() { }
+#else
     public static void InstallWpfHook()
     {
         if (_hooked || !Current.TranslatesWpfText) return;
@@ -134,4 +138,5 @@ public static class Lang
     /// <summary>지켜보는 칸들 — 두 번 걸지 않게.</summary>
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<System.Windows.FrameworkElement, EventHandler>
         Watched = new();
+#endif
 }

@@ -9,7 +9,7 @@ using CostaDelSol.Droid.Input;
 namespace CostaDelSol.Droid.Ui;
 
 /// <summary>
-/// 타이틀 화면 — PC 판 <c>ShipMapWindow.BuildTitleScreen</c> 을 원본 값 그대로 옮겼다.
+/// 타이틀 화면 — PC 판 <c>WorldMapWindow.BuildTitleScreen</c> 을 원본 값 그대로 옮겼다.
 /// </summary>
 /// <remarks>
 /// <code>
@@ -25,11 +25,11 @@ public sealed class TitleView : View
 {
     public sealed record Item(string Text, bool Enabled, Action Run);
 
-    private const int ItemMinWidth = 124;      // ShipMapWindow.TitleItemMinWidth
-    private const float MenuRise = 0.05f;      // ShipMapWindow.TitleMenuRise
+    private const int ItemMinWidth = 124;      // WorldMapWindow.TitleItemMinWidth
+    private const float MenuRise = 0.05f;      // WorldMapWindow.TitleMenuRise
     private const int BoxPad = 6;              // 메인메뉴 상자 Padding
-    private static readonly Color BoxEdge = Color.Rgb(0xC2, 0xAE, 0x95);   // ShipMapWindow.TitleBoxEdge
-    private static readonly Color BoxBack = Color.Rgb(0x4A, 0x2A, 0x22);   // ShipMapWindow.MenuBack
+    private static readonly Color BoxEdge = Color.Rgb(0xC2, 0xAE, 0x95);   // WorldMapWindow.TitleBoxEdge
+    private static readonly Color BoxBack = Color.Rgb(0x4A, 0x2A, 0x22);   // WorldMapWindow.MenuBack
     // GameUi.BarFrame: 높이 = 얇은 테(7) 두 겹 + 속(BarInside 15) = 29. 칸(24)은 액자 테 위에 올라앉아 세로 가운데에 선다.
     private const int StripHeight = 7 * 2 + 15;
 

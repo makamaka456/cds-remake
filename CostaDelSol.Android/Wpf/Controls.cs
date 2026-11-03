@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ACanvas = Android.Graphics.Canvas;
@@ -1423,11 +1423,16 @@ namespace System.Windows.Controls
 
 namespace System.Windows.Documents
 {
-    public abstract class Inline
+    /// <summary>글 조각의 바탕(<c>TextElement</c>) — 색 · 크기 · 굵기.</summary>
+    public abstract class TextElement
     {
         public System.Windows.Media.Brush? Foreground { get; set; }
         public double? FontSize { get; set; }
         public FontWeight? FontWeight { get; set; }
+    }
+
+    public abstract class Inline : TextElement
+    {
         internal abstract string Plain { get; }
     }
 
@@ -1603,5 +1608,38 @@ namespace System.Windows.Shapes
                 if (i == 0) p.MoveTo((float)Points[i].X, (float)Points[i].Y); else p.LineTo((float)Points[i].X, (float)Points[i].Y);
             return p;
         }
+    }
+}
+
+namespace System.Windows.Controls
+{
+    /// <summary>
+    /// 조절 막대(<c>Slider</c>) — 손가락으로 좁은 막대를 끌기는 어렵다. 숫자 돌리개(<see cref="CdsHelper.Support.UI.Units.NumericSpinner"/>)
+    /// 모양으로 낸다: 왼쪽 ◀ 은 한 눈금 내리고, 오른쪽 ▶ 은 올리고, 가운데를 누르면 값을 적는다.
+    /// </summary>
+    public class Slider : CdsHelper.Support.UI.Units.NumericSpinner
+    {
+        public Slider() { Minimum = 0; Maximum = 10; }
+
+        /// <summary>한 눈금 — 누를 때마다 이만큼 움직인다.</summary>
+        public double TickFrequency { get => Step; set => Step = value; }
+
+        public bool IsSnapToTickEnabled { get; set; }
+        public double SmallChange { get => Step; set => Step = value; }
+        public double LargeChange { get; set; } = 1;
+        public Orientation Orientation { get; set; } = Orientation.Horizontal;
+    }
+}
+
+namespace System.ComponentModel
+{
+    /// <summary>
+    /// 속성 값 바뀜 지켜보기(<c>DependencyPropertyDescriptor</c>). WpfLite 는 값 바뀜을 따로 알리지 않으므로 거는 일만 받는다.
+    /// </summary>
+    public sealed class DependencyPropertyDescriptor
+    {
+        public static DependencyPropertyDescriptor FromProperty(System.Windows.DependencyProperty property, Type owner) => new();
+        public void AddValueChanged(object component, EventHandler handler) { }
+        public void RemoveValueChanged(object component, EventHandler handler) { }
     }
 }

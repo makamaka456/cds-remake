@@ -1,4 +1,4 @@
-using CdsHelper.Game.Local.Settings;
+﻿using CdsHelper.Game.Local.Settings;
 using Android.App;
 using Android.Widget;
 using System.IO;
@@ -25,7 +25,7 @@ using RectF = Android.Graphics.RectF;
 namespace CdsHelper.Game.UI.Views;
 
 /// <summary>
-/// 입항한 도시의 그림(CITYCG.CDS)을 지도 한가운데에 띄운다. 게임처럼 건물(항구·조선소)을
+/// 입항한 도시의 그림(CITYCG.CDS)을 지도 한가운데에 띄운다. 원본처럼 건물(항구·조선소)을
 /// 누르면 그 건물의 명령 창이 열린다.
 /// </summary>
 /// <remarks>
@@ -33,19 +33,51 @@ namespace CdsHelper.Game.UI.Views;
 /// 제대로 뜬다(airspace 를 안 탄다). 그림은 400x320 도트 그림이라 정수배로만 늘린다.
 ///
 /// 건물 자리·이름·가르치는 기능은 게임 EXE 의 건물 표(<see cref="CityBuildingTable"/>)에서
-/// 그대로 온다. 표에 항구가 없는 도시라면 그림 아무 데나 눌러도 항구 명령 창이 열리게 해
-/// 두었다 — 출항할 길은 어디서나 있어야 한다.
+/// 그대로 온다. 표에 항구가 없는데 함대가 닻을 내린 도시라면 그림 아무 데나 눌러도 항구 명령 창이
+/// 열리게 해 두었다 — 배를 두고 갇히지 않게 하는 비상구다. 뭍 마을은 성문으로 나선다.
 /// </remarks>
-public sealed class CityPicView : Window, ITownScreen
+public sealed class CityPicView : Window, ITownScreen, IGateStage
 {
     /// <summary>건물 이름표와 명령 창을 얹는 자리. 그림과 같은 격자 칸에 둔다.</summary>
     /// <summary>그림을 그리는 판(안드로이드). 이 창의 그림 일은 모두 이리 간다.</summary>
     private readonly CityStage _stage;
 
+    /// <summary>그림 판에 올린 건물 · 사람 코드 — 망명으로 자택이 새로 서면 겹쳐 올리지 않게 본다.</summary>
+    private readonly HashSet<int> _placedCodes = [];
+
+    /// <summary>그림 위에 건물 그림(BGRA, 투명 섞기)을 얹은 새 그림.</summary>
+    private static uint[] Overlay(uint[] picture, uint[] art, int left, int top)
+    {
+        var copy = (uint[])picture.Clone();
+        for (int y = 0; y < BuildingSprites.BoxH; y++)
+        {
+            int py = top + y;
+            if (py < 0 || py >= CityStage.PicH) continue;
+            for (int x = 0; x < BuildingSprites.BoxW; x++)
+            {
+                int px = left + x;
+                if (px < 0 || px >= CityStage.PicW) continue;
+                uint src = art[y * BuildingSprites.BoxW + x];
+                uint a = src >> 24;
+                if (a == 0) continue;
+                ref uint dst = ref copy[py * CityStage.PicW + px];
+                if (a == 255) { dst = src; continue; }
+                uint Mix(int sh) => ((((src >> sh) & 0xFF) * a + ((dst >> sh) & 0xFF) * (255 - a)) / 255) << sh;
+                dst = 0xFF000000u | Mix(16) | Mix(8) | Mix(0);
+            }
+        }
+        return copy;
+    }
+
     /// <summary>
     /// 도시 창 <b>옆</b>에 따로 띄우는 내 함대 쪽지 — 배마다 한 줄 「배 이름(선체)」.
     /// 게임 화면에는 없는 덧그림이라 그림을 가리지 않게 창 밖에 두고, 끌어 옮길 수 있다.
     /// </summary>
+
+    /// <summary>현재 힌트 쪽지. 함대 쪽지와 별도 창으로 아래에 붙인다.</summary>
+    private FleetLabelWindow? _hintNote;
+    /// <summary>발견물 수 쪽지 — 모드 「발견물 수」를 켜면 선다.</summary>
+    private FleetLabelWindow? _foundNote;
 
     /// <summary>기능·언어 쪽지. 개발 창에서 켜 두었을 때만 뜬다(<see cref="GameSettings.ShowSkillOverlay"/>).</summary>
 
@@ -56,8 +88,8 @@ public sealed class CityPicView : Window, ITownScreen
     /// </summary>
     /// <remarks>
     /// 발견을 보고하는 동안 게임 화면이 파래진다 — 바다에서 발견할 때 지도가 파래지는 것과
-    /// 같은 몫이고(<see cref="Rendering.ShipMapHost.Shaded"/>), 도시 그림에도 있어야
-    /// 후원자에게 보고하는 대목이 게임과 같아진다.
+    /// 같은 몫이고(<see cref="Rendering.WorldMapHost.Shaded"/>), 도시 그림에도 있어야
+    /// 후원자에게 보고하는 대목이 원본과 같아진다.
     /// </remarks>
 
     /// <summary>그림을 파랗게 덮거나 걷는다. 함대 쪽지도 같이 감췄다 낸다.</summary>
@@ -65,6 +97,8 @@ public sealed class CityPicView : Window, ITownScreen
     {
         GameThread.OnUi(() => _stage.SetShade(on));
         _shipNote?.Shade(on);
+        _hintNote?.Shade(on);
+        _foundNote?.Shade(on);
         _skillNote?.Shade(on);
     }
 
@@ -79,16 +113,25 @@ public sealed class CityPicView : Window, ITownScreen
         System.Windows.WpfHost.TownTypes.Add(typeof(FleetLabelWindow));
         System.Windows.WpfHost.TownTypes.Add(typeof(SkillOverlayWindow));
         _shipNote = FleetLabelWindow.Attach(this, NoteFontSize);
+        _hintNote = FleetLabelWindow.Attach(this, NoteFontSize, belowFleet: true);
+        _foundNote = FleetLabelWindow.Attach(this, NoteFontSize, FleetLabelWindow.Slot.Found);
         RefreshShipLabel();
         SyncSkillNote();
         GameSettings.ShowSkillOverlayChanged += SyncSkillNote;
+        GameSettings.ShowContractHintOverlayChanged += SyncSkillNote;
+        GameSettings.ShowFleetOverlayChanged += RefreshShipLabel;
+        GameSettings.ShowHintOverlayChanged += RefreshShipLabel;
+        GameSettings.ShowDiscoveryCountChanged += RefreshShipLabel;
     }
 
     private void SyncSkillNote()
     {
         if (!IsLoaded) return;
-        if (GameSettings.ShowSkillOverlay)
-            _skillNote ??= SkillOverlayWindow.Attach(this, _player, NoteFontSize);
+        if (GameSettings.ShowSkillOverlay || GameSettings.ShowContractHintOverlay)
+        {
+            if (_skillNote == null) _skillNote = SkillOverlayWindow.Attach(this, _game, NoteFontSize);
+            else _skillNote.Refresh(_game);
+        }
         else
         {
             _skillNote?.Close();
@@ -96,15 +139,30 @@ public sealed class CityPicView : Window, ITownScreen
         }
     }
 
-    /// <summary>함대 쪽지를 지금 함대로 채운다 — 배마다 한 줄 「배 이름(선체)」. 배가 없으면 안 뜬다.</summary>
-    private void RefreshShipLabel() =>
-        _shipNote?.Set(string.Join(Environment.NewLine, _player.Ships.Select(s => $"{s.Name}({s.Hull.Name})")));
+    /// <summary>쪽지들을 지금 함대 · 힌트 · 발견물 수로 채운다(모드에서 켠 것만 선다).</summary>
+    private void RefreshShipLabel()
+    {
+        _shipNote?.Set(GameSettings.ShowFleetOverlay
+            ? string.Join(Environment.NewLine,
+                ["현재 함대", .. _player.Ships.Select(s => $"{s.Name}({s.Hull.Name})")])
+            : "");
+        _hintNote?.Set(GameSettings.ShowHintOverlay
+            ? string.Join(Environment.NewLine, ["현재 힌트", .. GameInfo.HintNames(_game)])
+            : "");
+        // 발견물 수 — 찾은 것 / 발견물 표 전체(DiscoveryTable.CountedTotal).
+        var table = _game.Discoveries?.Table;
+        int total = table?.CountedTotal ?? 0;
+        int found = table?.CountedFound(_player.Discoveries) ?? _player.Discoveries.Distinct().Count();
+        _foundNote?.Set(GameSettings.ShowDiscoveryCount
+            ? total > 0 ? $"발견물 {found} / {total}" : $"발견물 {found}"
+            : "");
+    }
 
     /// <summary>시설에서 돌아올 때(PC 판 Activated) — 배 · 부하가 바뀌었을 수 있다.</summary>
     private void RefreshNotes()
     {
         RefreshShipLabel();
-        _skillNote?.Refresh(_player);
+        _skillNote?.Refresh(_game);
     }
 
     /// <summary>건물 이름표들. 명령 창이 열리면 다 감춘다.</summary>
@@ -145,6 +203,12 @@ public sealed class CityPicView : Window, ITownScreen
     /// <summary>그림 배율. 건물 사진도 같은 배율로 놓아야 자리가 맞는다.</summary>
     private readonly int _scale;
 
+    /// <summary>그림 배율 — 도시 안에서 뜨는 창(아이템·시장)이 같은 배로 커지려고 본다.</summary>
+    public int Scale => _scale;
+
+    /// <summary>틀(<see cref="CityFrame"/>)을 둘렀으면 그 두께(점), 못 읽었으면 0. 그림은 그만큼 안쪽에 있다.</summary>
+    private readonly int _frameBorder;
+
     /// <summary>
     /// 이 도시에서 도는 곡. 문화권마다 다르다 — 시설에서 나오면 이 곡으로 돌아간다.
     /// </summary>
@@ -158,7 +222,7 @@ public sealed class CityPicView : Window, ITownScreen
     /// </summary>
     /// <remarks>
     /// 마을이 닫히고 뭍으로 나선다 — 배는 항구에 대 둔 채 말을 타고 걷는다. 되돌아오는
-    /// 것은 뭍 커맨드의 "승선" 이 맡는다(<see cref="Rendering.ShipMapHost.Embark"/>).
+    /// 것은 뭍 커맨드의 "승선" 이 맡는다(<see cref="Rendering.WorldMapHost.Embark"/>).
     /// </remarks>
     public bool Explored { get; private set; }
 
@@ -237,12 +301,24 @@ public sealed class CityPicView : Window, ITownScreen
         _cityId = cityId;
         _stage = stage;
 
+        // 도구 창에서 문화권을 갈면 그 자리에서 따라간다 — 창을 닫았다 열 것 없이
+        // 조선소 얼굴이 바뀌는지 보려는 것이 그 기능의 뜻이다.
+        CityCultureEdits.Changed += OnCultureChanged;
+        Closed += (_, _) => CityCultureEdits.Changed -= OnCultureChanged;
+
+        // 그림 위에 따로 올리는 건물 — 시나리오가 본거지로 삼은 도시의 자택 하나(PC 판은 그림 위 한 겹).
+        // 안드로이드는 그림 판이 비트맵 한 장이라 그 자리에 섞어 칠한다.
+        if (game.Player.HomePort == cityId && game.Buildings?.ExtraHome(cityId) is { } home
+            && game.CityPics is { } pictures && BuildingSprites.Home(pictures, game.Buildings) is { } art)
+            picture = Overlay(picture, art, home.X, home.Y);
+
         // 그림 판은 화면 줄의 것이다 — 짓는 일은 모두 화면 줄에서 한 번에 한다.
         var spots = new List<CityStage.Spot>();
         // 도시 그림에 그려진 마을 사람들. <b>건물보다 먼저</b> 깐다 — 자리가 겹치면 건물이 이긴다(0x00491DC0).
         foreach (var folk in _game.TownFolk?.InCity(cityId) ?? []) spots.Add(FolkSpot(folk));
 
-        // 게임 건물 표에 적힌 그대로 얹는다 — 그 도시에 있는 건물만, 게임이 쓰는 자리에.
+        // 게임 건물 표에 적힌 그대로 얹는다 — 그 도시에 있는 건물만, 원본이 쓰는 자리에.
+        // 코드가 <b>큰</b> 것부터 깔아 낮은 것이 위에 오게 한다 — 겹치면 낮은 코드가 이긴다(0x00491D58).
         bool harborPlaced = false;
         foreach (var building in Enumerable.Reverse(Standing(cityId)))
         {
@@ -250,16 +326,20 @@ public sealed class CityPicView : Window, ITownScreen
             if (building.Kind == "항구") harborPlaced = true;
         }
         _harborPlaced = harborPlaced;
+        // 표에 항구가 없는데 함대가 여기 닻을 내렸으면 아무 데나 눌러도 항구 명령 창이 열린다 — 배를 두고
+        // 갇히지 않게 둔 비상구다. 뭍 한가운데 마을(항구 없는 90곳)은 원본처럼 성문으로 나선다(0x004A2566).
+        bool bareHarbor = !harborPlaced && _player.FleetHere(cityId, 1);
+        foreach (var spot in spots) _placedCodes.Add(spot.Code);
 
         GameThread.OnUi(() =>
         {
             stage.Begin(picture);
             foreach (var spot in spots) stage.AddSpot(spot);
-            // 표에 항구가 없는 도시는 아무 데나 눌러도 항구 명령 창이 열린다(건물 판이 먼저 먹는다).
-            stage.Anywhere = harborPlaced ? null : () => Work(() => OpenBareHarbor(arrived: false));
+            stage.Anywhere = bareHarbor ? () => Work(() => OpenBareHarbor(arrived: false)) : null;
             // 빈 자리를 오른쪽으로 누르면 게임처럼 도시 커맨드 창이다.
             stage.Empty = () => Work(() => ShowCityMenu(cityName, new Point(0, 0)));
         });
+        Closed += (_, _) => Engine.Town.KeeperTongue.Here = null;   // 도시를 나서면 주인 말 셈도 걷는다
     }
 
     /// <summary>
@@ -297,7 +377,8 @@ public sealed class CityPicView : Window, ITownScreen
     private void AskEnter(CityBuildingTable.Building building)
     {
         string title = building.Name.Length > 0 ? building.Name : building.Kind;
-        if (ChoiceDialog.Pick(this, title, ["안으로 들어간다", "도시로 돌아간다"]) == 0) Enter(building);
+        // 「도시로 돌아간다」는 나가기 줄이라 「취소」와 같은 회녹색 띠로 낸다.
+        if (ChoiceDialog.Ask(this, title, ["안으로 들어간다"], "도시로 돌아간다") == 0) Enter(building);
     }
 
     /// <summary>그림에 올린 건물들 — 글쇠로 고를 때 차례와 이름표 자리를 여기서 찾는다.</summary>
@@ -315,7 +396,7 @@ public sealed class CityPicView : Window, ITownScreen
         if (order.Count == 0 || MenuOpen) return false;
         int at = order.FindIndex(b => b.Code == _pickedCode);
 
-        switch (key)
+        switch (GameUi.Arrow(key))
         {
             case GameKey.Up or GameKey.Left:
                 at = at < 0 ? order.Count - 1 : (at - 1 + order.Count) % order.Count;
@@ -394,14 +475,44 @@ public sealed class CityPicView : Window, ITownScreen
         if (language >= 0 && BestTongue(language) is var (name, level) && level > mine)
         {
             var who = _game.MateInfo(name);
-            var face = who is { Face: >= 0 and < 0xFFFF } m
-                ? _game.Faces?.TryGetBgra(m.Face, female: false) : null;
+            var face = who is { } m ? _game.MateFace(m) : null;
             TalkDialog.Say(this, face, "",
                            $"[{StrangerTalk.Garble(words, level, _random)}]라고 말하고 있는 것 같습니다.");
             return;
         }
 
         NoticeDialog.Show(this, StrangerTalk.Garble(words, mine, _random));
+    }
+
+    /// <summary>
+    /// 시설 주인의 말을 얼마나 알아듣는지(<c>0x00478050</c> · <c>0x00468F70</c>). 주인은 그 도시 소유국의 말과 그 건물이
+    /// 가르치는 말(건물 표 <c>+0x30</c> 비트 13+i)을 한다(<c>0x00477EE0</c>). 제독은 그 가운데 가장 잘하는 말의 수준이고,
+    /// 부관(자리 0) · 통역(자리 3)이 같은 셈으로 제독보다 높으면 그 사람이 옮겨 준다.
+    /// </summary>
+    private Engine.Town.KeeperTongue.Listener KeeperListener(uint teach)
+    {
+        var spoken = new List<int>();
+        int nationLanguage = _game.Nations?.Find(_game.CityRows?.NationOf(_cityId) ?? -1)?.Language ?? -1;
+        if (nationLanguage >= 0 && nationLanguage < Skill.Languages.Length) spoken.Add(nationLanguage);
+        for (int i = 0; i < Skill.Languages.Length; i++)
+            if ((teach >> (CityBuildingTable.SkillCount + i) & 1) != 0 && !spoken.Contains(i)) spoken.Add(i);
+        // 말을 모르는 나라(원주민 마을 따위)면 다 알아듣는 것으로 둔다.
+        if (spoken.Count == 0) return new(Skill.MaxLevel, null, 0);
+
+        int mine = spoken.Max(i => _player.TongueOf(Skill.Languages[i]));
+        uint[]? relayer = null;
+        int best = mine;
+        if (_game.World?.People is { } people)
+            foreach (int slot in (int[])[0, 3])   // 부관 · 통역
+            {
+                string mate = _player.MateAt(slot);
+                if (mate.Length == 0 || people.FirstOrDefault(r => r.Name == mate) is not { } row) continue;
+                int level = spoken.Max(i => i < row.Languages.Length ? row.Languages[i] : 0);
+                if (level <= best || _game.MateInfo(mate) is not { } who) continue;
+                best = level;
+                relayer = _game.MateFace(who);
+            }
+        return new(mine, relayer, best);
     }
 
     /// <summary>그 말을 가장 잘 아는 부하와 그 수준(<c>0x0047CD20</c>). 아무도 없으면 빈 이름에 0 이다.</summary>
@@ -424,10 +535,20 @@ public sealed class CityPicView : Window, ITownScreen
     }
 
     /// <summary>
-    /// 건물이나 도시 명령 창이 떠 있는지. 게임은 창이 열린 채로는 <b>다른 건물을 못 누른다</b> —
+    /// 건물이나 도시 명령 창이 떠 있는지. 원본은 창이 열린 채로는 <b>다른 건물을 못 누른다</b> —
     /// 먼저 창을 닫아야 한다. 예전에는 눌러지는 대로 그 건물 창으로 갈아탔다.
     /// </summary>
     private bool MenuOpen => Menus.FacilityWindow != null || _cityMenu.IsOpen;
+
+    /// <summary>
+    /// 명령 창이 떠 있어 그 자리를 못 누르는지 — 그러면 손 모양 커서도 거둔다. 창이 닫히면 다시 손이다.
+    /// </summary>
+    private bool Unreachable(FrameworkElement spot)
+    {
+        bool shut = MenuOpen;
+        spot.Cursor = shut ? null : Cursors.Hand;
+        return shut;
+    }
 
     /// <summary>
     /// 건물 하나에 들어간다. 그림에서 눌러도, 커맨드의 "맵 포인트에 들어간다" 로 골라도
@@ -435,28 +556,73 @@ public sealed class CityPicView : Window, ITownScreen
     /// </summary>
     private void Enter(CityBuildingTable.Building building, bool arrived = false)
     {
-        // 초심자 개인 이야기(이야기0/1)가 <b>맨 먼저</b>다 — 게임은 들어서자마자 0x004AB5A0 으로
+        // 건물이 곧 발견물이면 <b>그것이 맨 먼저</b>다 — 원본은 시설을 열기(0x00490AD0) 전에 도시 화면
+        // 쪽에서 발견 대본을 돌리고(0x00492A5E~0x00492AF9), 결과가 밑값 2 로 남으면 건물에 안 든다.
+        // 시나리오 이야기는 발견 이벤트보다도 먼저 본다(원본에 없는 길) — 로마의 산·피에트로 대성당처럼 발견 이벤트가
+        // 명성으로 문을 막는 건물에서는, 원본 차례대로라면 막힌 채 끝나 장면이 영영 안 돈다.
+        bool storyDone = Engine.Scenarios.IsBook(_player.ActiveStoryBook);
+        if (storyDone)
+        {
+            _game.RulerFace = building.Code == PalaceCode ? () => RulerFaceOf(building.Code, building.Kind) : null;
+            if (CheckStory(building.Code)) return;
+        }
+
+        if (!Discover(building)) return;
+
+        // 왕궁이면 그 자리 국왕 얼굴을 걸어 둔다 — 대본의 화자 「국왕」(모드 「작위」)이 쓴다.
+        _game.RulerFace = building.Code == PalaceCode ? () => RulerFaceOf(building.Code, building.Kind) : null;
+
+        // 초심자 개인 이야기(이야기0/1)가 <b>맨 먼저</b>다 — 원본은 들어서자마자 0x004AB5A0 으로
         // 건물 사건을 보고, 장면이 돌았으면 보복·문간 관문·차림표를 다 건너뛰고 건물을 나선다
         // (0x004A266A → 0x004A26BC). 그래서 명성이 모자라도 이야기의 저택에는 불려 들어간다.
-        if (CheckStory(building.Code)) return;
+        // 시나리오 책은 위에서 이미 돌렸다 — 또 돌리면 건물을 안 막는 장면(「벌써 돌아왔는가？」)이 두 번 나왔다.
+        if (!storyDone && CheckStory(building.Code)) return;
 
         // 배신한 후원자의 나라에서는 건물에 들어서다 보복을 당한다(0x004A267D → 0x00450140).
         if (Ambushed()) return;
 
         var facility = Facility.For(building.Kind, building.Code);
+        // 이 건물 주인의 말을 얼마나 알아듣는지 걸어 둔다 — 대사 창이 주인 말을 그만큼 뭉갠다(KeeperTongue).
+        var teach = building.TeachMask;
+        Engine.Town.KeeperTongue.Here = () => KeeperListener(teach);
+        if (_patronMenu != null) _patronMenu.SignedHere = false;   // 건물에 들 때마다 [+0xC0] 은 0 이다(0x0044E6AA)
         if (!PassFameGate(building, facility)) return;   // 문 앞에서 돌아섰다
-        Discover(building);                              // 이 건물이 곧 발견물일 수 있다
         Greet(facility, building, arrived);
+        TellNoHint(building, facility);
         ShowPhoto(facility.Kind, building.Code);
         if (arrived) facility = ArrivalHarbor(facility);
         _openKind = facility.Kind;
         _pickedCode = building.Code;
-        // 명령 창 제목은 건물 이름이다 — 게임도 "베렌의 탑", "홍경정" 으로 낸다.
+        // 명령 창 제목은 건물 이름이다 — 원본도 "베렌의 탑", "홍경정" 으로 낸다.
         ShowMenu(() => BuildMenu(facility, building.Name, building.Code, building.TeachMask,
                                  building.Kind),
                  BuildingTrack(building.Code));
         MarkGateway(facility.Kind, arrived);
     }
+
+    /// <summary>이 도시에서 「힌트가 없다」고 이미 귀띔한 건물 — 같은 건물에 다시 들 때마다 되풀이하지 않는다.</summary>
+    private readonly HashSet<int> _noHintTold = [];
+
+    /// <summary>
+    /// 후원자가 앉은 건물인데 내밀 힌트가 없어 「설득」 줄이 빠지면 부관이 알려 준다(요청) — 원본은 말 없이 줄만 빠진다.
+    /// 후원자 일뿐인 건물(상회 · 왕궁 따위)만이다 — 딴 일도 하는 건물은 흐린 「설득」 줄로 알린다(BuildMenu).
+    /// 부관이 없으면 알림 상자로 낸다. 이 도시에 머무는 동안 건물마다 한 번이다.
+    /// </summary>
+    private void TellNoHint(CityBuildingTable.Building building, Facility facility)
+    {
+        if (PatronAt(building.Code, building.Kind) is not { } patron || Patrons.NoHintTip(patron) is not { } tip) return;
+        // 딴 일도 하는 건물은 「설득」을 흐리게 남기는 것으로 알린다 — 그 일로 들를 때마다 부관이 말하면 성가시다.
+        if (HasOtherWork(facility, TownStateOf(facility, building.Code, building.TeachMask, patron))) return;
+        if (!_noHintTold.Add(building.Code)) return;
+        if (_game.AideFace is { } aide) TalkDialog.Say(this, aide, "", tip);
+        else NoticeDialog.Show(this, tip);
+    }
+
+    /// <summary>그 왕궁에 앉은 국왕의 얼굴. 모르면 null.</summary>
+    private uint[]? RulerFaceOf(int code, string kind) =>
+        PatronAt(code, kind) is { } ruler && _game.Sponsors?.FindByName(ruler.Name) is { } row
+            ? _game.Faces?.TryGetBgra(row.Face, row.IsFemale)
+            : null;
 
     /// <summary>왕궁의 건물 코드 — 문간 관문의 배수가 x100 이다(<c>0x00470AC0</c>).</summary>
     private const int PalaceCode = 2;
@@ -471,7 +637,7 @@ public sealed class CityPicView : Window, ITownScreen
     /// 건물에 들어가 있는 동안 도는 곡. 없으면(null) 도시 곡이 그대로 돈다.
     /// </summary>
     /// <remarks>
-    /// 게임은 시설 갈래가 아니라 <b>건물 코드</b>로 가른다(<c>0x004929C4</c>) — 왕궁 2 는 소리
+    /// 원본은 시설 갈래가 아니라 <b>건물 코드</b>로 가른다(<c>0x004929C4</c>) — 왕궁 2 는 소리
     /// <c>0x12</c>, 교회 3 은 <c>0x0E</c>, 술집 4 는 <c>0x14</c> 다. 왕궁과 술집은 도시 문화권이
     /// 0·1·2(이베리아·북유럽·지중해)일 때만 바뀌고(<c>0x00492B1B</c> · <c>0x00492B35</c> 의
     /// <c>test edi, edi</c>), 그 밖의 문화권에서는 문화권 곡이 그대로 돈다. 교회만 문화권을
@@ -528,7 +694,7 @@ public sealed class CityPicView : Window, ITownScreen
     /// 저절로 지나 부관 인사만 하고 도시 그림이다.
     /// </summary>
     /// <remarks>
-    /// 게임은 닿을 때 들어온 건물을 「닿아서 들어옴」(<c>+0x98</c>)으로 돌린다(<c>0x004A2530</c>).
+    /// 원본은 닿을 때 들어온 건물을 「닿아서 들어옴」(<c>+0x98</c>)으로 돌린다(<c>0x004A2530</c>).
     /// 성문(코드 10)이면 차림표 없이 곧장 나서기 갈래(<c>0x004A2740</c> → 칸 10 <c>0x00468790</c>)를
     /// 돌고(<c>0x004A2612</c>), 항구면 차림표를 연다. 그 차림표에서 「마을에 들어간다」를 골라야
     /// 같은 칸 10 이 돌아 부관이 「이 마을에서 잠깐 쉽시다」 한다.
@@ -538,6 +704,9 @@ public sealed class CityPicView : Window, ITownScreen
         if (!bySea)
         {
             _pickedCode = GateCode;   // 글쇠 고르기는 들어온 성문에서 시작한다(0x00492CCA)
+            // 뭍으로 닿으면 성문에 든 사건(갈래 3, 건물 10)을 이야기 대본에 먼저 올린다(0x004A2612 → 0x004AB5A0(도시, 10)) —
+            // 결과 1 이면 성문을 지나지 못한다(0x004A262C). 「이국인을 들여보낼 수는 없다!」(PCQ 8 · PHT 10) 따위다.
+            if (CheckStory(GateCode)) return;
             LeaveGateway(FacilityKind.Gate, arrived: true);
             return;
         }
@@ -563,7 +732,9 @@ public sealed class CityPicView : Window, ITownScreen
     ///   아니면(마을에서 걸어 들어왔다 나간다)
     ///     0x00468874  성문이면 0x005519C0 「출발할 때는…」, 항구면 0x005519F0 「출항할 때에는…」
     /// </code>
-    /// 적대 도시 차림표(<c>0x004687FD</c>)는 우리 쪽이 도시 그림을 열기 전에 이미 돈다(<c>ShipMapWindow.PassGate</c>).
+    /// 적대 도시 차림표(<c>0x004687FD</c>)는 이 칸 안에서 돈다 — <b>뭍으로 온 성문</b>은 도시 그림을
+    /// 열기 전에 이미 봤고(<c>WorldMapWindow.PassGate</c>), <b>배로 닿은 항구</b>는 배를 댈 때 출입여부
+    /// 2 만 봤으므로(<c>0x004770BD</c>) 여기서 「마을에 들어간다」를 고를 때 1 을 본다.
     /// </remarks>
     private void LeaveGateway(FacilityKind kind, bool arrived)
     {
@@ -576,6 +747,13 @@ public sealed class CityPicView : Window, ITownScreen
                     : "출발할 때는 말해 주십시오. 곧 준비하겠습니다.");
             return;
         }
+
+        // 배로 닿아 항구에서 마을로 드는 문 — 출입여부 1 은 항구까지만 열고 마을은 막는다.
+        if (harbor && !PassTownGate()) return;
+
+        // 뭍으로 닿아 성문을 지나 마을에 들면 성문 칸 5(0x004686F0)가 0x004A2AD0(10, 2)를 돌려 삐짐을
+        // 다 푼다. 배로 닿은 항구는 닿을 때 0x004A2AD0(10, 1)(0x004770F2)이라 안 푼다.
+        if (!harbor) _player.ClearSulks();
 
         if (_game.AideFace is { } aideFace)
             TalkDialog.Say(this, aideFace, "",
@@ -592,6 +770,68 @@ public sealed class CityPicView : Window, ITownScreen
         }
 
         AmbientFolk();
+    }
+
+    /// <summary>
+    /// 배로 닿은 항구에서 마을로 드는 문(<c>0x004687FD</c>) — 출입여부가 0 보다 크면 적대 차림표가 뜬다.
+    /// 뚫었으면 참. 물러섰으면 항구 차림표를 도로 열어 두고 거짓 — 출항은 할 수 있어야 한다.
+    /// </summary>
+    /// <remarks>
+    /// 조약은 여기서 다시 안 본다 — 배를 댈 때 이미 봤다(<c>WorldMapWindow.PassGate</c>).
+    /// 도시 그림은 이미 떠 있으므로 차림표만 그 위에 낸다. 잠입하다 잡혀 죽으면 게임 오버다.
+    /// </remarks>
+    private bool PassTownGate()
+    {
+        int nation = _game.CityRows?.NationOf(_cityId) ?? -1;
+        int entry = Standoff.EntryOf(_player, _game.Nations, nation);
+        if (nation < 0 || !Standoff.Barred(entry, byLand: true)) return true;
+
+        var end = HostileCityMenu.Run(this, _game, _cityId, _cityName, byLand: true, inCity: true, stage: this);
+        if (end.GameOver)
+        {
+            GameOverDialog.Show(this, _game.EventStills, end.Picture, bgm: _game.Bgm);
+            if (Owner is WorldMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
+            return false;
+        }
+        if (end.Entered) return true;
+
+        // 들켜 달아났거나 추방·벌금을 받았으면 마을을 떠난다 — 원본은 +0xA0 이 서 있으면 항구 차림표를
+        // 닫고(0x004779C0 의 줄 7 → 0x004A2740 이 1 을 돌려준다) 도시 화면까지 끝낸다(0x004A26CA).
+        // 닿자마자 뜬 항구에서 곧장 나가는 것이라 출항과 같이 나오는 열흘은 없다(0x00477319).
+        if (end.MustLeave)
+        {
+            Sailed = true;
+            SailedOnArrival = true;
+            _gateway = null;
+            // 추방되며 게임이 첫 화면으로 돌아가는 따위로 이미 닫히는 중일 수 있다(Window.InternalClose 가 던졌다).
+            GameWindow.TryClose(this);
+            return false;
+        }
+
+        // 물러섰다 — 항구 차림표로 되돌아간다. 다시 「마을에 들어간다」를 고르면 또 뜬다(0x004A5669 는 남기는 것이 없다).
+        ReopenArrivalHarbor();
+        return false;
+    }
+
+    /// <summary>배로 닿은 항구 차림표를 인사 없이 도로 연다 — 성문 앞에서 물러선 뒤다.</summary>
+    private void ReopenArrivalHarbor()
+    {
+        foreach (var building in Standing(_cityId))
+        {
+            var facility = Facility.For(building.Kind, building.Code);
+            if (facility.Kind != FacilityKind.Harbor) continue;
+            _openKind = facility.Kind;
+            _pickedCode = building.Code;
+            var shown = ArrivalHarbor(facility);
+            ShowMenu(() => BuildMenu(shown, building.Name, building.Code, building.TeachMask, building.Kind),
+                     BuildingTrack(building.Code));
+            MarkGateway(FacilityKind.Harbor, arrived: true);
+            return;
+        }
+        var harbor = Facility.For("항구");
+        var bare = ArrivalHarbor(harbor);
+        ShowMenu(() => BuildMenu(bare, harbor.Name, HarborCode, 0, harbor.Name), BuildingTrack(HarborCode));
+        MarkGateway(FacilityKind.Harbor, arrived: true);
     }
 
     /// <summary>
@@ -638,7 +878,7 @@ public sealed class CityPicView : Window, ITownScreen
     ///     r &gt; 96 이면 곧바로 붙잡힌다, 아니면 일기토(인물 268) — 지면 붙잡힌다
     ///     붙잡히면 「좋아, 상금 걸린 자를 붙잡았다!」 → 후원자 「정신이 드나? …」 → GAME OVER
     /// </code>
-    /// 일기토에 져서 베이면(결과 3) 붙잡는 말 없이 곧바로 놀이가 끝난다(<c>0x0044FFBE</c> 의 <c>0x0044AF40(4)</c>).
+    /// 일기토에 져서 베이면(결과 3) 붙잡는 말 없이 곧바로 게임이 끝난다(<c>0x0044FFBE</c> 의 <c>0x0044AF40(4)</c>).
     /// </remarks>
     private bool Ambushed()
     {
@@ -664,20 +904,25 @@ public sealed class CityPicView : Window, ITownScreen
             _player.LoseSavings(30);
 
             if (_player.Spouse.Length > 0)
-                TalkDialog.Say(this, null, _player.Spouse, "여보, 미안해요. 내가 없는 동안 도둑이 들었어요!");
+                TalkDialog.Say(this, WifeFace(), "", "여보, 미안해요. 내가 없는 동안 도둑이 들었어요!");
             else
                 TalkDialog.Say(this, aide, "", "도둑이 들었습니다. 스폰서의 보복이겠지요.");
             return true;
         }
 
         // 나) 현상금 사냥꾼.
-        if (dice.Next(100) <= _player.AbilityOf(Ability.Luck) + 1) return false;
+        // 운 굴림은 동전으로 보인다 — 비켜 가도 돈다(0x0044FEE1 → 0x004A6380).
+        bool dodged = dice.Next(100) <= _player.AbilityOf(Ability.Luck) + 1;
+        PlayMpEffect(EffectAnim.Coin, dodged);
+        if (dodged) return false;
 
         GameDialog.Show(this, "어이... 저 자, 벽보의...");
         GameDialog.Show(this, "확실히...");
         TalkDialog.Say(this, aide, "", "왠지 분위기가 않좋군요, 도망칩시다.");
 
         int r = dice.Next(100);
+        // 달아나는 굴림은 짐 싣기 벌(0번)로 보인다(0x0044FF7F → 0x004A6120).
+        PlayMpEffect(EffectAnim.Load, r <= 96 && _player.AbilityOf(Ability.Body) + 1 > r);
         if (r <= 96 && _player.AbilityOf(Ability.Body) + 1 > r)
         {
             TalkDialog.Say(this, aide, "", "후우~, 더 이상 쫓아오지 않는군요. 제독, 여긴 너무 위험합니다. 빨리 마을을 떠납시다.");
@@ -687,7 +932,7 @@ public sealed class CityPicView : Window, ITownScreen
         if (r <= 96)
         {
             // 판 결과 0·1 이면 달아나고, 2(졌지만 살았다)면 붙잡히고, 3(베였다)이면 붙잡는 말도 없이
-            // 곧바로 놀이가 끝난다(0x0044FFAF → 0x0044FFBE 의 0x0044AF40(4)).
+            // 곧바로 게임이 끝난다(0x0044FFAF → 0x0044FFBE 의 0x0044AF40(4)).
             switch (HunterDuel())
             {
                 case null or true:
@@ -713,7 +958,7 @@ public sealed class CityPicView : Window, ITownScreen
             _ => "정신이 드나? 바보같은 녀석, 얌전히 용서를 빌었더라면 도와 주었을 것을..., 쓸데없는 수고를 하게 하다니!",
         });
         GameOverDialog.Show(this, _game.EventStills, GameOverDialog.MutinyLost, bgm: _game.Bgm);
-        if (Owner is ShipMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
+        if (Owner is WorldMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
         return true;
     }
 
@@ -721,7 +966,7 @@ public sealed class CityPicView : Window, ITownScreen
     /// 모항이 등을 돌린다(<c>0x0046B980</c>) — 악명 3000 을 넘으면 병사가 일기토를 건다.
     /// </summary>
     /// <remarks>
-    /// 막는 말은 둘 가운데 굴려 고르고 <b>문지기 얼굴</b>로 나온다. 지면(판 결과 2·3) 놀이가 끝나고
+    /// 막는 말은 둘 가운데 굴려 고르고 <b>문지기 얼굴</b>로 나온다. 지면(판 결과 2·3) 게임이 끝나고
     /// (<c>0x0046B894</c> 가 상태 4 로 끝낸다), 이기면 처형·놓아 준다·모두 뺏는다를 고른다 — 처형(결과 0)이면
     /// 악명이 말없이 500 오르고(<c>0x004697C0(1, 500)</c>), 그 밖(결과 1)은 악명이 안 오른다.
     /// </remarks>
@@ -733,11 +978,15 @@ public sealed class CityPicView : Window, ITownScreen
 
         var (body, might, sword, luck) = Standoff.SoldierOf(dice);
         var foe = new Engine.Town.Duel.Fighter(Standoff.SoldierName(harbor), body, might, sword, luck, 0, 0);
-        var mine = new Engine.Town.Duel.Fighter(_player.Name.Length > 0 ? _player.Name : "제독",
+        var mine = new Engine.Town.Duel.Fighter(_player.CallName.Length > 0 ? _player.CallName : "제독",
             _player.AbilityOf(Ability.Body), _player.AbilityOf(Ability.Might),
             _player.LevelOf(Skill.Names[Skill.Sword]), _player.AbilityOf(Ability.Luck), 0, 0);
 
-        var duel = new Engine.Town.Duel(mine, foe, _player.Items.Contains(Engine.Town.Duel.EdithShieldId),
+        // 무기·방어구는 판을 지을 때 쥔다 — 내 쪽은 지닌 것, 병사는 그 벌로 굴린다(0x004A8829 · 0x004A89D4).
+        var duel = new Engine.Town.Duel(Engine.Town.Duel.Equipped(mine, _player.Items, _game.Items),
+                                        Engine.Town.Duel.Armed(foe, FighterSprites.SetForCulture(_cultureNo),
+                                                               new GameRandom(Environment.TickCount), _game.Items),
+                                        _player.Items.Contains(Engine.Town.Duel.EdithShieldId),
                                         Environment.TickCount);
         bool won = DuelDialog.Show(this, duel, new GameRandom(Environment.TickCount), face,
                                    _game.Fighters, FighterSprites.SetForCulture(_cultureNo),
@@ -760,7 +1009,7 @@ public sealed class CityPicView : Window, ITownScreen
         TavernMenu.LostDuel(this, _player, duel, face, new GameRandom(Environment.TickCount),
                             mateFought: false, canFlee: false, canSpare: false);
         GameOverDialog.Show(this, _game.EventStills, GameOverDialog.MutinyLost, bgm: _game.Bgm);
-        if (Owner is ShipMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
+        if (Owner is WorldMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
     }
 
     /// <summary>
@@ -775,14 +1024,18 @@ public sealed class CityPicView : Window, ITownScreen
 
         int sword = row.Skills.Length > Skill.Sword ? row.Skills[Skill.Sword] : 0;
         var foe = new Engine.Town.Duel.Fighter(row.Name, row.Stats[0], row.Stats[2], sword, row.Stats[4], 0, 0);
-        var mine = new Engine.Town.Duel.Fighter(_player.Name.Length > 0 ? _player.Name : "제독",
+        var mine = new Engine.Town.Duel.Fighter(_player.CallName.Length > 0 ? _player.CallName : "제독",
             _player.AbilityOf(Ability.Body), _player.AbilityOf(Ability.Might),
             _player.LevelOf(Skill.Names[Skill.Sword]), _player.AbilityOf(Ability.Luck), 0, 0);
 
         var dice = new GameRandom(Environment.TickCount);
-        var duel = new Engine.Town.Duel(mine, foe, _player.Items.Contains(Engine.Town.Duel.EdithShieldId),
+        // 무기·방어구는 판을 지을 때 쥔다(0x004A8829 · 0x004A89D4).
+        var duel = new Engine.Town.Duel(Engine.Town.Duel.Equipped(mine, _player.Items, _game.Items),
+                                        Engine.Town.Duel.Armed(foe, FighterSprites.SetForCulture(_cultureNo),
+                                                               dice, _game.Items),
+                                        _player.Items.Contains(Engine.Town.Duel.EdithShieldId),
                                         Environment.TickCount);
-        var face = _game.PersonTemplates?.Find(hunter) is { } t ? _game.Faces?.TryGetBgra(t.Face, female: false) : null;
+        var face = _game.PersonFace(hunter);
         DuelDialog.Show(this, duel, dice, face, _game.Fighters, FighterSprites.SetForCulture(_cultureNo),
                         myFace: _game.Faces?.TryGetBgra(PortraitAges.At(_player.Face, _player.Age, false, _game.Faces),
                                                         female: false),
@@ -792,7 +1045,7 @@ public sealed class CityPicView : Window, ITownScreen
                                    ? DuelArt.TavernFor(_cultureNo) : DuelArt.Field,
                         bgm: _game.Bgm);
         _huntSlain = false;
-        if (duel.Won != true && TavernMenu.LostDuel(this, _player, duel, face, dice, mateFought: false))
+        if (duel.Won != true && TavernMenu.LostDuel(this, _player, duel, face, dice, mateFought: false, game: _game))
         {
             _huntSlain = true;
             return false;
@@ -806,7 +1059,7 @@ public sealed class CityPicView : Window, ITownScreen
 
     /// <summary>
     /// 이 마을 자택으로 곧바로 들어선다. 새 판이 시작될 때 쓴다 —
-    /// <b>게임도 판을 열면 자택 명령 창이 이미 떠 있다.</b>
+    /// <b>원본도 판을 열면 자택 명령 창이 이미 떠 있다.</b>
     /// </summary>
     /// <remarks>자택이 없는 마을이면 아무 일도 없다(고향이 아닌 데서 부를 일은 없다).</remarks>
     public void EnterHome()
@@ -816,7 +1069,7 @@ public sealed class CityPicView : Window, ITownScreen
     }
 
     /// <summary>
-    /// 건물 자체가 발견물이면 들어서는 그 자리에서 발견한다 — 세빌리아 교회가 51번
+    /// 건물 자체가 발견물이면 들어서는 그 자리에서 발견한다 — 세비야 교회가 51번
     /// 히랄다탑이다.
     /// </summary>
     /// <remarks>
@@ -825,61 +1078,145 @@ public sealed class CityPicView : Window, ITownScreen
     /// 지도에 사각형이 없어(<c>-1</c>) 자리로는 영영 안 잡힌다.
     ///
     /// 힌트로 열리는 것도 있으므로 <see cref="DiscoveryLog.IsOpen"/> 을 거친다.
+    ///
+    /// 원본은 대본의 결과 코드(밑값 2)로 <b>건물에 들지</b>를 가른다(<c>0x00492B06</c>):
+    /// <code>
+    ///   0 · 1   발견물 줄 +0x17 비트 0(깃발 0x0100)을 세우고 건물에 든다 — 그 사건은 다시 안 뜬다
+    ///   2       안 든다 — 발견 장면만 보고 도시 그림으로 돌아간다
+    ///   그 밖   건물에 든다
+    /// </code>
+    /// 예전에는 발견하고 나서 곧장 인사와 차림표로 이어졌다.
     /// </remarks>
-    private void Discover(CityBuildingTable.Building building)
+    /// <summary>발견 대본을 도시 그림을 파랗게 덮은 채로 돌린다. 대본이 있었으면 true.</summary>
+    private bool RunShaded(int discovery)
     {
-        if (!building.IsDiscovery) return;
-        if (_game.Discoveries is not { } log) return;
-        if (log.Table.Find(building.Discovery) is not { } row) return;
-        if (_player.HasFound(row.Id)) return;
-        if (!log.IsOpen(_player, row)) return;
+        Shade(true);
+        try { return Engine.Disev.DisevRunner.Run(this, _game, discovery); }
+        finally { Shade(false); RefreshShipLabel(); }   // 찾았으면 발견물 수도 곧바로 는다
+    }
+
+    /// <returns>건물에 들어가도 되면 true — 발견할 것이 없었으면 늘 true 다.</returns>
+    private bool Discover(CityBuildingTable.Building building)
+    {
+        if (!building.IsDiscovery) return true;
+        if (_game.Discoveries is not { } log) return true;
+        if (log.Table.Find(building.Discovery) is not { } row) return true;
+        if (!log.CanFire(_player, row)) return true;   // 0x00492A79 → 0x004AAD20
+        // 대본 조건이 안 맞으면(힌트가 없으면) 아무 일도 없다 — 그냥 발견으로 넘기지 않는다(바다 발견과 같다).
+        if (Engine.Disev.DisevRunner.Probe(this, _game, row.Id) == Engine.Disev.DisevRunner.ScriptState.Held) return true;
 
         // 발견 대본(DISEV)이 있으면 <b>그것이 다 한다</b> — 동영상 · 대사 · 육상전까지. 바다·뭍 발견
-        // (ShipMapWindow.CheckDiscovery)과 같은 길이다. 예전에는 건물 발견만 그림 한 장으로 끝내서
+        // (WorldMapWindow.CheckDiscovery)과 같은 길이다. 예전에는 건물 발견만 그림 한 장으로 끝내서
         // 파르테논 신전에서 동영상도 육상전도 안 났다.
-        bool scripted = Engine.Disev.DisevRunner.Run(this, _game, row.Id);
+        // 대본이 도는 동안 도시 그림이 파래진다 — 바다·뭍 발견의 지도(WorldMapWindow.Tint)와 같은 몫이다.
+        bool scripted = RunShaded(row.Id);
         // 대본이 게임 오버로 끝났으면(파르테논 육상전에서 전멸하거나 물러나 저주를 받으면) 발견을
-        // 적지 않고 놀이를 끝낸다 — 바다·뭍 발견과 같은 차례다(ShipMapWindow.CheckDiscovery).
+        // 적지 않고 게임을 끝낸다 — 바다·뭍 발견과 같은 차례다(WorldMapWindow.CheckDiscovery).
         if (Engine.Disev.DisevRunner.LastEndedInGameOver)
         {
             GameOverDialog.Show(this, _game.EventStills, Engine.Disev.DisevRunner.LastGameOverPicture, bgm: _game.Bgm);
-            if (Owner is ShipMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
-            return;
+            if (Owner is WorldMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
+            return false;
         }
 
         // 대본이 돌았으면 발견·물건은 대본의 01 0B 가 준다(0x0048D3F0 은 따로 안 적는다).
         if (!scripted) log.Discover(_player, row.Id);
+        Engine.Discovery.DiscoveryLog.Settle(_player, row.Id, scripted);   // 0x00492B49
 
         // 대본이 없을 때만 그림 한 장으로 알린다.
-        // 게임 문구는 "%s%s 발견했다!"(0x00544720) 다 — 이름 뒤에 을/를 이 붙는다.
+        // 원본 문구는 "%s%s 발견했다!"(0x00544720) 다 — 이름 뒤에 을/를 이 붙는다.
         if (!scripted)
             DiscoveryDialog.Show(this, _game.Stills, building.Picture,
                                  $"{row.Name}{GameUi.Josa(row.Name, "을", "를")} 발견했다!");
 
+        // 대본이 없으면 결과가 밑값 2 그대로라 안 든다.
+        return scripted && Engine.Disev.DisevRunner.LastResult != 2;
+    }
+
+    /// <summary>
+    /// 도시에 <b>들어서는 것으로</b> 발견되는 것 — 인도(2)·향료제도(4)·중국(5)·지팡그(8) 따위다.
+    /// 게임 오버로 끝났으면 true.
+    /// </summary>
+    /// <remarks>
+    /// 도시 화면을 열 때(<c>0x00492430</c>) HP 를 보고 부관이 쉬라 한 뒤에 돈다(<c>0x004928BB</c>) —
+    /// 도시 표 <c>+0x64</c> 의 발견물 넷(<see cref="CityExeTable.DiscoveriesOf"/>)을 차례로 돌며 열려 있고
+    /// 아직 못 찾은 것(<c>0x004AAD20</c>)이면 그 번호의 발견 대본을 튼다. 이런 발견물은 지도에 사각형이
+    /// 없어(<c>-1</c>) 바다 판정(<see cref="DiscoveryLog.At"/>)으로는 영영 안 잡힌다 — 예전에는 인도항로
+    /// 계약을 맺고 캘리컷에 들어가도 아무 일이 없었다. 대본이 결과 0·1 로 끝나면 원본은 발견물 줄의
+    /// <c>+0x17</c> 비트 0(깃발 <c>0x0100</c>)을 세워(<c>0x0049294A</c>) 그 사건을 다시 안 튼다.
+    /// 거르는 것은 바다 판정과 같은 <see cref="DiscoveryLog.CanFire"/> 다.
+    /// </remarks>
+    public bool DiscoverOnEntry()
+    {
+        if (_game.Discoveries is not { } log) return false;
+        if (_game.CityRows is not { } rows) return false;
+
+        foreach (int id in rows.DiscoveriesOf(_cityId))
+        {
+            if (log.Table.Find(id) is not { } row) continue;
+            if (!log.CanFire(_player, row)) continue;   // 0x004928D8 → 0x004AAD20
+            // 대본 조건이 안 맞으면 넘긴다 — 그냥 발견으로 넘기지 않는다.
+            if (Engine.Disev.DisevRunner.Probe(this, _game, row.Id) == Engine.Disev.DisevRunner.ScriptState.Held) continue;
+
+            // 대본이 있으면 그것이 다 한다 — 대사 · 음원 · 아이템 · 발견까지(바다·건물 발견과 같은 길이다).
+            bool scripted = RunShaded(row.Id);
+            if (Engine.Disev.DisevRunner.LastEndedInGameOver)
+            {
+                GameOverDialog.Show(this, _game.EventStills, Engine.Disev.DisevRunner.LastGameOverPicture, bgm: _game.Bgm);
+                if (Owner is WorldMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
+                return true;
+            }
+
+            // 대본이 없을 때만 여기서 적고 알린다 — "%s%s 발견했다!"(0x00544720).
+            if (!scripted)
+            {
+                log.Discover(_player, row.Id);
+                string found = $"{row.Name}{GameUi.Josa(row.Name, "을", "를")} 발견했다!";
+                MoviePlayer.Play(this, DiscoveryDialog.MovieOf(_game.Directory, row.Movie), _game.Bgm);
+                if (row.Movie >= 0) NoticeDialog.Show(this, found);
+                else DiscoveryDialog.Show(this, _game.Stills, row.Picture, found);
+            }
+            Engine.Discovery.DiscoveryLog.Settle(_player, row.Id, scripted);   // 0x0049294A
+        }
+        return false;
     }
 
     /// <summary>
     /// 초심자(EASY) 캐릭터의 개인 퀘스트라인(이야기0·이야기1) 한 장면을 체크한다.
     /// </summary>
     /// <remarks>
-    /// 건물에 들어서는 <b>맨 첫머리</b>에서 건다(게임의 <c>0x004AB5A0</c>). 장면이 결과 코드 1(<c>4D</c>)로
+    /// 건물에 들어서는 <b>맨 첫머리</b>에서 건다(원본의 <c>0x004AB5A0</c>). 장면이 결과 코드 1(<c>4D</c>)로
     /// 끝났으면 true — 그러면 부르는 쪽은 문간 관문도 차림표도 안 연다.
     /// 이야기0/1 은 발견물 표에 없는 대신 <see cref="Engine.Discovery.StoryLog"/> 가 건물·도시·
     /// 연도·명성 같은 조건을 그때그때 살펴 지금 틀 장면을 찾아 준다. 새로운 주인공(NORMAL)은
     /// <see cref="Player.ActiveStoryBook"/> 이 없어 곧장 지나간다.
     /// </remarks>
-    private bool CheckStory(int building)
-    {
-        if (_player.ActiveStoryBook is not { } book) return false;
-        if (Engine.Discovery.StoryLog.NextPart(_player, _game, building) is not { } part) return false;
+    private bool CheckStory(int building) =>
+        RunStory(Engine.Disev.DisevEvent.EnterBuilding(_cityId, building));
 
-        Engine.Disev.DisevRunner.Run(this, _game, book, part, building);
+    /// <summary>이야기 대본을 그 사건으로 한 장면 돌린다. 결과 1 로 끝나 부른 쪽이 물러서야 하면 true.</summary>
+    private bool RunStory(Engine.Disev.DisevEvent ev)
+    {
+        // 개인 이야기가 먼저 — 장면이 돌아 건물을 막았으면 전역 대본은 안 본다.
+        if (_player.ActiveStoryBook is { } own && RunBook(ev, own)) return true;
+        // 전역 대본(모드 「작위」 따위) — 직업과 상관없이 돈다.
+        foreach (string global in Engine.Discovery.StoryLog.GlobalBooks())
+            if (RunBook(ev, global)) return true;
+        return false;
+    }
+
+    /// <summary>그 책을 그 사건으로 한 장면 돌린다. 결과 1 로 끝나 부른 쪽이 물러서야 하면 true.</summary>
+    private bool RunBook(Engine.Disev.DisevEvent ev, string book)
+    {
+        if (Engine.Discovery.StoryLog.NextPart(_player, _game, ev, book) is not { } part) return false;
+
+        Engine.Disev.DisevRunner.Run(this, _game, book, part, ev);
         Engine.Discovery.StoryLog.Advance(_player, _game, book, part);
 
         if (Engine.Disev.DisevRunner.LastEndedInGameOver)
         {
             GameOverDialog.Show(this, _game.EventStills, Engine.Disev.DisevRunner.LastGameOverPicture, bgm: _game.Bgm);
-            if (Owner is ShipMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
+            if (Owner is WorldMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
             return true;
         }
         // 결과 코드가 1(4D)일 때만 건물에 못 든다(0x004AB4AC). 도서관 안내처럼 말만 하고 끝나면 그대로 들어간다.
@@ -895,7 +1232,7 @@ public sealed class CityPicView : Window, ITownScreen
     /// 후원자가 앉은 건물의 <b>명성 관문</b>. 통과하면 true, 문 앞에서 돌아섰으면 false 다.
     /// </summary>
     /// <remarks>
-    /// 명성이 모자라면 설득이 엎어지고 <b>명령 창이 아예 안 열린다</b> — 게임도 그 자리에서
+    /// 명성이 모자라면 설득이 엎어지고 <b>명령 창이 아예 안 열린다</b> — 원본도 그 자리에서
     /// 도시 그림으로 돌아가고 집사가 돌려보내는 소리(효과음 파트 1)를 낸다.
     ///
     /// <b>왕궁과 교회는 뺀다.</b> 그 둘은 후원자를 못 만나도 건물 자체에는 들어간다 —
@@ -904,29 +1241,38 @@ public sealed class CityPicView : Window, ITownScreen
     /// </remarks>
     private bool PassFameGate(CityBuildingTable.Building building, Facility facility)
     {
-        var patron = PatronAt(building.Kind);
+        var patron = PatronAt(building.Code, building.Kind);
         if (patron == null) return true;
 
         // <b>교회만</b> 문에서 안 본다. 교회는 수련하는 데라 후원자를 못 만나도 들어가고,
         // 명성 관문은 "설득" 을 누를 때 집사가 대신 본다(<see cref="PatronMenu.Persuade"/> ·
         // 게임 0x004AE1F0).
         //
-        // <b>왕궁은 막는다.</b> 후원자가 앉은 건물들과 한 벌이다 — 게임도 그 다섯 벌의
+        // <b>왕궁은 막는다.</b> 후원자가 앉은 건물들과 한 벌이다 — 원본도 그 다섯 벌의
         // 가상함수표 첫 칸이 다 0x0040D370(문간 관문)이다(볼트 22 참고). 한때 왕궁까지
         // 빼 두었는데 그것이 틀렸다.
         if (facility.Kind is FacilityKind.Church) return true;
 
-        // <b>이미 만난 후원자면 문을 안 본다.</b> 게임의 관문(0x0044E740)은 후원자 +0x28 비트 15(첫 알현 전)가
+        // <b>이미 만난 후원자면 문을 안 본다.</b> 원본의 관문(0x0044E740)은 후원자 +0x28 비트 15(첫 알현 전)가
         // 서 있을 때만 명성을 잰다(vtbl+0x34 = 0x004AD800). 첫 알현(0x004AE595)이나 이야기 대본의 38 12 가
         // 그 비트를 지운다 — 라몬의 파브리스, 에밀리오의 에란쪼가 명성 없이 열리는 까닭이다.
         if (_player.HasMet(patron.Name) ||
             _game.Sponsors?.FindByName(patron.Name) is { } known && _player.HasMet(known.Name))
             return true;
 
+        // <b>작위를 받은 사람은 본국 수도 왕궁의 문을 안 본다</b>(모드 「작위」, 원본에 없다). 작위 장면은 문간보다 먼저 돌고
+        // 건물을 나서므로(CheckStory), 국왕이 기사로 서임해 놓고 다음에 들면 문지기가 명성으로 내쫓았다(버그 리포트 #5).
+        if (building.Code == PalaceCode && Engine.Town.Nobility.Enabled && _player.NobleRank > 0
+            && Engine.Town.Nobility.InHomeCapital(_game))
+            return true;
+
         // 안목에 거는 배수가 건물마다 다르다 — 왕궁(코드 2)은 0x00470AC1 의 x100, 저택(12~15)은
         // 0x0040D371 의 x70 이다(0x0044E740: 안목 x 배수 ≤ 명성이면 통과). patrons.json 의 fame 은 x70 값이다.
-        int eye = _game.Sponsors?.FindByName(patron.Name)?.Eye ?? patron.Fame / 70;
-        bool passed = _player.Fame >= eye * (building.Code == PalaceCode ? 100 : 70);
+        var row = _game.Sponsors?.FindByName(patron.Name);
+        int eye = row?.Eye ?? patron.Fame / 70;
+        bool passed = row is { HasMeetFame: true } own
+            ? _player.Fame >= own.MeetFame                       // 표에 따로 적은 만나는 명성(원본에 없다)
+            : _player.Fame >= eye * (building.Code == PalaceCode ? 100 : 70);
 
         PlayFameCheck(passed);
 
@@ -934,12 +1280,15 @@ public sealed class CityPicView : Window, ITownScreen
 
         _game.Sfx?.Play(SoundBank.TurnedAwayPart);
 
-        // 문지기가 내쫓는다. 얼굴은 그 건물의 화자 그대로다 — 게임도 시설 객체가 든
+        // 문지기가 내쫓는다. 얼굴은 그 건물의 화자 그대로다 — 원본도 시설 객체가 든
         // 같은 얼굴을 쓴다(0x0040D385 가 +0x84 를 넘긴다).
         ConfirmDialog.Tell(this, "너 같은 녀석이 들어올 장소가 아니다! 꺼지지 못할까!",
                            face: _game.SpeakerFace(building.Code, _cultureNo));
-        // 「명성치가 모자랍니다」(0x00544BF0 · 0x00544BA0)는 힌트 패널(0x0040E0A0)로만 가는 안 보이는 기록이라
-        // 화면에 내지 않는다(0x0040D39B · 0x00470AE3 — 디버그 깃발 [0x00580C6C]&2 뒤).
+        // 「명성치가 모자랍니다.」(0x00544BA0 · 왕궁 0x00544BF0)는 아래 띠로 간다(0x0040D3B0 → 0x0040E0A0 — 소리 0x1D 가 같이 난다).
+        // 0x00580C48 은 화면 맨 아래 31점 높이로 지어지는 띠 창이다(0x0040DF80). 예전에는 [0x00580C6C]&2 를
+        // 디버그 깃발로 보고 안 냈는데, 그 칸은 띠 창 자신의 깃발(+0x24)이다.
+        (Owner as WorldMapWindow)?.Say(building.Code == PalaceCode ? "명성치가 모자랍니다!" : "명성치가 모자랍니다.");
+        _game.Sfx?.Play(SoundBank.BandNoticePart);
         return false;
     }
 
@@ -947,27 +1296,26 @@ public sealed class CityPicView : Window, ITownScreen
     /// 후원자가 앉은 건물에 들어설 때 도는 <b>설득 애니메이션</b>(MPEFFECT 5번).
     /// </summary>
     /// <remarks>
-    /// 게임은 이것을 명성 관문 안에서 돌린다 — <c>0x0044E740</c> 이 후원자의 필요 명성과 내
+    /// 원본은 이것을 명성 관문 안에서 돌린다 — <c>0x0044E740</c> 이 후원자의 필요 명성과 내
     /// 명성을 견주고, 그 결과를 그대로 애니메이션의 인자로 넘긴다(우리도 <paramref name="passed"/>
     /// 로 받는다). 그림 넉 장이 곧 결말까지
     /// 담고 있어서, <b>통과면 청을 들어주는 셋째 장에서 멈추고 모자라면 엎어지는 끝 장까지</b>
     /// 간다. 자세한 것은 볼트 <c>22.분석-애니메이션(MPEFFECT·EVANIME)</c> 참고.
     ///
-    /// 한 번 만난 뒤에는 게임도 관문을 건너뛴다(후원자 비트 15) — <see cref="PassFameGate"/> 가
+    /// 한 번 만난 뒤에는 원본도 관문을 건너뛴다(후원자 비트 15) — <see cref="PassFameGate"/> 가
     /// 그것을 보므로 이 애니메이션도 <b>첫 알현 때만</b> 돈다.
     /// </remarks>
-    public void PlayFameCheck(bool passed) =>
-        PlayEffect(EffectAnim.Persuade, [.. Plead, passed ? Granted : Refused]);
+    public void PlayFameCheck(bool passed) => PlayMpEffect(EffectAnim.Persuade, passed);
 
     /// <summary>
     /// 자택 "후손을 남긴다" 의 애니메이션 — <b>MPEFFECT 2번(대포)</b>이다.
     /// </summary>
     /// <remarks>
-    /// 게임도 그렇다(<c>0x004613E3</c> 이 <c>0x004A6340</c> 을 부른다). 그 껍데기는 인자가
+    /// 원본도 그렇다(<c>0x004613E3</c> 이 <c>0x004A6340</c> 을 부른다). 그 껍데기는 인자가
     /// 1 이면 소리 <c>0x2A</c>, 아니면 <c>0x2B</c> 를 함께 낸다 — 되고 안 되고가 곧 소리다.
+    /// 장은 0 → 1 → 결말 셋뿐이고 한 장이 하트의 다섯 배 머문다(<c>0x004A5D20</c>, 장 간격 10).
     /// </remarks>
-    public void PlayHeir(bool born) =>
-        PlayEffect(EffectAnim.Cannon, [.. Plead, born ? Granted : Refused]);
+    public void PlayHeir(bool born) => PlayMpEffect(EffectAnim.Cannon, born);
 
     /// <summary>
     /// 후원자의 마음이 동하는지 — <b>MPEFFECT 3번(하트)</b>이다.
@@ -976,8 +1324,28 @@ public sealed class CityPicView : Window, ITownScreen
     /// 이야기를 고르고 나서 돈다(<c>0x004AE7B7</c> · <c>0x004AE815</c>). 굴림에 이기면
     /// 하트가 커지고, 지면 깨진다 — 넷째 장이 곧 깨진 하트다.
     /// </remarks>
-    public void PlayHeart(bool won) =>
-        PlayEffect(EffectAnim.Heart, [.. Plead, won ? Granted : Refused]);
+    public void PlayHeart(bool won) => PlayMpEffect(EffectAnim.Heart, won);
+
+    /// <summary>
+    /// 굴린 결과대로 MPEFFECT 한 벌을 원본 차례(<see cref="EffectAnim.Frames"/>)와 참으로 돌린다
+    /// (<c>0x004A6140(벌, 결과, 소리)</c>).
+    /// </summary>
+    public void PlayMpEffect(int anim, bool won) =>
+        PlayEffect(anim, EffectAnim.Frames(anim, won), EffectPopup.SpanOf(anim), EffectPopup.SoundOf(anim, won));
+
+    // ── 성문 앞 무대 — 배로 닿아 항구에서 마을로 들다 막혔을 때, 성문 장면 대신 이 그림 위에서 돈다 ──
+
+    /// <summary>교섭하는 하트 — 성문 쪽 차례(<see cref="EffectAnim.HeartFrames"/>)와 참(<see cref="GateScene.HeartSpan"/>)이다.</summary>
+    void IGateStage.PlayHeart(bool won) =>
+        PlayEffect(EffectAnim.Heart, EffectAnim.HeartFrames(won), GateScene.HeartSpan);
+
+    /// <summary>잠입하는 동전(<see cref="EffectAnim.CoinFrames"/>) — 한 걸음에 한 장이라 더 빠르다.</summary>
+    void IGateStage.PlayCoin(bool won) =>
+        PlayEffect(EffectAnim.Coin, EffectAnim.CoinFrames(won), GateScene.CoinSpan);
+
+    /// <summary>들킨 뒤 달아나는 벌(파트 0) — 갈래 0 의 차례로 돈다.</summary>
+    void IGateStage.PlayEscape(bool won) =>
+        PlayEffect(EffectAnim.Load, EffectAnim.HeartFrames(won), GateScene.HeartSpan);
 
     /// <summary>
     /// 동그란 애니메이션 한 벌을 도시 그림 한가운데에서 돌린다.
@@ -985,9 +1353,10 @@ public sealed class CityPicView : Window, ITownScreen
     /// <remarks>
     /// <b>도는 동안 시설 명령 창을 접는다.</b> 명령 창은 제 창(HWND)이라 도시 그림 <b>위에</b>
     /// 뜨는데, 애니메이션은 그림 위에 얹히므로 창에 통째로 가려 안 보였다 — 후원자에게
-    /// 이야기를 내밀 때 도는 하트가 그래서 한 번도 안 나왔다. 게임도 이때는 명령 창을 지운다.
+    /// 이야기를 내밀 때 도는 하트가 그래서 한 번도 안 나왔다. 원본도 이때는 명령 창을 지운다.
     /// </remarks>
-    private void PlayEffect(int anim, int[] order)
+    /// <param name="span">한 장이 머무는 참. 안 주면 <see cref="FrameSpan"/> 이다.</param>
+    private void PlayEffect(int anim, int[] order, TimeSpan? span = null, int sound = -1)
     {
         if (_playing) return;                       // 도는 동안 또 누르면 겹친다
 
@@ -1012,7 +1381,9 @@ public sealed class CityPicView : Window, ITownScreen
                 }
                 var frame = art[f];
                 GameThread.OnUi(() => _stage.SetEffect(frame));
-                Wait(FrameSpan);
+                // 결말 장으로 넘어가는 참에 소리를 낸다(0x004A5D59 가 깃발을 세우면 0x004A5EB4 가 [+0xC0] 소리를 낸다).
+                if (sound >= 0 && f >= Granted) _game.Sfx?.Play(sound);
+                Wait(span ?? FrameSpan);
             }
         }
         finally
@@ -1022,11 +1393,6 @@ public sealed class CityPicView : Window, ITownScreen
             if (wasShown) HideMenu(false);
         }
     }
-
-    /// <summary>
-    /// 청하는 두 장. 이것을 두 번 되풀이해 흔든 뒤 결말 장으로 넘어간다(모두 0부터 센다).
-    /// </summary>
-    private static readonly int[] Plead = [0, 1, 0, 1];
 
     /// <summary>결말 장 — 받아 드는 셋째 장과 엎어지는 넷째 장.</summary>
     private const int Granted = 2, Refused = 3;
@@ -1041,7 +1407,7 @@ public sealed class CityPicView : Window, ITownScreen
     /// "수련" — 맡은 사람이 먼저 묻고, 창을 닫을 때 아무것도 안 배웠으면 한마디 한다.
     /// </summary>
     /// <remarks>
-    /// <b>건물마다 사람도 말도 다르다.</b> 게임은 문구를 <c>0x00490D90(교회, 조합, 그밖)</c>
+    /// <b>건물마다 사람도 말도 다르다.</b> 원본은 문구를 <c>0x00490D90(교회, 조합, 그밖)</c>
     /// 으로 고른다 — 건물 종류로 셋 중 하나를 집는 갈래표다(<c>0x00490DDC</c>).
     /// <code>
     ///   0x0055A7E8  교회    "주의 배움의 터전에 잘 오셨습니다. 어떤 학문, 기능을 배우고 싶습니까?"
@@ -1057,7 +1423,7 @@ public sealed class CityPicView : Window, ITownScreen
 
     /// <summary>건물에 들어설 때 그 시설 사람이 건네는 한마디.</summary>
     /// <remarks>
-    /// 인사말도 얼굴도 <b>시설이 든다</b> — 게임도 시설 객체마다 제 인사 자리가 있다
+    /// 인사말도 얼굴도 <b>시설이 든다</b> — 원본도 시설 객체마다 제 인사 자리가 있다
     /// (조선소 <c>0x0044B4A0</c>). 도시 창이 하는 일은 어느 시설인지 가르는 것뿐이고,
     /// 시설은 이 창이 든 문화권(<see cref="_cultureNo"/>)으로 제 화자를 찾는다.
     ///
@@ -1096,7 +1462,7 @@ public sealed class CityPicView : Window, ITownScreen
     /// 모항의 시설에서 아내·아이와 마주친다(<c>0x004A1EB0</c>).
     /// </summary>
     /// <remarks>
-    /// 게임은 인사 다음, <b>후원자가 앉아 있지 않을 때만</b> 이 자리를 본다 — 왕궁에 후원자가
+    /// 원본은 인사 다음, <b>후원자가 앉아 있지 않을 때만</b> 이 자리를 본다 — 왕궁에 후원자가
     /// 앉은 날에는 가족 대사 여섯 줄이 안 나온다. 규칙과 문구는 <see cref="FamilyVisit"/> 에 있다.
     /// </remarks>
     private void MeetFamily(Facility facility, CityBuildingTable.Building building)
@@ -1107,7 +1473,7 @@ public sealed class CityPicView : Window, ITownScreen
                                   or FacilityKind.Market)) return;
 
         // 후원자가 앉은 건물이면 그쪽이 먼저다(slot7 이 1 을 돌려주면 slot8 이 아예 안 불린다).
-        if (building.Kind is { Length: > 0 } kind && PatronAt(kind) != null) return;
+        if (building.Kind is { Length: > 0 } kind && PatronAt(building.Code, kind) != null) return;
 
         if (!FamilyVisit.Due(_player, _cityId, _game.Random)) return;
         if (FamilyVisit.MetChild(_player, _game.Random) is not { } child) return;
@@ -1122,7 +1488,7 @@ public sealed class CityPicView : Window, ITownScreen
         {
             if (_player.Spouse.Length == 0) return;
             var (wife, said) = FamilyVisit.MarketWords(girl, dice);
-            TalkDialog.Say(this, null, _player.Spouse, wife);
+            TalkDialog.Say(this, WifeFace(), "", wife);
             TalkDialog.Say(this, face, child.Name, said);
             return;
         }
@@ -1152,6 +1518,8 @@ public sealed class CityPicView : Window, ITownScreen
     private void ShowPhoto(FacilityKind kind, int buildingCode)
     {
         GameThread.OnUi(() => _stage.SetPhoto(null, []));
+        _photoShown = null;
+        _photoOf = (kind, buildingCode);
 
         var photos = _game.Photos;
         if (photos == null) return;
@@ -1160,27 +1528,71 @@ public sealed class CityPicView : Window, ITownScreen
         if (k < 0) return;
 
         var people = kind == FacilityKind.Home ? WifeArt() : Guests.GuestArt(kind);
-        var bgra = photos.TryGetBgra(k);
+        // 도시마다 갈아 끼운 사진이 먼저다(한양 왕궁 — asset/buildingphoto).
+        var bgra = photos.TryGetCityBgra(_cityId, buildingCode) ?? photos.TryGetBgra(k);
         var guests = people.Select(g => new CityStage.Guest(GameThread.Face(g.Bgra, g.Width, g.Height)!, g.Name,
                                                             g.Click is { } run ? () => GameThread.Post(run) : null))
                            .Where(g => g.Art != null).ToList();
+        _photoShown = (bgra, guests);
         GameThread.OnUi(() => _stage.SetPhoto(bgra, guests));
+    }
+
+    /// <summary>지금 사진(걷었다 되살릴 때 쓴다).</summary>
+    private (uint[]? Bgra, List<CityStage.Guest> Guests)? _photoShown;
+
+    /// <summary>
+    /// 사진을 잠깐 걷고 그 자리를 준다 — 조선소의 배 그림 창이 거기 앉는다
+    /// (원본도 <c>0x004A21C0</c> 로 사진을 걷고 <c>0x00494900</c> 으로 배 그림을 세운다).
+    /// </summary>
+    internal Point StashPhoto()
+    {
+        GameThread.OnUi(() => _stage.SetPhoto(null, []));
+        return new Point(Left + PhotoLeft * _scale, Top + PhotoTop * _scale);
+    }
+
+    /// <summary>걷어 둔 사진을 되살린다(<c>0x004A2180</c>).</summary>
+    internal void UnstashPhoto()
+    {
+        if (_photoShown is { } shown) GameThread.OnUi(() => _stage.SetPhoto(shown.Bgra, shown.Guests));
+    }
+
+    /// <summary>지금 뜬 사진이 어느 건물 것인지 — 손님을 다시 세울 때 쓴다.</summary>
+    private (FacilityKind Kind, int Code)? _photoOf;
+
+    /// <summary>사진 앞 손님을 다시 세운다 — 부하로 들인 사람은 술집에 남지 않는다.</summary>
+    internal void RefreshPhoto()
+    {
+        if (_photoShown == null || _photoOf is not { } of) return;
+        GameThread.Post(() => { if (_photoShown != null) ShowPhoto(of.Kind, of.Code); });
     }
 
     /// <summary>
     /// 자택 사진 앞에 세우는 <b>아내</b>. 아내가 없거나 얼굴을 못 읽으면 빈 목록이다.
     /// </summary>
     /// <remarks>
-    /// 게임도 자택 인물 목록에는 <b>아내 하나</b>만 넣고(<c>0x004A19D0</c> 이 건물 11 일 때만),
+    /// 원본도 자택 인물 목록에는 <b>아내 하나</b>만 넣고(<c>0x004A19D0</c> 이 건물 11 일 때만),
     /// 아이는 아예 못 누른다. 눌렀을 때 도는 것은 <c>0x00414AD0</c> → <c>0x004149F0</c> 이다.
     /// </remarks>
     private IReadOnlyList<BuildingPhotoWindow.GuestArt> WifeArt()
     {
         if (_player.Spouse.Length == 0) return [];
         if (_game.Barmaids?.Find(_player.SpouseId) is not { } her) return [];
+
+        // 술집 손님처럼 <b>작은 전신 그림</b>으로 선다 — 그 여급이 제 마을 술집에 서던 그림 그대로다
+        // (그 마을 문화권 여자 가운데 마을 · 여급 번호로 고른 한 장, TavernGuests.MaidArt). 그림을 못 읽으면 얼굴로 물러선다.
+        if (_game.Guests?.MaidArt(_game.CultureOf(her.City), TavernGuests.MaidSeed(her.City, her.Id)) is { } art
+            && _game.Guests.TryGetBgra(art) is { } body)
+            return [new(body, art.Width, art.Height, _player.Spouse, TalkToWife)];
+
         if (_game.Faces?.TryGetBgra(her.Face, female: true) is not { } bgra) return [];
         return [new(bgra, PortraitW, PortraitH, _player.Spouse, TalkToWife)];
     }
+
+    /// <summary>아내 얼굴 — 그 여급의 얼굴(FEMALE.CDS). 없으면 null.</summary>
+    private uint[]? WifeFace() =>
+        _game.Barmaids?.Find(_player.SpouseId) is { } her ? _game.Faces?.TryGetBgra(her.Face, female: true)
+        : _player.Spouse.Length > 0 ? _game.Faces?.TryGetBgra(Local.Helpers.Portraits.NamedWifeFace, female: true)
+        : null;
 
     /// <summary>초상화 크기(FEMALE.CDS 한 장).</summary>
     private const int PortraitW = 80, PortraitH = 96;
@@ -1200,7 +1612,7 @@ public sealed class CityPicView : Window, ITownScreen
 
         if (Home.TalkerOf(_player, dice) is not { } child)
         {
-            TalkDialog.Say(this, face, _player.Spouse,
+            TalkDialog.Say(this, face, "",
                            Home.WifeAlone[dice.Next(Home.WifeAlone.Length)]);
             return;
         }
@@ -1208,14 +1620,14 @@ public sealed class CityPicView : Window, ITownScreen
         int age = child.AgeOn(_player.Date);
         var talk = Home.TalkWith(child.Daughter, age, dice);
         // 「%s%s 크면」의 조사는 은/는이다(0x004147F7 의 0x004281B0(이름, 1)).
-        TalkDialog.Say(this, face, _player.Spouse,
+        TalkDialog.Say(this, face, "",
                        string.Format(talk.Wife, child.Name, GameUi.Josa(child.Name, "은", "는")));
         TalkDialog.Say(this, _game.Faces?.TryGetBgra(Home.FaceOf(child, age), child.Daughter),
                        child.Name, talk.Child);
     }
 
     /// <summary>
-    /// 건물 <b>위에</b> 이름표를 띄운다. 게임은 밑에 붙이는데, 우리 커서는 이름표를 덮고
+    /// 건물 <b>위에</b> 이름표를 띄운다. 원본은 밑에 붙이는데, 우리 커서는 이름표를 덮고
     /// 앉아 글자가 가린다 — 커서가 누르는 자리는 늘 이름표 아래가 되게 위로 올렸다.
     /// 그림 꼭대기에 붙은 건물이라 위로 넘칠 때만 밑으로 돌린다.
     /// </summary>
@@ -1236,6 +1648,16 @@ public sealed class CityPicView : Window, ITownScreen
         {
             GameThread.OnUi(() => _stage.SetPhoto(null, []));
             _bgm?.Play(_cityTrack);
+            _guests?.Left();
+
+            // 이번에 든 후원자 건물에서 계약을 맺었으면 나설 때 「후원자 건물 나섬」(갈래 5)을 올린다 — 원본의
+            // 나서기(0x0044E6C0)는 나가기 줄 · ESC · 설득 끝 어느 길로 나서든 돌고, [+0xC0](계약을 맺음, 0x004AF3C9)이
+            // 서 있을 때만 0x004AB640 을 부른다(0x0044E721).
+            if (_patronMenu is { SignedHere: true } signed)
+            {
+                signed.SignedHere = false;
+                RunStory(Engine.Disev.DisevEvent.LeaveSponsor(_pickedCode));
+            }
 
             // 항구·성문을 마지막 줄(ESC 도 같다)로 나서 마을에 들면 부관이 한마디 한다 — 출항·탐험은
             // 그 줄에서 먼저 지워 여기 안 온다.
@@ -1291,37 +1713,42 @@ public sealed class CityPicView : Window, ITownScreen
             ShowContract: ShowContract,
             ShowPatrons: () => KeepCityMenu(Patrons.ShowPatrons),
             ShowMap: () => _cityMenu.Push(MapMenu),
-            Quit: () => GameSystemMenu.Quit(this, _game, Menu),
-            Cancel: CloseCityMenu));
+            Quit: () => GameSystemMenu.Quit(this, _game, Menu, _cityMenu),
+            Cancel: CloseCityMenu,
+            ShowNobility: Engine.Town.Nobility.Enabled
+                ? () => KeepCityMenu(() => PersonInfoDialog.ShowNobility(this, _game))
+                : null,
+            // 바다 「정보」와 같은 발견물 지도 — 지도 창이 연다(단축키 D 와 같은 길).
+            ShowDiscoveryMap: Local.Settings.GameSettings.ShowDiscoveryMapMenu && Owner is WorldMapWindow
+                ? () => KeepCityMenu(() => (Owner as WorldMapWindow)?.MapByKey())
+                : null));
 
     /// <summary>
-    /// 인물 정보. <b>부하가 하나라도 있으면</b> 게임처럼 누구를 볼지 먼저 묻고,
+    /// 인물 정보. <b>부하가 하나라도 있으면</b> 원본처럼 누구를 볼지 먼저 묻고,
     /// 아무도 없으면 곧바로 제독의 판을 낸다.
     /// </summary>
-    /// <remarks>도시 안이라 함대좌표는 게임처럼 <c>---</c> 다.</remarks>
+    /// <remarks>도시 안이라 함대좌표는 원본처럼 <c>---</c> 다.</remarks>
     private void ShowPerson() => PersonInfoMenu.Show(this, _game, _cityMenu);
 
     /// <summary>함대 정보 판.</summary>
     private void ShowFleet() => KeepCityMenu(() => FleetInfoDialog.Show(this, _player, items: _game.Items,
-                                                                    cargoName: c => GameInfo.CargoLabel(_game, c)));
+                                                                    cargoName: c => GameInfo.CargoLabel(_game, c),
+                                                                    cargoInfo: (w, c) => GoodsInfoDialog.Show(w, _game, c.Kind, c.Shelf), game: _game));
 
     /// <summary>
-    /// 정보 판 하나를 띄우는 동안 도시 커맨드 창을 감춰 두었다가 <b>도로 편다</b> — 게임은 판을 닫으면 차림표를
+    /// 정보 판 하나를 띄우는 동안 도시 커맨드 창을 감춰 두었다가 <b>도로 편다</b> — 원본은 판을 닫으면 차림표를
     /// 다시 낸다(<c>0x004934A3</c> 가 <c>0x110</c> 을 적어 <c>0x00492FE7</c> 로 되돌아간다). 창이 닫히는 것은
     /// 취소 · 맵 포인트 · 게임 종료뿐이다.
     /// </summary>
     private void KeepCityMenu(Action show)
     {
         var menu = _cityMenu.Window;
-        if (menu != null) menu.Visibility = Visibility.Hidden;
+        GameWindow.TrySetVisibility(menu, Visibility.Hidden);
         try { show(); }
         finally
         {
-            if (menu != null && menu.IsLoaded)
-            {
-                menu.Visibility = Visibility.Visible;
-                menu.Activate();
-            }
+            // 판을 보는 사이 명령 창이 닫혔거나 닫히는 중이면 펴지 않는다.
+            if (menu is { IsLoaded: true } && GameWindow.TrySetVisibility(menu, Visibility.Visible)) menu.Activate();
         }
     }
 
@@ -1362,7 +1789,7 @@ public sealed class CityPicView : Window, ITownScreen
     /// </remarks>
     private void LookAtChart()
     {
-        if (Owner is not ShipMapWindow map) { CloseCityMenu(); return; }
+        if (Owner is not WorldMapWindow map) { CloseCityMenu(); return; }
         map.ShowSeaChart(this, _cityMenu.Window);
     }
 
@@ -1370,7 +1797,8 @@ public sealed class CityPicView : Window, ITownScreen
     private void ShowCityInfo() => KeepCityMenu(() =>
         CityInfoDialog.Show(this, _cityName, _cityId, _game.CityRows,
                             _game.Nations, _game.Goods, _game.ItemPictures,
-                            Market?.Rates ?? _game.Rates));
+                            Market?.Rates ?? _game.Rates,
+                            TradeRules?.ShownSpecials(_player, _cityId)));
 
     /// <summary>
     /// 여관에 묵는다. 게임 차례 그대로 — 값을 부르고, YES 면 그때서야 돈을 본다.
@@ -1384,22 +1812,26 @@ public sealed class CityPicView : Window, ITownScreen
         int price = inn.PriceAt(_cityId);
 
         // 여관 주인이 얼굴을 띄우고 묻는다(0x0047FC5B — 시설 +0x80).
-        if (!ConfirmDialog.Ask(this, $"선불이네. 우리 집은 한 달에 금화 {price}닢인데, 머물고 갈텐가?",
+        // 여관 창이 떠 있으면 그 위에 얹는다 — 도시 화면에 얹으면 여관 창과 형제가 되어, 쥐가 여관 창 단추에
+        // 오르는 순간(초점이 옮겨 가) 여관 창이 알림 위로 올라온다.
+        var owner = Menu.Window ?? this;
+        if (!ConfirmDialog.Ask(owner, $"선불이네. 우리 집은 한 달에 금화 {price}닢인데, 머물고 갈텐가?",
                                face: _game.SpeakerFace(InnCode, _cultureNo)))
             return;
 
         if (!_player.CanAfford(price))
         {
-            NoticeDialog.Show(this, "소지금이 모자랍니다");
+            NoticeDialog.Show(owner, "소지금이 모자랍니다");
             return;
         }
 
         // 차례는 원본 그대로다(0x0047FC78~): 화면을 덮고 값을 치르고 서른 날을 보낸 뒤 밝히고,
         // 말을 조금 배우고(0x0047FAE0), 모항이면 능력이 오를 때가 있고(0x0047FB80), 일어난 말, HP 다.
         DayPass.Blackout(this, () => inn.Stay(_player, _cityId));
-        TellTongue(inn.LearnTongue(_player, _cityId, _game.Nations, _random));
+        _player.Note(Player.TraceInnStay);   // 0x0047FCA8 — 행적에 숙박을 적는다
+        TellTongue(inn.LearnTongue(_player, _cityId, _game.Nations, _random, won => PlayMpEffect(EffectAnim.Scribe, won)));
         HomeInnBonus();
-        NoticeDialog.Show(this, Lodging.WakeWord(_random));
+        NoticeDialog.Show(owner, Lodging.WakeWord(_random));
         // 한 달 묵으면 HP 가 30~59 찬다(0x0047FCFF).
         _player.SetCondition(_player.Condition + Vitality.InnRest(_random));
     }
@@ -1417,7 +1849,7 @@ public sealed class CityPicView : Window, ITownScreen
 
     private Lodging? _lodging;
 
-    /// <summary>셋 중 하나를 고르는 데 쓴다. 게임도 rand(3) 으로 고른다.</summary>
+    /// <summary>셋 중 하나를 고르는 데 쓴다. 원본도 rand(3) 으로 고른다.</summary>
     private readonly Random _random = new();
 
     /// <summary>
@@ -1426,24 +1858,35 @@ public sealed class CityPicView : Window, ITownScreen
     /// <remarks>
     /// YES 면 <b>한 해</b>가 통째로 가고(피로가 다 풀리고 규율이 가득 찬다) 컨디션이 10~19 차며,
     /// 그 고장 말을 배울 수도 있다(<see cref="Lodging.LearnTongue"/>). 삯은 시세를 먹인 1200 닢이다.
-    /// 게임은 <b>삯을 알리고 나서</b> 돈을 넣는데, 셈이 같으니 여기서는 알림 뒤에 넣는다.
+    /// 원본은 <b>삯을 알리고 나서</b> 돈을 넣는데, 셈이 같으니 여기서는 알림 뒤에 넣는다.
     /// NO 면 아무 말 없이 끝난다.
     /// </remarks>
     private void OddJob()
     {
         var inn = _lodging ??= new Lodging(_game.CityRows, _game.Rates);
         var face = _game.SpeakerFace(InnCode, _cultureNo);
-        if (!ConfirmDialog.Ask(this, Lodging.OddJobAsk, face: face)) return;
+        if (!ConfirmDialog.Ask(Menu.Window ?? this, Lodging.OddJobAsk, face: face)) return;
 
         int pay = inn.OddJobPay(_cityId);
-        // 한 해가 가는 동안 화면이 덮였다 밝는다(0x004A5AE0(0x14, 1)).
-        DayPass.Blackout(this, () => _player.AdvanceDays(Lodging.OddJobDays));
-        _player.SetCondition(_player.Condition + Lodging.OddJobRest(_random));
-        TellTongue(inn.LearnTongue(_player, _cityId, _game.Nations, _random));
+        // 일하는 한 해 동안은 여관 창을 접는다 — 접지 않으면 어둠이 걷힌 뒤 여관 창이 다시 앞에 서서 주인의 말과
+        // 삯 알림을 덮었다. 화면이 까매졌다 밝으며 한 해가 간 것을 먼저 보이고, 말을 다 듣고 나서 여관 창을 다시 낸다.
+        bool wasShown = Menus.FacilityWindow is { Visibility: Visibility.Visible };
+        if (wasShown) HideMenu(true);
+        try
+        {
+            // 한 해가 가는 동안 화면이 덮였다 밝는다(0x004A5AE0(0x14, 1)).
+            DayPass.Blackout(this, () => _player.PassTownDays(Lodging.OddJobDays));
+            _player.SetCondition(_player.Condition + Lodging.OddJobRest(_random));
+            TellTongue(inn.LearnTongue(_player, _cityId, _game.Nations, _random, won => PlayMpEffect(EffectAnim.Scribe, won)));
 
-        ConfirmDialog.Tell(this, Lodging.OddJobDone, face: face);
-        NoticeDialog.Show(this, $"금화 {pay}닢을 손에 넣었다!");
-        _player.Earn(pay);
+            ConfirmDialog.Tell(this, Lodging.OddJobDone, face: face);
+            NoticeDialog.Show(this, $"금화 {pay}닢을 손에 넣었다!");
+            _player.Earn(pay);
+        }
+        finally
+        {
+            if (wasShown) HideMenu(false);
+        }
     }
 
     /// <summary>여관 건물 코드(화자표) — 주인은 여자다.</summary>
@@ -1453,7 +1896,7 @@ public sealed class CityPicView : Window, ITownScreen
     private void TellTongue(string? tongue)
     {
         if (tongue is { Length: > 0 })
-            NoticeDialog.Show(this, $"{tongue}{GameUi.Josa(tongue, "을", "를")} 조금 습득했다!");
+            NoticeDialog.Show(Menu.Window ?? this, $"{tongue}{GameUi.Josa(tongue, "을", "를")} 조금 습득했다!");
     }
 
     /// <summary>
@@ -1549,19 +1992,32 @@ public sealed class CityPicView : Window, ITownScreen
     private string HintNameOf(int id) => _game.HintName(id);
 
     /// <summary>얻은 힌트를 늘어놓는다. 이름은 판이 찾아 준다.</summary>
-    private void ShowHints()
+    /// <remarks>
+    /// 다른 정보 판처럼 보는 동안 커맨드 창을 감춰 둔다(<see cref="KeepCityMenu"/>). 그래서 판의 주인은
+    /// 커맨드 창이 아니라 도시 화면이다 — 감춘 창을 주인으로 삼지 않는다.
+    /// </remarks>
+    private void ShowHints() => KeepCityMenu(ShowHintsBody);
+
+    private void ShowHintsBody()
     {
-        // 게임은 그냥 늘어놓기만 하지 않는다 — 한 줄을 고르고 결정하면 그 이야기를 편다.
+        // 원본은 그냥 늘어놓기만 하지 않는다 — 한 줄을 고르고 결정하면 그 이야기를 편다.
         //
         // 보고까지 마친 힌트는 여기서 빠진다(원본 힌트 상태 15). 발견만 해서는 안 빠지는
         // 것이 옳다 — 까닭은 DiscoveryLog.IsHintDone 에 적어 두었다.
-        var owner = _cityMenu.Window ?? this;
+        Window owner = this;
         var ids = _game.Discoveries?.LiveHints(_player) ?? [.. _player.Hints.Order()];
+
+        // 모드 「향상된 힌트 보기」 — 목록과 설명을 한 창에 나란히.
+        if (HintBrowserDialog.IsOn(_player)) { HintBrowserDialog.Show(owner, _game, ids); return; }
 
         while (true)
         {
-            // 힌트가 없으면 게임도 설득 때와 같은 「설득 가능한 힌트가 없습니다」를 낸다.
-            int at = HintListDialog.Pick(owner, [.. ids.Select(id => GameInfo.HintLabel(_game, id))]);
+            // 힌트가 없으면 원본도 설득 때와 같은 「설득 가능한 힌트가 없습니다」를 낸다.
+            // 정보 제공 등급 「상세」면 이름 아래에 그 힌트가 가리키는 발견물을 단다.
+            int at = ListPickDialog.Pick(owner, [.. ids.Select(HintNameOf)],
+                                         subtitles: [.. ids.Select(_game.HintDiscoveryNames)],
+                                         rightTexts: [.. ids.Select(id => _game.Hints?.Find(id) is { } hint
+                                             ? _game.Hints.CategoryOf(hint.Category) : "")]);
             if (at < 0 || at >= ids.Count) return;
             if (_game.Hints?.Find(ids[at]) is not { } hint) return;
 
@@ -1584,14 +2040,33 @@ public sealed class CityPicView : Window, ITownScreen
     private GameMenu BuildMenu(Facility facility, string title, int code, uint teachMask,
                                string kind)
     {
-        var patron = PatronAt(kind);
+        var patron = PatronAt(code, kind);
+        var state = TownStateOf(facility, code, teachMask, patron);
+        // 내밀 힌트가 없어 후원자 줄이 빠질 자리 — 딴 일도 하는 건물이면 「설득」을 흐리게 남긴다(요청).
+        if (patron != null && Patrons.NoHintTip(patron) != null && HasOtherWork(facility, state))
+            state = state with { PatronRow = Facility.Persuade, PatronDim = true };
 
-        return TownMenu.Build(facility, title, code, teachMask, patron,
+        var menu = TownMenu.Build(facility, title, code, teachMask, patron, state, this);
+        // 줄 끝을 넘으면 사진 속 사람들로 이어진다 — 줄과 사람이 한 고리다(0x004A2320).
+        // PC 판은 줄 끝에서 사진 속 사람들로 글쇠 초점이 이어진다(menu.Ring). 안드로이드는 사람을 바로 누른다.
+        return menu;
+    }
+
+    /// <summary>후원자 줄과 나가기 말고도 고를 일이 있는 건물인지 — 교회 · 학자 저택 따위.</summary>
+    private static bool HasOtherWork(Facility facility, in TownWorks.TownState state) =>
+        TownWorks.LinesOf(facility, state with { PatronRow = null, PatronBribe = false, PatronBorrow = false }).Count > 1;
+
+    /// <summary>그 건물의 명령 창을 짓는 데 쓰는 이 도시의 형편.</summary>
+    private TownWorks.TownState TownStateOf(Facility facility, int code, uint teachMask, Patron? patron) =>
             new TownWorks.TownState(
                 Teaches: TownWorks.Teaches(teachMask),
                 Poor: _player.Gold <= Lodging.OddJobMaxGold,   // 0x0047FE70 의 jle — 100닢이면 뜬다
-                // 게임도 알릴 것이 있고 <b>모항</b>일 때만 줄을 켠다(0x00476DE0).
-                CanAnnounce: _cityId == _player.HomePort && Port.Announceable().Count > 0,
+                // 원본도 알릴 것이 있고 <b>모항</b>일 때만 줄을 켠다(0x00476DE0).
+                // 항구가 없는 모항(프랑스로 망명한 파리 따위)은 발표할 곳이 없어 성문이 대신 받는다 — 원본에 없는 길이다.
+                // 항구가 있는 도시의 성문에는 안 선다.
+                CanAnnounce: _cityId == _player.HomePort
+                             && (facility.Kind != FacilityKind.Gate || !_harborPlaced)
+                             && Port.Announceable().Count > 0,
                 PatronRow: patron == null ? null : Patrons.PatronRow(patron),
                 PatronBribe: patron != null && Patrons.CanBribe(patron),
                 PatronBorrow: patron != null && Patrons.CanBorrow(patron, KindsHere.Contains("항구")),
@@ -1601,9 +2076,10 @@ public sealed class CityPicView : Window, ITownScreen
                 HasHeir: Home.HasBornChild(_player),
                 HasSon: Home.EldestSon(_player) != null,
                 HasBooks: _game.Books?.InLibrary(_cityId, _player.Date.Year).Count > 0,
-                Wed: Home.CanLeaveHeir(_player)),
-            this);
-    }
+                Wed: Home.CanLeaveHeir(_player),
+                CanExile: facility.Kind == FacilityKind.Palace && Engine.Town.Exile.Offered(_player, _cityId, _game.CityRows, _game.Nations),
+                ExileReady: facility.Kind == FacilityKind.Palace
+                            && Engine.Town.Exile.Ready(_player, _cityId, patron == null ? -1 : _player.ClosenessOf(patron.Name)));
 
     /// <summary>
     /// 그 건물에 <b>해설</b> 줄이 붙는지 — 발견물인 건물을 이미 발견했고 해설 글이 있을 때다.
@@ -1617,12 +2093,15 @@ public sealed class CityPicView : Window, ITownScreen
     /// 스톡홀름·이스파한·우르겐치·카슈가르 왕궁은 역사 대본이 세우기 전까지 안 들어가진다.
     /// </summary>
     /// <remarks>
-    /// 차례는 <b>건물 코드 차례</b>다 — 게임은 도시 낱말(<c>+0x1C</c>)의 비트 0~15 를 훑어(<c>0x00491D58</c>)
+    /// 차례는 <b>건물 코드 차례</b>다 — 원본은 도시 낱말(<c>+0x1C</c>)의 비트 0~15 를 훑어(<c>0x00491D58</c>)
     /// 자리가 겹치면 <b>코드가 낮은 건물</b>을 집는다. 맵 포인트 목록도 같은 차례다.
     /// </remarks>
     private List<CityBuildingTable.Building> Standing(int cityId) =>
         [.. _table.InCity(cityId)
                   .Where(b => _game.CityRows?.HasBuilding(cityId, b.Code) ?? true)
+                  // 자택은 <b>모항</b>에만 선다 — 새 판이 고른 나라의 모항에만 비트 11 을 세운다(0x0045E449).
+                  // 건물 표에는 리스본 · 세비야 둘 다 있어, 안 가리면 남의 나라 자택에도 들어가졌다.
+                  .Where(b => b.Code != CityExeTable.HomeCode || _player.HomePort < 0 || cityId == _player.HomePort)
                   .OrderBy(b => b.Code)];
 
     /// <summary>그 자리의 건물 줄. 못 찾으면 null.</summary>
@@ -1676,13 +2155,13 @@ public sealed class CityPicView : Window, ITownScreen
     /// 그 건물에 앉은 후원자의 얼굴. 없으면 null — 그때는 화자표의 시설 사람이 선다.
     /// </summary>
     /// <remarks>
-    /// 게임은 대사 얼굴을 시설 객체 <c>+0x88</c> 에서 꺼내는데, 후원자가 앉은 건물이면 그 자리가 <b>후원자</b>다 —
+    /// 원본은 대사 얼굴을 시설 객체 <c>+0x88</c> 에서 꺼내는데, 후원자가 앉은 건물이면 그 자리가 <b>후원자</b>다 —
     /// 교회 수련에서 신부 대신 그 교회 후원자(페르난 마르틴스 따위)가 말한다.
     /// </remarks>
     private uint[]? PatronFaceAt(int buildingCode)
     {
         var building = _table.InCity(_cityId).FirstOrDefault(b => b.Code == buildingCode);
-        if (building.Kind is not { Length: > 0 } kind || PatronAt(kind) is not { } patron) return null;
+        if (building.Kind is not { Length: > 0 } kind || PatronAt(buildingCode, kind) is not { } patron) return null;
         return _game.Sponsors?.FindByName(patron.Name) is { } sponsor
             ? _game.Faces?.TryGetBgra(sponsor.Face, sponsor.IsFemale)
             : null;
@@ -1708,13 +2187,17 @@ public sealed class CityPicView : Window, ITownScreen
     /// 손님과 이야기하는 동안 시설 명령 창을 감춘다.
     /// </summary>
     /// <remarks>
-    /// 게임은 손님을 누르면 <b>명령 창을 지우고 그 자리에</b> "말을 건다 · 무시한다" 를
+    /// 원본은 손님을 누르면 <b>명령 창을 지우고 그 자리에</b> "말을 건다 · 무시한다" 를
     /// 낸다. 우리는 창이 따로라 겹쳐 보였다 — 이야기하는 동안만 접어 둔다.
     /// </remarks>
     private void HideMenu(bool hide)
     {
-        if (Menus.FacilityWindow is { } window)
-            window.Visibility = hide ? Visibility.Hidden : Visibility.Visible;
+        if (Menus.FacilityWindow is not { } window) return;
+        window.Visibility = hide ? Visibility.Hidden : Visibility.Visible;
+        // 창은 Visibility 를 바꿔도 <b>곧바로</b> 안 뜬다 — WPF 가 띄우기를 줄에 세워 둔다. 그대로 두면 바로 뒤에 여는
+        // 알림 창보다 명령 창이 <b>늦게</b> 떠서 알림을 덮는다(여관에서 묵고 말을 배웠을 때 「…어를 조금 습득했다!」가
+        // 여관 창 밑에 깔렸다). 줄에 선 것을 여기서 비워 명령 창을 먼저 띄운다.
+        if (!hide) Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private TavernMenu? _guests;
@@ -1792,7 +2275,15 @@ public sealed class CityPicView : Window, ITownScreen
     private TradePost? _tradePost;
 
     /// <summary>이 건물에 앉아 있는 후원자. 없으면 null.</summary>
-    private Patron? PatronAt(string kind) => Patrons.At(kind, KindsHere);
+    /// <remarks>
+    /// 후원자는 도시·건물 코드로 앉는다(<see cref="PatronMenu.At"/>). <b>항구에는 안 앉힌다</b> — 후원자 표에서 에라스무스만
+    /// 런던 건물 0(런던항)을 가리키는데, 항구 차림표에는 설득 줄이 없고 문간 관문(0x0040D370)도 후원자 건물 다섯 벌에만
+    /// 있어, 앉혀 봐야 항구 문에서 명성을 재고 집사 얼굴이 바뀌는 탈만 난다. 원본은 코드 0 시설에 후원자를 물리지 않아
+    /// (<c>0x0044E5C0</c> 을 가진 시설 코드는 2·3·12·13·14·15뿐) 그를 아무 데서도 못 만난다 — 우리는 런던 교회에 앉힌다
+    /// (<see cref="Engine.Table.SponsorTable.SeatedAt"/>).
+    /// </remarks>
+    private Patron? PatronAt(int code, string kind) =>
+        kind == "항구" || code == HarborCode ? null : Patrons.At(code, kind, KindsHere);
 
     /// <summary>이 도시에 있는 건물 종류들. 후원자를 앉힐 자리를 고를 때 쓴다.</summary>
     private HashSet<string> KindsHere =>
@@ -1842,7 +2333,7 @@ public sealed class CityPicView : Window, ITownScreen
     /// 성문의 「탐험을 떠난다」 관문 — 나서도 좋으면 true.
     /// </summary>
     /// <remarks>
-    /// 게임의 <c>0x00468900</c> 이다.
+    /// 원본의 <c>0x00468900</c> 이다.
     /// <code>
     ///   468903  편성 안 된 배가 있나(0x004688A0)   — 있으면 못 나간다
     ///   468910  함대 선원 수(0x0040E360) &gt; 0      — 있으면 그대로 나간다
@@ -1912,17 +2403,22 @@ public sealed class CityPicView : Window, ITownScreen
     bool ITownScreen.CanSucceed => Home.EldestSon(_player) != null;
     bool ITownScreen.CanEducate => _player.Children.Count > 0;
 
+    // 「후원자 건물 나섬」(갈래 5)은 창이 닫힐 때(Menus 의 onFacilityClosed) 올린다 — 나가기 줄만이 아니라
+    // ESC · 설득 끝으로 나서도 돌아야 한다.
     void ITownScreen.CloseMenu() => CloseMenu();
 
+    /// <summary>명령 줄을 고르기 전에 「건물 명령 고름」 사건(갈래 4, <c>0x004A248C</c>)을 본다. 막아야 하면 true.</summary>
+    bool ITownScreen.StoryCommand(int code, int row) => RunStory(Engine.Disev.DisevEvent.PickCommand(code, row));
+
     /// <summary>
-    /// 놀이를 끝낸다(<c>0x0044AF40</c>) — 그림 0x0B 와 CONTINUE? 뒤 첫 화면으로 돌아간다.
+    /// 게임을 끝낸다(<c>0x0044AF40</c>) — 그림 0x0B 와 CONTINUE? 뒤 첫 화면으로 돌아간다.
     /// 끝난 까닭 0·4·5·6 은 그림 0x0B, 1·2 는 0x0C, 3 은 0x0D 다(<c>0x00410CA1</c> 뜀표).
     /// </summary>
     internal void EndGame()
     {
         CloseMenu();
         GameOverDialog.Show(this, _game.EventStills, GameOverDialog.MutinyLost, bgm: _game.Bgm);
-        if (Owner is ShipMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
+        if (Owner is WorldMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
     }
 
     void ITownScreen.LeaveTavern()
@@ -1940,12 +2436,12 @@ public sealed class CityPicView : Window, ITownScreen
     /// 설득 — 끝나면 <b>그 건물에서 나온다</b>.
     /// </summary>
     /// <remarks>
-    /// 게임도 설득이 끝나면 명령 창으로 안 돌아가고 도시 그림으로 물러선다. 시설의
+    /// 원본도 설득이 끝나면 명령 창으로 안 돌아가고 도시 그림으로 물러선다. 시설의
     /// "고른 것 처리"(<c>0x0044ED1A</c>)가 <b>설득 본체가 돌려준 값을 그대로 제 반환값으로
     /// 내보내므로</b>(<c>0x0044ED28</c> → <c>0x0044ED30</c> → <c>0x0044EE05</c>) 설득이
     /// 화면을 접을 수 있다 — 다른 줄들은 제 값을 따로 만들어 낸다.
     ///
-    /// 문전박대도 마찬가지다. 명성이 모자라 집사가 돌려보내면 게임은 그 자리에서 도시
+    /// 문전박대도 마찬가지다. 명성이 모자라 집사가 돌려보내면 원본은 그 자리에서 도시
     /// 그림으로 돌아간다(<see cref="PatronMenu.Persuade"/>).
     /// </remarks>
     void ITownScreen.Persuade(Patron patron)
@@ -1962,13 +2458,33 @@ public sealed class CityPicView : Window, ITownScreen
     void ITownScreen.BribeInspector(Patron patron) => Patrons.BribeInspector(patron);
     void ITownScreen.BorrowShips(Patron patron) => Patrons.BorrowShips(patron);
 
-    void ITownScreen.Sail()
+    void ITownScreen.Sail() => Sail(sure: false);
+
+    /// <summary>이 도시에서 배로 떠날 수 있는지 — 함대가 여기 있어야 한다(항구 「출항」 줄과 같은 조건).</summary>
+    internal bool CanSailOut => _player.FleetHere(_cityId, 1);
+
+    /// <summary>
+    /// 자동항해 목적지를 골랐을 때 — 어느 건물에 있든 그 자리에서 출항한다. 떠났으면 참.
+    /// </summary>
+    /// <remarks>원본에는 없는 길이다. 출항 관문(<see cref="HarborMenu.ConfirmSail"/>)은 그대로 거친다.</remarks>
+    internal bool SailNow()
     {
-        if (!Port.ConfirmSail()) return;
+        if (!CanSailOut) return false;
+        CloseMenu();
+        return Sail(sure: true);
+    }
+
+    private bool Sail(bool sure)
+    {
+        if (!Port.ConfirmSail(sure)) return false;
         Sailed = true;
         SailedOnArrival = _arrived;
+        // 마을에서 걸어 나와 출항하면 항구 칸 6(0x00477310)이 0x004A2AD0(10, 2)를 돌려 삐짐을 다 푼다.
+        // 닿자마자 곧장 떠나면(+0x98) 그 칸이 아무것도 안 한다. 열흘은 지도 창이 보낸다.
+        if (!_arrived) _player.ClearSulks();
         _gateway = null;
         Close();
+        return true;
     }
 
     void ITownScreen.Explore(int buildingCode)
@@ -1977,12 +2493,14 @@ public sealed class CityPicView : Window, ITownScreen
 
         // 관문을 넘으면 한 번 더 묻는다(0x0046894F). 글 둘을 넘기지만 0x00469680 이
         // <b>부관 있고 없고로 하나만</b> 고른다 — 제목 띠가 아니다.
-        // 준비하는 열흘은 성문을 나설 때 도는 PassPortDays 가 그대로 쓴다.
+        // 준비하는 날수는 성문을 나설 때 도는 PassPortDays 가 쓰는 모드 값(GameSettings.PortDays, 원본 10)이다 — 말도 그 값으로.
         if (!ConfirmDialog.Ask(this, _game.Player.MateAt(0).Length > 0
-                ? "탐험을 떠납니까? 준비하는데 10일 걸립니다. 좋습니까?"
+                ? $"탐험을 떠납니까? 준비하는데 {Local.Settings.GameSettings.PortDays}일 걸립니다. 좋습니까?"
                 : "탐험하러 출발하십니까?")) return;
 
         Explored = true;
+        // 성문 칸 6(0x00468770)이 0x004A2AD0(10, 2) — 탐험을 떠나면 삐짐이 다 풀린다.
+        _player.ClearSulks();
         _gateway = null;
         Close();
     }
@@ -2002,10 +2520,14 @@ public sealed class CityPicView : Window, ITownScreen
 
     void ITownScreen.Supply() =>
         SupplyDialog.Show(Menu.Window ?? this, _player, Market?.Rates.Of(_cityId) ?? 100,
-                          ((_game.CityRows?.FlagsOf(_cityId) ?? 0) & 8) != 0,
-                          Port.MateFace());
+                          _game.CityRows?.FlagsOf(_cityId) ?? 0,
+                          Port.MateFace(),
+                          c => (_game.Goods?.Find(c.Kind)?.Name ?? $"교역품 {c.Kind}",
+                                c.Origin >= 0 ? $"{_game.CityName(c.Origin)}산" : ""));
 
     void ITownScreen.BuyShip() => Yard.BuyShip();
+    void ITownScreen.SpecialOrder() => Yard.SpecialOrder();
+    bool ITownScreen.CanSpecialOrder => Yard.CanSpecialOrder;
     void ITownScreen.SellShip() => Yard.SellShip();
     void ITownScreen.RepairShip() => Yard.RepairShip();
     void ITownScreen.RefitShip() => Yard.RefitShip();
@@ -2031,10 +2553,177 @@ public sealed class CityPicView : Window, ITownScreen
 
     void ITownScreen.TradeTalk() => TradeTalk();
 
+    /// <summary>
+    /// 왕궁 「망명」 — 금화를 바치고 그 왕궁의 나라로 국적을 옮긴다. 모항(자택)도 이 도시로 옮긴다(모드 「망명」, <see cref="Engine.Town.Exile"/>).
+    /// </summary>
+    /// <remarks>
+    /// 차례는 이렇다 — 계약 중 · 의뢰 중이면 아래 띠에 적고 띠 소리를 낸다(왕궁 문간의 「명성치가 모자랍니다!」와 같은 자리,
+    /// <see cref="PassFameGate"/>). 국왕과의 친밀도가 안 찼으면 부관이 막는다. 그다음에 드는 것(명성 · 금화)을 설명하는 창을 띄우고,
+    /// 다 갖췄으면 금화가 깎이는데 괜찮은지 묻는다.
+    /// </remarks>
+    void ITownScreen.Exile(int code)
+    {
+        if (Engine.Town.Exile.NationAt(_cityId) is not { } nation || nation == _player.Nation) return;
+        var owner = Menu.Window ?? this;
+        string nationName = _game.Nations?.Find(nation)?.Name ?? "";
+
+        if (Engine.Town.Exile.Busy(_player) is { } why)
+        {
+            (Owner as WorldMapWindow)?.Say(why);
+            _game.Sfx?.Play(SoundBank.BandNoticePart);
+            return;
+        }
+
+        var king = BuildingAt(code) is { } palace ? PatronAt(code, palace.Kind) : null;
+        if (!Engine.Town.Exile.Trusted(king == null ? -1 : _player.ClosenessOf(king.Name)))
+        {
+            _game.Sfx?.Play(SoundBank.BandNoticePart);
+            const string NotTrusted = "제독, 아직 국왕 폐하의 신임이 두텁지 않습니다. 망명을 청하려면 친밀도를 더 쌓으셔야 합니다";
+            if (_player.MateAt(0).Length > 0 && _game.AideFace is { } aide)
+                TalkDialog.Say(owner, aide, "", NotTrusted);
+            else
+                NoticeDialog.Show(owner, NotTrusted);
+            return;
+        }
+
+        string nl = Environment.NewLine;
+        string needs = $"{nationName}에 망명하려면 다음이 필요합니다{nl}"
+                       + $"· 명성 {Engine.Town.Exile.Fame} 이상 (지금 {_player.Fame}){nl}"
+                       + $"· 금화 {Engine.Town.Exile.Fee}닢 (지금 {_player.Gold}닢){nl}"
+                       + $"망명하면 국적이 {nationName}(으)로 바뀌고 자택도 {_player.CityName}(으)로 옮겨집니다";
+        if (!Engine.Town.Exile.Affords(_player))
+        {
+            NoticeDialog.Show(owner, needs + nl + (_player.Fame < Engine.Town.Exile.Fame ? "명성이 모자랍니다" : "금화가 모자랍니다"),
+                              Facility.Exile);
+            return;
+        }
+        if (!ConfirmDialog.Ask(owner, needs + nl + $"금화 {Engine.Town.Exile.Fee}닢과 명성 {Engine.Town.Exile.FameCost}이 깎이는데 괜찮겠습니까?",
+                               title: Facility.Exile))
+            return;
+        if (!_player.Pay(Engine.Town.Exile.Fee)) return;
+        _player.Fame -= Engine.Town.Exile.FameCost;
+
+        _player.Nation = nation;
+        _player.SetHomePort(_cityId);
+        // 자택이 이 도시에 선다 — 도시 그림을 다시 열지 않아도 곧바로 들어가지게 판을 얹는다.
+        if (Standing(_cityId).FirstOrDefault(b => b.Code == CityExeTable.HomeCode) is { } home
+            && _placedCodes.Add(home.Code))
+        {
+            var spot = AddSpot(home, 1);
+            GameThread.OnUi(() => _stage.AddSpot(spot));
+        }
+        GameDialog.Show(owner, $"{nationName}에 망명했습니다{Environment.NewLine}자택이 {_player.CityName}(으)로 옮겨졌습니다");
+        Menu.Refresh();
+    }
+
+    /// <summary>
+    /// 조합 「의뢰」 — 맡을 수 있는 의뢰 목록을 띄운다. 줄은 늘 서고, 의뢰가 없으면 없다고 알린다. 원본에 없는 줄이다(요청).
+    /// </summary>
+    /// <remarks>
+    /// 지금 의뢰는 하나다 — 모드 「작위」에서 작위를 받아 다음 보관함 넓히기에 닿으면 「창고 목재 배송」이 오른다
+    /// (<see cref="Engine.Town.Nobility.StoreQuestOffered"/>).
+    /// </remarks>
+    void ITownScreen.GuildQuest()
+    {
+        var quests = new List<(string Text, Action? Run)>();
+        if (Engine.Town.Nobility.StoreQuestOffered(_player))
+            quests.Add((_player.StoreQuestTaken ? $"{StoreQuestName} (수행 중)" : StoreQuestName, StoreQuest));
+        if (quests.Count == 0)
+        {
+            NoticeDialog.Show(Menu.Window ?? this, "지금 맡을 수 있는 의뢰가 없습니다", Facility.GuildQuest);
+            return;
+        }
+        quests.Add(("그만둔다", Menu.Pop));
+        Menu.Push(() => new GameMenu("의뢰 목록", null, [.. quests]));
+    }
+
+    /// <summary>창고 의뢰가 목록에 오르는 이름.</summary>
+    private const string StoreQuestName = "창고 목재 배송";
+
+    /// <summary>
+    /// 「창고 목재 배송」 — 자택 창고를 늘릴 목재 <see cref="Engine.Town.Nobility.TimberNeeded"/> 통을 실어 온다(모드 「작위」).
+    /// 마치면 보관함 넓히기가 하나 풀린다. 맡는 곳도 넘기는 곳도 어느 조합이든 된다.
+    /// </summary>
+    private void StoreQuest()
+    {
+        var owner = Menu.Window ?? this;
+        int need = Engine.Town.Nobility.TimberNeeded, aboard = Engine.Town.Nobility.TimberAboard(_player);
+        string nl = Environment.NewLine;
+
+        if (!_player.StoreQuestTaken)
+        {
+            if (!ConfirmDialog.Ask(owner, $"작위를 받으셨다니 축하드립니다. 자택 창고를 늘리려면 목재가 필요합니다.{nl}"
+                                          + $"목재 {need}통을 실어 와 주시겠습니까?", title: Facility.GuildQuest))
+                return;
+            _player.SetStoreQuestTaken(true);
+            GameDialog.Show(owner, $"목재 {need}통을 실어 조합에 가져오십시오{nl}어느 도시의 조합이든 받아 드립니다");
+            Menu.Pop();
+            return;
+        }
+
+        if (aboard < need)
+        {
+            NoticeDialog.Show(owner, $"목재 {need}통을 실어 오십시오 (지금 {aboard}통)", Facility.GuildQuest);
+            return;
+        }
+        if (!ConfirmDialog.Ask(owner, $"목재 {need}통을 넘기겠습니까?", title: Facility.GuildQuest)) return;
+        if (!Engine.Town.Nobility.DeliverTimber(_player)) return;
+        GameDialog.Show(owner, $"목재 {need}통을 넘겼습니다{nl}이제 자택 「보관」에서 보관함을 넓힐 수 있습니다");
+        Menu.Pop();
+    }
+
+    /// <summary>
+    /// 교역소 「투자」 — 소지금을 이 교역소에 맡긴다. 투자한 돈은 1000 닢마다 공적 1 이 되고(모드 「작위」),
+    /// 쌓이면 이 도시의 규모가 오른다(모드 「도시 투자 성장」, <see cref="Engine.Town.CityGrowth"/>).
+    /// </summary>
+    void ITownScreen.Invest()
+    {
+        var owner = Menu.Window ?? this;
+
+        // 교역소 주인의 물음(「… 투자를 해 준다는 건가?」)은 대본 「마을대사」가 한다 — 줄을 고르면 명령보다 먼저 돈다.
+
+        if (_player.Gold < InvestStep)
+        {
+            GameDialog.Show(owner, "투자할 돈이 없습니다");
+            return;
+        }
+
+        long here = _player.InvestedIn(_cityId);
+        int scale = _game.CityRows?.ScaleOf(_cityId) ?? 0;
+        var gauges = new List<CountDialog.Gauge>
+        {
+            new("소지금", _player.Gold),
+            new("투자액", (int)Math.Min(int.MaxValue, here)),
+        };
+        if (Engine.Town.Nobility.Enabled) gauges.Add(new("공  적", Engine.Town.Nobility.MeritOf(_game), ""));
+        // 도시 투자 성장 — 지금 규모와 다음 규모까지 남은 돈을 함께 보인다.
+        if (Engine.Town.CityGrowth.Enabled)
+        {
+            gauges.Add(new("규  모", scale, ""));
+            if (scale < Engine.Town.CityGrowth.MaxScale)
+                gauges.Add(new("다음까지", (int)Math.Min(int.MaxValue, Engine.Town.CityGrowth.LeftToNext(_player, scale, _cityId))));
+        }
+        int want = CountDialog.Ask(owner, "투자한다", "금  액", "닢",
+                                   _player.Gold, InvestStep, full: false, [.. gauges]);
+        if (want <= 0) return;
+
+        long before = _player.TotalInvested;
+        if (!_player.Invest(_cityId, want)) return;
+        int gained = Engine.Town.Nobility.Enabled
+            ? Engine.Town.Nobility.InvestMeritOf(_player.TotalInvested) - Engine.Town.Nobility.InvestMeritOf(before) : 0;
+        var grown = Engine.Town.CityGrowth.Feed(_player, _game.CityRows, _cityId, want);
+        GameDialog.Show(owner, $"금화 {want}닢을 {_player.CityName} 교역소에 투자했습니다"
+                               + (gained > 0 ? $"{Environment.NewLine}공적이 {gained} 올랐습니다" : "")
+                               + (grown.Count > 0 ? $"{Environment.NewLine}{_player.CityName}의 규모가 {grown[^1]}{(grown[^1] is 3 or 6 ? "으로" : "로")} 커졌습니다" : ""));
+    }
+
+    /// <summary>투자 수 적기의 한 칸 — 공적 1 이 되는 몫(1000 닢)이다.</summary>
+    private const int InvestStep = Engine.Town.Nobility.InvestPerMerit;
+
     void ITownScreen.Stay() => Stay();
 
     void ITownScreen.OddJob() => OddJob();
-    void ITownScreen.ShowMates() => MateRosterDialog.Show(this, _player);
+    void ITownScreen.ShowMates() => MateRosterDialog.Show(this, _player, _game.World?.People, _game);
 
     void ITownScreen.LeaveHeir() => HomeRooms.LeaveHeir();
     void ITownScreen.Succeed() => HomeRooms.Succeed();
@@ -2059,11 +2748,11 @@ public sealed class CityPicView : Window, ITownScreen
         if (!HomeRooms.Retire()) return;
         CloseMenu();
         Close();
-        if (Owner is ShipMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
+        if (Owner is WorldMapWindow map) Dispatcher.BeginInvoke(map.ReturnToTitle);
     }
 
     void ITownScreen.ReadBooks() =>
-        Books.Read(Menu.Window ?? this, text => (Owner as ShipMapWindow)?.Say(text));
+        Books.Read(Menu.Window ?? this, text => (Owner as WorldMapWindow)?.Say(text));
 
 
     bool ITownScreen.IsDrink(string item) => DrinkAt(item) != null;
@@ -2119,7 +2808,13 @@ public sealed class CityPicView : Window, ITownScreen
     public override void Close()
     {
         GameSettings.ShowSkillOverlayChanged -= SyncSkillNote;
+        GameSettings.ShowContractHintOverlayChanged -= SyncSkillNote;
+        GameSettings.ShowFleetOverlayChanged -= RefreshShipLabel;
+        GameSettings.ShowHintOverlayChanged -= RefreshShipLabel;
+        GameSettings.ShowDiscoveryCountChanged -= RefreshShipLabel;
         _shipNote?.Close(); _shipNote = null;
+        _hintNote?.Close(); _hintNote = null;
+        _foundNote?.Close(); _foundNote = null;
         _skillNote?.Close(); _skillNote = null;
         Menus.CloseOpen();
         Menus.CloseOpen();
@@ -2129,6 +2824,6 @@ public sealed class CityPicView : Window, ITownScreen
     }
 
     /// <summary>
-    /// 그림 배율. 게임처럼 지도의 반쯤을 덮는 크기로 잡는다(자리가 좁아도 1배는 쓴다).
+    /// 그림 배율. 원본처럼 지도의 반쯤을 덮는 크기로 잡는다(자리가 좁아도 1배는 쓴다).
     /// </summary>
 }

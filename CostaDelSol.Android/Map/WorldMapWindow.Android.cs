@@ -17,9 +17,9 @@ namespace CdsHelper.Game.UI.Views;
 /// 바다 화면의 안드로이드 쪽 — PC 판 생성자 · 상태 시계(0.1초 틱) · 글쇠 · 마우스 · 알림 띠 · 타이틀 오가기 자리를 채운다.
 /// 모두 게임 줄(GameThread)에서 돈다 — PC 판이 한 줄(UI 스레드)에서 돌던 것과 같다.
 /// </summary>
-public sealed partial class ShipMapWindow
+public sealed partial class WorldMapWindow
 {
-    private readonly ShipMapHost _host = new();
+    private readonly WorldMapHost _host = new();
     private readonly Engine.Game _game = new();
     private bool _started;
     private int _askedCity = -1;
@@ -45,7 +45,7 @@ public sealed partial class ShipMapWindow
     public Engine.Game Game => _game;
 
     /// <summary>지도 엔진 — GL 지도와 덧그림 판이 그 프레임을 그린다.</summary>
-    public ShipMapHost Host => _host;
+    public WorldMapHost Host => _host;
 
     /// <summary>바다 화면이 떠 있는지(타이틀이 아니고 판이 시작됐다).</summary>
     public bool OnMap => _started && ReferenceEquals(_screen.Content, _mapRoot);
@@ -64,7 +64,7 @@ public sealed partial class ShipMapWindow
     /// <summary>바다 판이 섰다(지도를 띄운다).</summary>
     public event Action? MapShown;
 
-    public ShipMapWindow()
+    public WorldMapWindow()
     {
         _screen.Content = _titleRoot;
         // 안 선 도시도, 아직 모르는 도시도 다가가도 안 물어보고 지도에서도 지운다.
@@ -76,7 +76,7 @@ public sealed partial class ShipMapWindow
         Current = this;
     }
 
-    internal static ShipMapWindow? Current { get; private set; }
+    internal static WorldMapWindow? Current { get; private set; }
 
     /// <summary>판 폴더를 정한다(PC 판 OnLoaded 의 앞부분).</summary>
     public void SetDirectory(string dir)

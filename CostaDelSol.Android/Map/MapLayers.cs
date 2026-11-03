@@ -6,7 +6,7 @@ namespace CdsHelper.Game.UI.Views
 {
     /// <summary>
     /// PC 판 지도 그리개(Direct3D)의 자리 — 안드로이드에서는 그릴 것을 <b>들고만</b> 있고, GL 지도와 덧그림 판이
-    /// 그대로 가져가 그린다. 이름 · 인자는 PC 판 <c>MapD3DRenderer</c> 와 같아서 원본 지도 엔진(ShipMapHost)을 고치지 않는다.
+    /// 그대로 가져가 그린다. 이름 · 인자는 PC 판 <c>MapD3DRenderer</c> 와 같아서 원본 지도 엔진(WorldMapHost)을 고치지 않는다.
     /// </summary>
     public sealed class MapD3DRenderer : IDisposable
     {

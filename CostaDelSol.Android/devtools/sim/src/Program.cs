@@ -9,7 +9,7 @@ using CostaDelSol.Droid.Input;
 using CostaDelSol.Droid.Town;
 using Sim;
 
-// 시험기: 원본 바다 화면(ShipMapWindow)으로 새 판 → 도시 → 출항 → 항해를 화면 없이 돈다.
+// 시험기: 원본 바다 화면(WorldMapWindow)으로 새 판 → 도시 → 출항 → 항해를 화면 없이 돈다.
 string root = args[0];
 AppContext.SetData("APP_CONTEXT_BASE_DIRECTORY", root + "/");
 TableCache.FolderOverride = root + "/exe-tables";
@@ -25,7 +25,7 @@ GameUi.Font = GameFont.Open(root);
 GameUi.Sprites = UiSprites.Open(root);
 var stage = new CityStage();
 CityPicView.Stage = stage;
-var map = new ShipMapWindow();
+var map = new WorldMapWindow();
 map.Noted += t => { if (t.Length > 0) Log.W($"[띠] {t}"); };
 map.SetDirectory(root);
 var player = () => map.Game.Player;
@@ -213,7 +213,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "gallery")
         Log.W("  띠 뒤: " + string.Join(" | ", map.BarCells()));
         h.Press("취소"); GameThread.Drain();
     });
-    Try("미궁", () => Log.W($"  미궁 결과 {ShipMapWindow.MazeGame!(map, rnd, player(), null)}"));
+    Try("미궁", () => Log.W($"  미궁 결과 {WorldMapWindow.MazeGame!(map, rnd, player(), null)}"));
     Try("함대정보", () => FleetInfoDialog.Show(map, player(), "", g.Items));
     Try("제독정보", () => PlayerInfoDialog.Show(map, g));
     Try("보관소", () => StorageDialog.Show(map, player(), g.Items));
@@ -242,10 +242,10 @@ if (Environment.GetEnvironmentVariable("MODE") == "gallery")
                 Drive.Key(w, k % 3 == 0 ? System.Windows.Input.Key.Down : k % 3 == 1 ? System.Windows.Input.Key.Down : System.Windows.Input.Key.Enter);
             });
         }
-    Try("일기토", () => typeof(ShipMapWindow).GetMethod("PlayDuel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(map, null));
+    Try("일기토", () => typeof(WorldMapWindow).GetMethod("PlayDuel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(map, null));
     if (only == "도구") { CdsHelper.Game.Engine.GameSave.Save(g.Player); Log.W($"저장: {File.Exists(CdsHelper.Game.Engine.GameSave.Path)}");
         { var sv = new CdsHelper.Support.Local.Helpers.SaveDataService(new CdsHelper.Support.Local.Helpers.CityService()); var inf = sv.ReadSaveFile(CdsHelper.Game.Engine.GameSave.Path); var pd = sv.ReadPlayerData(CdsHelper.Game.Engine.GameSave.Path);
-          Log.W($"세이브 읽기: 인물 {inf.Characters.Count} 고용가능 {inf.Characters.Count(c => c.CanRecruit)} 플레이어 {(pd == null ? "없음" : "있음")} 현재 {sv.CurrentPlayerData != null} 힌트 {inf.Hints?.Count}"); } for (int t = 0; t < ShipMapWindow.Tools.Length; t++) { int k = t; Log.W($"--- 도구 {ShipMapWindow.Tools[k].Name}"); try { map.OpenTool(k); } catch (Exception ex) { Log.W($"  !! {ex.GetType().Name}: {ex.Message} @ {ex.StackTrace?.Split('\n').FirstOrDefault(l => l.Contains("CdsHelper"))}"); } GameThread.Drain(); } return; }
+          Log.W($"세이브 읽기: 인물 {inf.Characters.Count} 고용가능 {inf.Characters.Count(c => c.CanRecruit)} 플레이어 {(pd == null ? "없음" : "있음")} 현재 {sv.CurrentPlayerData != null} 힌트 {inf.Hints?.Count}"); } for (int t = 0; t < WorldMapWindow.Tools.Length; t++) { int k = t; Log.W($"--- 도구 {WorldMapWindow.Tools[k].Name}"); try { map.OpenTool(k); } catch (Exception ex) { Log.W($"  !! {ex.GetType().Name}: {ex.Message} @ {ex.StackTrace?.Split('\n').FirstOrDefault(l => l.Contains("CdsHelper"))}"); } GameThread.Drain(); } return; }
     Try("발견지도", map.MapByKey);
     Try("설정", map.ShowSettingsDialog);
     Try("모드", map.ShowModDialog);
@@ -265,7 +265,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "sea")
                 Log.W($"  그림 {r} {(img.Source as System.Windows.Media.Imaging.BitmapImage)?.UriSource?.LocalPath ?? img.Source?.GetType().Name} 어버이 {img.VisualParent?.GetType().Name} {System.Windows.Controls.Canvas.GetLeft(img)},{System.Windows.Controls.Canvas.GetTop(img)}");
         Drive.Key(w, System.Windows.Input.Key.Escape);
     });
-    typeof(ShipMapWindow).GetMethod("MockSeaBattle", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(map, null);
+    typeof(WorldMapWindow).GetMethod("MockSeaBattle", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(map, null);
     GameThread.Drain();
     Log.W($"해전 뒤: 배 {player().Ships.Count} 선원 {player().Crew}");
     return;

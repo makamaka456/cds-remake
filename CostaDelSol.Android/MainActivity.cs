@@ -49,7 +49,7 @@ public sealed class MainActivity : Activity
     private const int TickMs = 100;
     private const int FastMs = 16;
     private const float ZoomStep = 1.25f;
-    private const int TiredToRest = 60;          // ShipMapWindow.TiredToRest
+    private const int TiredToRest = 60;          // WorldMapWindow.TiredToRest
     private const float CursorSpeedDp = 900f;    // 스틱을 끝까지 밀었을 때 커서가 1초에 가는 dp
     private const int RepeatDelayMs = 400, RepeatEveryMs = 110;
 
@@ -70,10 +70,10 @@ public sealed class MainActivity : Activity
     private GameData? _data;
 
     /// <summary>
-    /// 원본 바다 화면(PC 판 ShipMapWindow 를 옮긴 것) — 판 · 지도 엔진 · 조우 · 발견 · 입항 · 상륙 · 커맨드가 다 여기 있다.
+    /// 원본 바다 화면(PC 판 WorldMapWindow 를 옮긴 것) — 판 · 지도 엔진 · 조우 · 발견 · 입항 · 상륙 · 커맨드가 다 여기 있다.
     /// 게임 줄(GameThread)에서 돈다.
     /// </summary>
-    private readonly ShipMapWindow _map = new();
+    private readonly WorldMapWindow _map = new();
 
     private CityStage _cityStage = null!;
     private MapOverlay? _overlay;
@@ -405,13 +405,13 @@ public sealed class MainActivity : Activity
             }
     }
 
-    private const int SextantItem = 0x22;   // ShipMapWindow.SextantItem — 육분의가 있어야 좌표가 보인다
+    private const int SextantItem = 0x22;   // WorldMapWindow.SextantItem — 육분의가 있어야 좌표가 보인다
 
     /// <summary>
     /// 위 띠의 칸들 — PC 판 InfoCell 의 기본 켬(날짜 · 선원 · 위도경도 · 소지금 · 명성 · 규칙)과 서식 그대로
-    /// (<c>ShipMapWindow</c> 상태 시계: 0x0047DCE2 · 0x0056BEA8 · 0x0056BFB0). 뭍이면 「대원」이다.
+    /// (<c>WorldMapWindow</c> 상태 시계: 0x0047DCE2 · 0x0056BEA8 · 0x0056BFB0). 뭍이면 「대원」이다.
     /// </summary>
-    /// <summary>위 띠의 칸들 — 도시정보 창에서 켠 칸만, PC 판 서식 그대로(<see cref="ShipMapWindow.BarCells"/>).</summary>
+    /// <summary>위 띠의 칸들 — 도시정보 창에서 켠 칸만, PC 판 서식 그대로(<see cref="WorldMapWindow.BarCells"/>).</summary>
     private IReadOnlyList<string> BarCells() => _map.BarCells();
 
     // ── 16ms 마다 — 스틱, 커서, 되풀이 ────────────────────────────────────
@@ -564,7 +564,7 @@ public sealed class MainActivity : Activity
 
     /// <summary>
     /// 원본 키보드 키 하나를 누른다 — 패드·화면 단추·가상 키보드·실제 키보드가 다 여기로 온다.
-    /// 무엇을 할지는 원본 단축키 그대로다(<c>ShipMapWindow.OnMapKey</c> · 대화상자).
+    /// 무엇을 할지는 원본 단축키 그대로다(<c>WorldMapWindow.OnMapKey</c> · 대화상자).
     /// </summary>
     private void PressKey(GameKey key)
     {
@@ -599,7 +599,7 @@ public sealed class MainActivity : Activity
 
     /// <summary>
     /// 마우스 클릭. 창이 떠 있으면 왼쪽은 그 자리를 누르고 오른쪽은 닫는다(원본 대화상자). 지도에서는
-    /// 왼쪽이 닻, 오른쪽이 커맨드 창이다(원본 <c>ShipMapWindow</c>).
+    /// 왼쪽이 닻, 오른쪽이 커맨드 창이다(원본 <c>WorldMapWindow</c>).
     /// </summary>
     private void Click(float x, float y, bool left)
     {
@@ -788,7 +788,7 @@ public sealed class MainActivity : Activity
     /// <summary>도구 — 리메이크 도구 앱의 게임 자료 편집 창들(PC 판 그대로).</summary>
     private void ShowToolMenu()
     {
-        var tools = ShipMapWindow.Tools;
+        var tools = WorldMapWindow.Tools;
         string[] rows = [.. tools.Select(t => t.Name), "돌아간다"];
         _panel.Show("도구", rows, at =>
         {

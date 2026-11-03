@@ -8,7 +8,7 @@ using CdsHelper.Game.Local.Helpers;
 namespace CostaDelSol.Droid.Ui;
 
 /// <summary>
-/// 바다 화면의 위아래 띠 — PC 판 <c>ShipMapWindow</c> 의 게임 띠(<c>gameBar</c>)와 알림 띠(<c>footer</c>)를 옮겼다.
+/// 바다 화면의 위아래 띠 — PC 판 <c>WorldMapWindow</c> 의 게임 띠(<c>gameBar</c>)와 알림 띠(<c>footer</c>)를 옮겼다.
 /// </summary>
 /// <remarks>
 /// <list type="bullet">

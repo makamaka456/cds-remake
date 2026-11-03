@@ -13,10 +13,10 @@ namespace CdsHelper.Game.UI.Views;
 
 /// <summary>
 /// 리메이크가 지도 위에 겹쳐 띄우는 상자들 — 좌표(왼쪽 위) · 만난 사람(오른쪽 위) · 컨디션(왼쪽 아래) · 미니맵(오른쪽 아래).
-/// 글과 셈은 PC 판(ShipMapWindow 의 FillOverlay · FillPeople · FillVital · SyncMiniMap) 그대로이고, 상자는 지도 덧그림 판에 그린다
+/// 글과 셈은 PC 판(WorldMapWindow 의 FillOverlay · FillPeople · FillVital · SyncMiniMap) 그대로이고, 상자는 지도 덧그림 판에 그린다
 /// (창 판에 얹지 않으므로 지도 손을 막지 않는다). 켜고 끄는 것은 모드 · 개발 창이다.
 /// </summary>
-public sealed partial class ShipMapWindow
+public sealed partial class WorldMapWindow
 {
     /// <summary>지도 폭(판 점) — 덧그림 판이 그릴 때마다 적는다(16:9 면 640 보다 넓다).</summary>
     internal float MapBoardWidth { get; set; } = 640;

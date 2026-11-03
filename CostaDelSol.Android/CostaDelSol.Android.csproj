@@ -93,6 +93,68 @@
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GameFont.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GameFont.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GamePalette.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GamePalette.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\FrameArt.cs" Link="Shared\CdsHelper.Game\UI\Views\FrameArt.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\Languages\ILanguage.cs" Link="Shared\CdsHelper.Game\Local\Helpers\Languages\ILanguage.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Aging.cs" Link="Shared\CdsHelper.Game\Engine\Aging.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CargoRankDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CargoRankDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\CityDesigns.cs" Link="Shared\CdsHelper.Game\Local\Helpers\CityDesigns.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\CityGrowth.cs" Link="Shared\CdsHelper.Game\Engine\Town\CityGrowth.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\CityNames.cs" Link="Shared\CdsHelper.Support\Local\Helpers\CityNames.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ColorPickDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ColorPickDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CustomBgmDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CustomBgmDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\Dh2Style.cs" Link="Shared\CdsHelper.Game\UI\Views\Dh2Style.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\DiscoveryClipFiles.cs" Link="Shared\CdsHelper.Game\Local\Helpers\DiscoveryClipFiles.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\DiscoveryPackage.cs" Link="Shared\CdsHelper.Game\Engine\Table\DiscoveryPackage.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\DiscoveryStillFilter.cs" Link="Shared\CdsHelper.Game\Local\Helpers\DiscoveryStillFilter.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DiscoveryStillTuneDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\DiscoveryStillTuneDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\DisevNames.cs" Link="Shared\CdsHelper.Game\Engine\Disev\DisevNames.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Exile.cs" Link="Shared\CdsHelper.Game\Engine\Town\Exile.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\FleetCardDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\FleetCardDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\GdiGlyphs.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GdiGlyphs.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\HardcoreRules.cs" Link="Shared\CdsHelper.Game\Engine\HardcoreRules.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\HintBrowserDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\HintBrowserDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Market\HistoryRumors.cs" Link="Shared\CdsHelper.Game\Engine\Market\HistoryRumors.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\HoldRepeat.cs" Link="Shared\CdsHelper.Game\UI\Views\HoldRepeat.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LandBattleInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LandBattleInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LandUnitInfoDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LandUnitInfoDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\Lang.cs" Link="Shared\CdsHelper.Game\Local\Helpers\Lang.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LoadingDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\LoadingDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Rendering\MapShaderData.cs" Link="Shared\CdsHelper.Game\UI\Rendering\MapShaderData.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MenuWindow.cs" Link="Shared\CdsHelper.Game\UI\Views\MenuWindow.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\MovieAssetDownloader.cs" Link="Shared\CdsHelper.Game\Local\Helpers\MovieAssetDownloader.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\OffscreenTest.cs" Link="Shared\CdsHelper.Support\Local\Helpers\OffscreenTest.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\OverlayNotes.cs" Link="Shared\CdsHelper.Game\UI\Views\OverlayNotes.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\PatronShips.cs" Link="Shared\CdsHelper.Game\Engine\Town\PatronShips.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PersonListDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PersonListDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\PlayStats.cs" Link="Shared\CdsHelper.Game\Local\Helpers\PlayStats.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SaveListDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SaveListDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Scenario.cs" Link="Shared\CdsHelper.Game\Engine\Scenario.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ScriptBlackout.cs" Link="Shared\CdsHelper.Game\UI\Views\ScriptBlackout.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\ShipHiArt.cs" Link="Shared\CdsHelper.Support\Local\Helpers\ShipHiArt.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ShipPickDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ShipPickDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\ShipStill.cs" Link="Shared\CdsHelper.Game\Local\Helpers\ShipStill.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\StandardText.cs" Link="Shared\CdsHelper.Game\Local\Helpers\StandardText.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\SuezCanal.cs" Link="Shared\CdsHelper.Game\Engine\Sea\SuezCanal.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\TavernRumorEdits.cs" Link="Shared\CdsHelper.Game\Engine\Town\TavernRumorEdits.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Disev\TownLines.cs" Link="Shared\CdsHelper.Game\Engine\Disev\TownLines.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\UiFont.cs" Link="Shared\CdsHelper.Game\UI\Views\UiFont.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\UserDataFolder.cs" Link="Shared\CdsHelper.Support\Local\Helpers\UserDataFolder.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\UserDiscoveries.cs" Link="Shared\CdsHelper.Game\Engine\Table\UserDiscoveries.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Passives.cs" Link="Shared\CdsHelper.Game\Engine\Town\Passives.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DiscoveryAreaPicker.cs" Link="Shared\CdsHelper.Game\UI\Views\DiscoveryAreaPicker.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\Nobility.cs" Link="Shared\CdsHelper.Game\Engine\Town\Nobility.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\RouteCache.cs" Link="Shared\CdsHelper.Game\Engine\Sea\RouteCache.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\EventAnimationPopup.Gulls.cs" Link="Shared\CdsHelper.Game\UI\Views\EventAnimationPopup.Gulls.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ListPickDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ListPickDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\BuildingSprites.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BuildingSprites.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\CityFrame.cs" Link="Shared\CdsHelper.Game\Local\Helpers\CityFrame.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DragPick.cs" Link="Shared\CdsHelper.Game\UI\Views\DragPick.cs" />
+        <Compile Include="..\CdsHelper.Support\Local\Helpers\HullTable.cs" Link="Shared\CdsHelper.Support\Local\Helpers\HullTable.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\IGateStage.cs" Link="Shared\CdsHelper.Game\UI\Views\IGateStage.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\DiscoveryStillFiles.cs" Link="Shared\CdsHelper.Game\Local\Helpers\DiscoveryStillFiles.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Town\KeeperTongue.cs" Link="Shared\CdsHelper.Game\Engine\Town\KeeperTongue.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\MonsterMotions.cs" Link="Shared\CdsHelper.Game\Local\Helpers\MonsterMotions.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\SailCost.cs" Link="Shared\CdsHelper.Game\Engine\Sea\SailCost.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ShipStillWindow.cs" Link="Shared\CdsHelper.Game\UI\Views\ShipStillWindow.cs" />
         <Compile Include="..\CdsHelper.Support\Local\Models\CharacterData.cs" Link="Shared\CdsHelper.Support\Local\Models\CharacterData.cs" />
         <Compile Include="..\CdsHelper.Support\Local\Models\DiscoveryData.cs" Link="Shared\CdsHelper.Support\Local\Models\DiscoveryData.cs" />
         <Compile Include="..\CdsHelper.Support\Local\Models\HintData.cs" Link="Shared\CdsHelper.Support\Local\Models\HintData.cs" />
@@ -223,8 +285,6 @@
         <Compile Include="..\CdsHelper.Game\UI\Views\MarketBuyDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MarketBuyDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\MarketSellDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MarketSellDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\HullSelectDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\HullSelectDialog.cs" />
-        <Compile Include="..\CdsHelper.Game\UI\Views\ShipRepairDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ShipRepairDialog.cs" />
-        <Compile Include="..\CdsHelper.Game\UI\Views\ShipSellDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ShipSellDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\DayPass.cs" Link="Shared\CdsHelper.Game\UI\Views\DayPass.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\SupplyDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SupplyDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\CargoDropDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CargoDropDialog.cs" />
@@ -269,7 +329,6 @@
         <Compile Include="..\CdsHelper.Main\Local\ViewModels\ItemContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\ItemContentViewModel.cs" />
         <Compile Include="..\CdsHelper.Main\Local\ViewModels\FigureheadContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\FigureheadContentViewModel.cs" />
         <Compile Include="..\CdsHelper.Main\Local\ViewModels\PatronContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\PatronContentViewModel.cs" />
-        <Compile Include="..\CdsHelper.Main\Local\ViewModels\SphinxCalculatorContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\SphinxCalculatorContentViewModel.cs" />
         <Compile Include="..\CdsHelper.Main\Local\ViewModels\DiscoveryStillContentViewModel.cs" Link="Shared\CdsHelper.Main\Local\ViewModels\DiscoveryStillContentViewModel.cs" />
         <Compile Include="..\CdsHelper.Main\UI\Views\WaveBankDialog.cs" Link="Shared\CdsHelper.Main\UI\Views\WaveBankDialog.cs" />
         <Compile Include="..\CdsHelper.Main\UI\Views\MovieBankDialog.cs" Link="Shared\CdsHelper.Main\UI\Views\MovieBankDialog.cs" />

@@ -44,7 +44,7 @@ public sealed class MapTextures
             }
         }
 
-        // 안 선 도시는 덧씌움 블록으로 걷는다(ShipMapHost.HideCities). 0xFFFF 는 「안 덮는다」.
+        // 안 선 도시는 덧씌움 블록으로 걷는다(WorldMapHost.HideCities). 0xFFFF 는 「안 덮는다」.
         if (data.Cities is { } table)
         {
             for (int id = 0; id < CityExeTable.Count; id++)

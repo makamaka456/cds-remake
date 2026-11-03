@@ -23,7 +23,7 @@ public static class GameArt
     // GameUi.ItemTextHeight — 글 한 줄 높이.
     public const int TextHeight = 16;
 
-    // 원본 색(GameUi · ConfirmDialog · ShipMapWindow).
+    // 원본 색(GameUi · ConfirmDialog · WorldMapWindow).
     public static readonly Color MenuBack = Color.Rgb(0x31, 0x18, 0x18);   // GameUi.MenuBack · Back
     public static readonly Color MenuEdge = Color.Rgb(0xB3, 0xAA, 0x96);   // GameUi.MenuEdge
     public static readonly Color AskEdge = Color.Rgb(0x9B, 0x8D, 0x7D);    // ConfirmDialog.FrameEdge

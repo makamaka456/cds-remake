@@ -11,7 +11,7 @@ using EGLConfig = Javax.Microedition.Khronos.Egl.EGLConfig;
 namespace CostaDelSol.Droid.Game;
 
 /// <summary>
-/// 세계지도를 OpenGL ES 3.0 으로 그린다 — 원점 · 배율 · 막은 원본 지도 엔진(ShipMapHost)이 짠 프레임 그대로다. 배 · 닻 · 남의 배 · 항로는 덧그림 판(MapOverlay)이 그린다.
+/// 세계지도를 OpenGL ES 3.0 으로 그린다 — 원점 · 배율 · 막은 원본 지도 엔진(WorldMapHost)이 짠 프레임 그대로다. 배 · 닻 · 남의 배 · 항로는 덧그림 판(MapOverlay)이 그린다.
 /// </summary>
 /// <remarks>
 /// PC 판 <c>MapD3DRenderer</c> 의 셰이더를 GLSL 로 옮겼다 — 화면 점 → 칸 → 타일 번호 → 타일 안 점 → 팔레트.
@@ -66,7 +66,7 @@ public sealed class MapRenderer : Java.Lang.Object, GLSurfaceView.IRenderer
 
     private readonly GameData _data;
     private readonly MapTextures _tex;
-    private readonly ShipMapHost _host;
+    private readonly WorldMapHost _host;
 
     private int _program;
     private int _width = 1, _height = 1;
@@ -79,7 +79,7 @@ public sealed class MapRenderer : Java.Lang.Object, GLSurfaceView.IRenderer
     /// <summary>GL 판 크기(픽셀) — 지도 엔진이 그 크기로 프레임을 짠다.</summary>
     public (int W, int H) Size => (_width, _height);
 
-    public MapRenderer(GameData data, MapTextures textures, ShipMapHost host)
+    public MapRenderer(GameData data, MapTextures textures, WorldMapHost host)
     {
         _data = data;
         _tex = textures;

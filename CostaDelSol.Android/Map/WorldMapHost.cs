@@ -1,4 +1,4 @@
-using Android.App;
+﻿using Android.App;
 using Android.Widget;
 using System.Diagnostics;
 using System.Windows;
@@ -7,7 +7,7 @@ using CdsHelper.Support.Local.Helpers;
 using CdsHelper.Game.Engine.Discovery;
 using CdsHelper.Support.Local.Models;
 
-// PC 판 CdsHelper.Game/UI/Rendering/ShipMapHost.cs 를 옮긴 것 — 배 · 말 이동, 바람 · 해류, 정박 · 상륙 · 승선,
+// PC 판 CdsHelper.Game/UI/Rendering/WorldMapHost.cs 를 옮긴 것 — 배 · 말 이동, 바람 · 해류, 정박 · 상륙 · 승선,
 // 자동항해, 도시 · 항구 자리, 남의 배, 구름 셈은 한 줄도 안 고쳤다. Direct3D 창(HwndHost · 스왑체인)만 걷고
 // 프레임마다 그릴 것(원점 · 배율 · 그림 자리)을 <see cref="View"/> 로 내놓아 안드로이드 GL 지도와 덧그림 판이 그린다.
 namespace CdsHelper.Game.UI.Views;
@@ -23,7 +23,7 @@ namespace CdsHelper.Game.UI.Views;
 /// 대신 airspace 규칙대로 이 자식 창은 WPF 콘텐츠보다 늘 위에 그려진다. 이 창 안에서
 /// D3D 화면 위에 WPF 로 무언가를 얹으려 해도 가려진다.
 /// </remarks>
-public sealed class ShipMapHost
+public sealed class WorldMapHost
 {
     // 창 클래스를 새로 등록하지 않고 미리 있는 STATIC 을 쓴다. 스왑체인을 걸 HWND 하나가
     // 필요할 뿐이고, 정적 컨트롤은 기본적으로 WM_NCHITTEST 에 HTTRANSPARENT 를 돌려주므로
@@ -96,14 +96,17 @@ public sealed class ShipMapHost
     private double _targetX, _targetY;  // 배가 향하는 자리(칸)
     private bool _shipKnown;
 
-    /// <summary>한 틱의 길이. 게임처럼 틱마다 한 걸음씩 나아간다.</summary>
+    /// <summary>실제 함대가 있을 때만 주인공 배 그림을 그린다.</summary>
+    public bool ShowShip { get; set; } = true;
+
+    /// <summary>한 틱의 길이. 원본처럼 틱마다 한 걸음씩 나아간다.</summary>
     private const double TickSeconds = 0.1;
 
     /// <summary>
     /// 바람이 없거나 함대를 모를 때 한 틱에 나아가는 칸 수.
     /// </summary>
     /// <remarks>
-    /// 여기 오는 일은 거의 없다 — <see cref="FleetSpeed"/> 가 붙어 있으면 게임 셈으로
+    /// 여기 오는 일은 거의 없다 — <see cref="FleetSpeed"/> 가 붙어 있으면 원본 셈으로
     /// 잰다(<see cref="Engine.Sea.Sailing"/>). 바람표를 못 읽었을 때의 물러설 자리다.
     /// </remarks>
     private const double CellsPerTick = 1.0;
@@ -112,7 +115,7 @@ public sealed class ShipMapHost
     /// 함대 속도를 물어보는 이 — (풍향, 풍속, 뱃머리, 뭍인지) 를 받아 게임 속도를 낸다.
     /// </summary>
     /// <remarks>
-    /// 지도는 함대도 돛 효율표도 모른다. 그래서 붙이는 쪽(<see cref="ShipMapWindow"/>)이
+    /// 지도는 함대도 돛 효율표도 모른다. 그래서 붙이는 쪽(<see cref="WorldMapWindow"/>)이
     /// 손을 하나 걸어 준다 — <see cref="MonthOf"/> 와 같은 얼개다.
     /// </remarks>
     public Func<int, int, int, bool, int>? FleetSpeed { get; set; }
@@ -122,7 +125,7 @@ public sealed class ShipMapHost
     /// <see cref="Engine.Sea.Sailing.DefaultTurnRate"/> 로 돈다.
     /// </summary>
     /// <remarks>
-    /// 게임은 기함 종류로 표(<c>0x00569FC0</c>)를 찾는데 지도는 함대를 모른다 —
+    /// 원본은 기함 종류로 표(<c>0x00569FC0</c>)를 찾는데 지도는 함대를 모른다 —
     /// <see cref="FleetSpeed"/> 와 같이 붙이는 쪽이 걸어 준다.
     /// </remarks>
     public Func<int>? TurnRateOf { get; set; }
@@ -154,13 +157,13 @@ public sealed class ShipMapHost
     public WindTable? Wind => _wind;
 
     /// <summary>
-    /// 지금 쥐고 있는 바람 — 표 값에 방위를 <c>rand(3) − 1</c> 만큼 흔든 것(<c>0x00424E50</c>). 게임은 이 값을 바람 물건
+    /// 지금 쥐고 있는 바람 — 표 값에 방위를 <c>rand(3) − 1</c> 만큼 흔든 것(<c>0x00424E50</c>). 원본은 이 값을 바람 물건
     /// <c>0x00586168</c> 에 박아 두고, 다시 읽을 때까지 그대로 쓴다.
     /// </summary>
     private (int Cell, int Month, WindTable.Flow Wind)? _heldWind;
 
     /// <summary>
-    /// 그 칸의 바람. 칸이나 달이 바뀌었거나 <see cref="ShiftWind"/> 로 흔들라고 했으면 새로 읽는다 — 게임은 지도가 넘어갈
+    /// 그 칸의 바람. 칸이나 달이 바뀌었거나 <see cref="ShiftWind"/> 로 흔들라고 했으면 새로 읽는다 — 원본은 지도가 넘어갈
     /// 때(<c>0x0047D1B0</c> 벌), 이레마다(<c>0x0044B27D</c>), 배에 오를 때(<c>0x0048EB94</c>) 다시 읽는다.
     /// </summary>
     private WindTable.Flow HeldWind(int cell, int month)
@@ -175,18 +178,34 @@ public sealed class ShipMapHost
     /// <summary>바람을 다시 흔든다 — 이레째 날이 넘어갔을 때와 배에 오를 때 부른다(<c>0x0044B27D</c> · <c>0x0048EB94</c>).</summary>
     public void ShiftWind() => _heldWind = null;
 
-    /// <summary>물결이 흐른 틱 수. 게임의 <c>0x00569554</c> 자리다.</summary>
+    /// <summary>
+    /// 쥐고 있는 바람 — <c>[칸, 달, 방위, 세기, 기후대]</c>. 없으면 null. 원본은 바람 물건 <c>0x00586168</c> 의
+    /// 두 워드를 세이브에 적는다(<c>0x00424E20</c>).
+    /// </summary>
+    public int[]? HeldWindState =>
+        _heldWind is { } h ? [h.Cell, h.Month, h.Wind.Dir, h.Wind.Speed, h.Wind.Zone] : null;
+
+    /// <summary>
+    /// 쥐고 있던 바람을 되돌린다 — 적어 둔 판을 열 때 쓴다. 칸이나 달이 다르면 어차피 새로 읽는다(<see cref="HeldWind"/>).
+    /// 모자라면(옛 세이브) 버리고 새로 흔든다.
+    /// </summary>
+    public void RestoreHeldWind(IReadOnlyList<int>? state) =>
+        _heldWind = state is { Count: >= 5 }
+            ? (state[0], state[1], new WindTable.Flow(state[2] & 0xF, state[3], state[4]))
+            : null;
+
+    /// <summary>물결이 흐른 틱 수. 원본의 <c>0x00569554</c> 자리다.</summary>
     private int _rippleTick;
     private double _rippleAccum;
 
     /// <summary>화살표 격자를 구운 달. 달이 바뀌면 바람 표가 갈리므로 다시 굽는다.</summary>
     private int _flowMonth = -1;
 
-    /// <summary>지금 달을 알려 주는 이. 안 주면 4월로 본다(놀이 시작 달).</summary>
+    /// <summary>지금 달을 알려 주는 이. 안 주면 4월로 본다(게임 시작 달).</summary>
     public Func<int>? MonthOf { get; set; }
 
     /// <summary>
-    /// 바람·해류 화살표를 지도에 얹을지. 게임에는 없는 것이라 커맨드 창에서 끄고 켠다.
+    /// 바람·해류 화살표를 지도에 얹을지. 원본에는 없는 것이라 커맨드 창에서 끄고 켠다.
     /// 물결은 이것과 상관없이 늘 흐른다 — 그쪽이 원본 모습이다.
     /// </summary>
     public bool ShowFlowArrows
@@ -199,6 +218,382 @@ public sealed class ShipMapHost
             _dirty = true;
         }
     }
+
+    /// <summary>
+    /// 바다 입체 효과를 켤지. 켜면 깊이 표를 한 번 짓고, 켜 둔 동안은 물결이 흐르도록 프레임마다 다시 그린다.
+    /// </summary>
+    public bool SeaEffect
+    {
+        get => _renderer.SeaEffect;
+        set
+        {
+            if (_renderer.SeaEffect == value) return;
+            if (value && !_renderer.SeaDepthReady && BuildSeaDepth() is { } depth) _renderer.SetSeaDepth(depth);
+            _renderer.SeaEffect = value;
+            _dirty = true;
+        }
+    }
+
+    /// <summary>올려 둔 OCEAN.CDS 타일 그림.</summary>
+    private OceanTiles? _ocean;
+
+    /// <summary>바다 입체 효과의 밝기 배수.</summary>
+    public double SeaBrightness
+    {
+        get => _renderer.SeaBrightness;
+        set { _renderer.SeaBrightness = (float)value; _dirty = true; }
+    }
+
+    /// <summary>고해상도 바다에서 해류 결·띠의 짙기(0~1).</summary>
+    public double SeaFlowAmount
+    {
+        get => _renderer.FlowAmount;
+        set { _renderer.FlowAmount = (float)value; _dirty = true; }
+    }
+
+    /// <summary>고해상도 바다를 그릴지. 켜 둔 동안은 잔물결이 흐르도록 프레임마다 다시 그린다.</summary>
+    public bool HiResSea
+    {
+        get => _renderer.HiResSea;
+        set
+        {
+            // 물 칸 표(깊이 표)와 물 색 표를 같이 쓴다 — 바다 입체 효과를 안 켰어도 여기서 짓는다.
+            if (value && !_renderer.SeaDepthReady && BuildSeaDepth() is { } depth) _renderer.SetSeaDepth(depth);
+            if (value && !_renderer.WaterPaletteReady && BuildWaterPalette() is { } water) _renderer.SetWaterPalette(water);
+            _renderer.HiResSea = value;
+            _dirty = true;
+        }
+    }
+
+    /// <summary>
+    /// 팔레트 색마다 물인지 — 지도 전체에서 그 색이 <b>물 칸(부류 0·1)·강 칸(5) 타일에 쓰인 수</b>가 뭍 칸의 네 배를 넘고,
+    /// 흙빛(빨강이 파랑보다 뚜렷이 큰 색)이 아니면 물이다. 강 물빛(#5A6967 · #94A199)과 해안 물결의 짙은 점도
+    /// 여기 든다 — 파란 기만으로 가르면 그것들이 원본 도트로 남아 고해상도 바다와 어긋났다.
+    /// </summary>
+    private byte[]? BuildWaterPalette() =>
+        _terrain == null || _world == null || _ocean == null ? null : MapShaderData.WaterPalette(_world, _terrain, _ocean);
+
+    /// <summary>도시 분리 — 바탕 지도 위에 뽑아 둔 도시 그림을 따로 얹는다. 켜면 도시 그림 판을 한 번 짓는다.</summary>
+    public bool CitySprites
+    {
+        get => _renderer.CitySprites;
+        set
+        {
+            if (value && !_renderer.CityArtReady) BuildCityArt();
+            _renderer.SetCitySprites(value);
+            _dirty = true;
+        }
+    }
+
+    /// <summary>마지막으로 받은 「안 선 도시」와 「못 찾은 발견물 자리」 — 그림 판을 나중에 지어도 다시 건다.</summary>
+    private List<int> _lastHiddenCities = [];
+    private List<(int X, int Y, ushort[] Block)> _lastHiddenPlaces = [];
+
+    /// <summary>
+    /// 못 찾은 발견물 자리에 덮어 그린 칸 값 — 지날 수 있는지도 이것으로 본다(<see cref="CellValue"/>).
+    /// 무제국(발견물 92)은 WORLD.CDS 에 섬(뭍)으로 적혀 있고 찾기 전에는 바다 칸으로 덮어 그리는데, 지날 수 있는지는
+    /// 덮기 전 값으로 봐서 배가 보이지 않는 벽에 막혀 그 바다 발견물에 닿지 못했다.
+    /// </summary>
+    private Dictionary<(int X, int Y), ushort> _placeCells = [];
+
+    /// <summary>발견물 그림 블록의 자리 → 블록 번호(도시 226 뒤).</summary>
+    private readonly Dictionary<(int X, int Y), int> _placeSprite = [];
+
+    private void ApplyHiddenSprites()
+    {
+        var ids = new List<int>(_lastHiddenCities);
+        foreach (var (x, y, _) in _lastHiddenPlaces)
+            if (_placeSprite.TryGetValue((x, y), out int id)) ids.Add(id);
+        _renderer.SetHiddenCities(ids);
+    }
+
+    private string _gameDir = "";
+
+    /// <summary>
+    /// 도시 그림과 발견물 마커를 뽑아 한 판으로 건다 — 그 칸 타일과 바탕 타일(도시 표 <c>+0x74</c> 3x3 ·
+    /// 발견물 표 <c>+0x54</c> 2x2)을 점마다 견주어 색 번호가 다른 점만 남긴다(개발도구 「도시 그림 뽑기」와 같은 셈).
+    /// 48x48 칸을 16장씩 줄지어 놓고, 앞 226 이 도시 · 그 뒤가 발견물이다.
+    /// </summary>
+    /// <summary>
+    /// 규모가 자라 큰 도시 그림을 빌려 쓰는 도시 → 그림을 빌려 올 도시(모드 「도시 투자 성장」).
+    /// </summary>
+    private Dictionary<int, int> _grownArt = [];
+
+    /// <summary>
+    /// 규모가 <see cref="Engine.Town.CityGrowth.BigArtScale"/> 이상인데 그림이 작은(2x2칸) 도시마다, 같은 문화권에서 큰 그림(3x3칸)을 쓰는
+    /// 가장 큰 도시를 고른다. 늘어날 칸이 하나라도 바다면 바다 위에 마을이 서므로 안 바꾼다.
+    /// </summary>
+    /// <remarks>
+    /// 원본 도시 그림은 지도에 박혀 있고 규모와 상관없다 — 큰 도시(규모 4 이상 대부분)는 3x3칸, 작은 도시는 2x2칸 그림이다.
+    /// 그래서 「커진다」는 것은 그 칸을 3x3 으로 넓혀 큰 도시의 그림을 얹는 것이다.
+    /// </remarks>
+    private Dictionary<int, int> GrownCities()
+    {
+        var grown = new Dictionary<int, int>();
+        if (_cities is not { } cities || !Engine.Town.CityGrowth.Enabled || _world == null || _terrain == null) return grown;
+        const int w = CityExeTable.EraseWidth;
+        static bool Full(ushort[] e) => e.Length == w * w && e.All(v => v != CityExeTable.Keep);
+        for (int id = 0; id < GameMapCoords.CityCount; id++)
+        {
+            if (cities.ScaleOf(id) < Engine.Town.CityGrowth.BigArtScale) continue;
+            var erase = cities.EraseOf(id);
+            if (erase.Length != w * w || Full(erase) || !cities.TryCell(id, out int cx, out int cy, out _)) continue;
+            bool land = true;
+            for (int k = 0; k < w * w && land; k++)
+                if (erase[k] == CityExeTable.Keep && IsSeaClass(CellValue(cx + k % w + 0.5, cy + k / w + 0.5))) land = false;
+            if (!land) continue;
+            int culture = cities.CultureOf(id), best = -1, bestScale = -1;
+            for (int j = 0; j < GameMapCoords.CityCount; j++)
+            {
+                if (j == id || cities.CultureOf(j) != culture || !Full(cities.EraseOf(j))) continue;
+                if (cities.ScaleOf(j) > bestScale) { best = j; bestScale = cities.ScaleOf(j); }
+            }
+            if (best >= 0) grown[id] = best;
+        }
+        return grown;
+    }
+
+    /// <summary>자란 도시가 달라졌으면 도시 그림 판을 다시 짓는다 — 투자로 규모가 오른 뒤 · 세이브를 연 뒤 · 모드를 바꾼 뒤.</summary>
+    public void RefreshGrownCities()
+    {
+        if (!_renderer.CityArtReady) return;
+        var now = GrownCities();
+        if (now.Count == _grownArt.Count && now.All(p => _grownArt.TryGetValue(p.Key, out int v) && v == p.Value)) return;
+        BuildCityArt();
+        _dirty = true;
+    }
+
+    private void BuildCityArt()
+    {
+        if (_cities == null || _world == null || _ocean == null) return;
+        const int side = MapD3DRenderer.CitySpriteSide, perRow = MapD3DRenderer.CitySpritesPerRow;
+
+        // 자란 도시는 그림을 큰 도시에서 빌려 온다 — 판 자리는 제 번호 그대로, 그림만 그 도시 칸에서 뜬다.
+        _grownArt = GrownCities();
+        var list = new List<(int X, int Y, ushort[] Block, int Width)>();
+        for (int id = 0; id < GameMapCoords.CityCount; id++)
+            list.Add(_grownArt.TryGetValue(id, out int from) && _cities.TryCell(from, out int fx, out int fy, out _)
+                ? (fx, fy, _cities.EraseOf(from), CityExeTable.EraseWidth)
+                : _cities.TryCell(id, out int cx, out int cy, out _)
+                    ? (cx, cy, _cities.EraseOf(id), CityExeTable.EraseWidth) : (0, 0, [], 0));
+        _placeSprite.Clear();
+        if (DiscoveryTable.Open(_gameDir) is { } finds)
+            foreach (var row in finds.Discoveries)
+            {
+                if (!row.HasPlace || row.Erase is not { Length: DiscoveryTable.EraseWidth * DiscoveryTable.EraseWidth } erase) continue;
+                _placeSprite[(row.X1, row.Y1)] = list.Count;
+                list.Add((row.X1, row.Y1, erase, DiscoveryTable.EraseWidth));
+            }
+
+        int count = list.Count;
+        int atlasW = side * perRow, atlasH = side * ((count + perRow - 1) / perRow);
+        var atlas = new uint[atlasW * atlasH];
+        var blocks = list.ToArray();
+        var tiles = _ocean.TileData;
+        var pal = _ocean.PaletteRgb;
+        for (int id = 0; id < count; id++)
+        {
+            var (cx, cy, block, width) = blocks[id];
+            if (width <= 0 || block.Length != width * width) continue;
+            int ox = id % perRow * side, oy = id / perRow * side;
+            for (int k = 0; k < block.Length; k++)
+            {
+                if (block[k] == CityExeTable.Keep) continue;
+                int dx = k % width, dy = k / width;
+                int tile = CellValue(cx + dx + 0.5, cy + dy + 0.5) & OceanTiles.TileMask;
+                int under = block[k] & OceanTiles.TileMask;
+                for (int p = 0; p < OceanTiles.TilePixels; p++)
+                {
+                    byte a = tiles[tile * OceanTiles.TilePixels + p], b = tiles[under * OceanTiles.TilePixels + p];
+                    if (a == b) continue;
+                    int px = ox + dx * OceanTiles.TileW + p % OceanTiles.TileW;
+                    int py = oy + dy * OceanTiles.TileW + p / OceanTiles.TileW;
+                    atlas[py * atlasW + px] = 0xFF000000u | (uint)pal[a];
+                }
+            }
+        }
+        // 지도에 까는 블록은 제 자리다 — 자란 도시는 3x3 을 다 쓰되, 원래 도시가 아니던 칸은 그 칸의 지형을 그대로 바탕으로 둔다.
+        var shown = blocks.ToArray();
+        foreach (var (id, _) in _grownArt)
+        {
+            if (!_cities.TryCell(id, out int cx, out int cy, out _)) continue;
+            const int w = CityExeTable.EraseWidth;
+            var own = _cities.EraseOf(id);
+            var merged = new ushort[w * w];
+            for (int k = 0; k < merged.Length; k++)
+                merged[k] = own[k] != CityExeTable.Keep ? own[k] : (ushort)CellValue(cx + k % w + 0.5, cy + k / w + 0.5);
+            shown[id] = (cx, cy, merged, w);
+        }
+        _renderer.SetCityArt(atlas, atlasW, atlasH, shown);
+        BuildCityHiRes(count);
+        ApplyHiddenSprites();
+    }
+
+    /// <summary>
+    /// 고해상도 도시 그림 — 디자인(<see cref="CityDesigns"/>)마다 <c>asset/citysprite/design_N.png</c> 가 있으면 그것을 판에 늘어놓고,
+    /// 그 디자인을 쓰는 도시 블록마다 판 자리·배율·블록 안 자리를 적는다. 그림이 없는 디자인의 도시는 원본 그림 그대로다.
+    /// </summary>
+    private void BuildCityHiRes(int spriteCount)
+    {
+        if (_cities == null || _ocean == null) return;
+        var designs = CityDesigns.Find((x, y) => CellValue(x + 0.5, y + 0.5), _ocean, _cities);
+        var info = new float[spriteCount * 8];
+        var images = new List<(CityDesigns.Design D, uint[] Px, int Scale)>();
+        foreach (var d in designs)
+            if (CityDesigns.LoadHiRes(d, out int scale) is { } px) images.Add((d, px, scale));
+
+        // 판은 한 줄로 늘어놓는다 — 디자인이 아홉뿐이라 넉넉하다.
+        int atlasW = images.Sum(i => i.D.Width * i.Scale), atlasH = images.Count == 0 ? 1 : images.Max(i => i.D.Height * i.Scale);
+        var atlas = new uint[Math.Max(1, atlasW) * atlasH];
+        int x0 = 0;
+        foreach (var (d, px, scale) in images)
+        {
+            int w = d.Width * scale, h = d.Height * scale;
+            for (int y = 0; y < h; y++) Array.Copy(px, y * w, atlas, y * atlasW + x0, w);
+            foreach (var (city, offX, offY) in d.Members)
+            {
+                if (city >= spriteCount) continue;
+                int at = city * 8;
+                info[at] = x0; info[at + 1] = 0; info[at + 2] = scale; info[at + 3] = 1;
+                info[at + 4] = offX; info[at + 5] = offY; info[at + 6] = d.Width; info[at + 7] = d.Height;
+            }
+            x0 += w;
+        }
+        // 자란 도시는 빌려 온 큰 도시의 고해상도 그림을 쓴다.
+        foreach (var (id, from) in _grownArt)
+            if (id < spriteCount && from < spriteCount) Array.Copy(info, from * 8, info, id * 8, 8);
+        _renderer.SetCityHiRes(atlas, Math.Max(1, atlasW), atlasH, info, spriteCount);
+    }
+
+    /// <summary>뭍 세부 질감을 얹을지. 켜면 타일 부류 표를 한 번 짓는다.</summary>
+    public bool LandDetail
+    {
+        get => _renderer.LandDetail;
+        set
+        {
+            if (value && !_renderer.TileKindsReady && BuildTileKinds() is { } kinds) _renderer.SetTileKinds(kinds);
+            _renderer.LandDetail = value;
+            _dirty = true;
+        }
+    }
+
+    /// <summary>
+    /// 타일마다 지형 부류(지형표 값). 지도에서 그림 비트(0x8000)가 선 칸에 쓰인 타일은 7(도시·발견물 그림)로 둔다 —
+    /// 세부 질감이 그림을 흐리지 않게.
+    /// </summary>
+    private byte[]? BuildTileKinds() =>
+        _terrain == null || _world == null ? null : MapShaderData.TileKinds(_world, _terrain);
+
+    /// <summary>
+    /// 배가 바다에 닿는 효과(항적·그림자·출렁임)를 낼지. 원본에 없는 덧그림이라 모드 창에서 켠다.
+    /// 바다에 떠 있을 때만 든다 — 뭍의 말에는 안 든다.
+    /// </summary>
+    public bool ShipWake
+    {
+        get => _shipWake;
+        set { _shipWake = value; _wakeTrail.Clear(); _dirty = true; }
+    }
+
+    private bool _shipWake;
+
+    /// <summary>지나온 자리 — 칸 좌표와, 그 자리를 지난 때(<see cref="_wakeClock"/>). 새 것이 뒤다.</summary>
+    private readonly List<(double X, double Y, double At)> _wakeTrail = [];
+
+    /// <summary>항적이 흐른 시각(초). 창이 떠서 멈춘 동안에는 안 흐른다.</summary>
+    private double _wakeClock;
+
+    private readonly (float X, float Y, float Age)[] _wakeDraw = new (float, float, float)[MapD3DRenderer.MaxWake];
+
+    /// <summary>항적이 스러지기까지(초)와 그 길이의 끝(칸). 둘 가운데 먼저 닿는 쪽에서 사라진다.</summary>
+    private const double WakeLife = 2.2, WakeReach = 9.0;
+
+    /// <summary>
+    /// 항적 마디를 이번 프레임 것으로 맞추고 렌더러에 건다. 돌려주는 값은 효과가 지금 켜져 있는지다.
+    /// </summary>
+    /// <remarks>
+    /// 뱃머리 반대쪽으로 곧게 긋지 않고 <b>지나온 자리</b>를 잇는다 — 배가 돌면 항적도 휘어 남는다.
+    /// 마디는 때를 고르게 띄워 남기므로 빠를수록 길고, 서면 스러져 없어진다.
+    /// </remarks>
+    private bool SyncWake(double dt, (double X, double Y) origin, double seconds)
+    {
+        bool on = _shipWake && ShowShip && _shipKnown && _spriteReady && !_onLand && !_inCity;
+        _renderer.ShipFx = on;
+        if (!on)
+        {
+            _wakeTrail.Clear();
+            return false;
+        }
+
+        if (!Paused) _wakeClock += dt;
+        double mapW = WorldMapRenderer.UnfoldedW;
+        double Wrap(double d) => d - Math.Floor(d / mapW + 0.5) * mapW;
+
+        if (_wakeTrail.Count > 0)
+        {
+            var last = _wakeTrail[^1];
+            double jx = Wrap(_shipX - last.X), jy = _shipY - last.Y;
+            double jump = Math.Sqrt(jx * jx + jy * jy);
+            if (jump > 6) _wakeTrail.Clear();   // 항구에서 나왔거나 자리를 옮겨 놓았다 — 잇지 않는다
+            else if (jump > 0.05 && _wakeClock - last.At >= WakeLife / (MapD3DRenderer.MaxWake - 2))
+                _wakeTrail.Add((_shipX, _shipY, _wakeClock));
+        }
+        else _wakeTrail.Add((_shipX, _shipY, _wakeClock));
+
+        _wakeTrail.RemoveAll(p => _wakeClock - p.At > WakeLife);
+        while (_wakeTrail.Count > MapD3DRenderer.MaxWake - 1) _wakeTrail.RemoveAt(0);
+
+        // 「배 중심」이면 배 그림이 걸음 사이를 메운 자리(한가운데)에 있으니 물보라 머리도 거기서 뺀다.
+        var (headX, headY) = CenteredFollow ? (_centerX, _centerY) : (_shipX, _shipY);
+        float shipPx = (float)((headX - origin.X) / _cellsPerPixel), shipPy = (float)((headY - origin.Y) / _cellsPerPixel);
+        int n = 0;
+        _wakeDraw[n++] = (shipPx, shipPy, 0);
+        double px = headX, py = headY, reach = 0;
+        for (int i = _wakeTrail.Count - 1; i >= 0 && n < _wakeDraw.Length; i--)
+        {
+            var p = _wakeTrail[i];
+            double dx = Wrap(p.X - px), dy = p.Y - py;
+            reach += Math.Sqrt(dx * dx + dy * dy);
+            if (reach > WakeReach) break;
+            double age = Math.Max((_wakeClock - p.At) / WakeLife, reach / WakeReach);
+            _wakeDraw[n++] = ((float)(shipPx + Wrap(p.X - headX) / _cellsPerPixel),
+                              (float)(shipPy + (p.Y - headY) / _cellsPerPixel), (float)Math.Clamp(age, 0, 1));
+            (px, py) = (p.X, p.Y);
+        }
+        _renderer.SetWake(_wakeDraw.AsSpan(0, n));
+        _renderer.ShipBob = (float)(Math.Sin(seconds * 1.9) * 0.011);
+        return true;
+    }
+
+    /// <summary>도트 확대 필터를 쓸지.</summary>
+    public bool PixelFilter
+    {
+        get => _renderer.PixelFilter;
+        set { _renderer.PixelFilter = value; _dirty = true; }
+    }
+
+    /// <summary>
+    /// 구름을 걷어 둘지 — 폭풍 · 눈보라가 오는 동안 켠다. 걷어도 구름 자리는 그대로 두었다가 끄면 그 자리에서 다시 흐른다.
+    /// </summary>
+    public bool CloudsHidden
+    {
+        get => _cloudsHidden;
+        set { _cloudsHidden = value; _dirty = true; }
+    }
+    private bool _cloudsHidden;
+
+    /// <summary>구름을 부드럽게 그릴지.</summary>
+    public bool SmoothClouds
+    {
+        get => _renderer.SmoothClouds;
+        set { _renderer.SmoothClouds = value; _dirty = true; }
+    }
+
+    /// <summary>
+    /// 칸마다 뭍까지의 걸음 수(0 뭍 · 1~15 물, 15 에서 멈춘다). 지형표 부류 0·1 이 물이다(<see cref="TerrainTable.WaterMax"/>).
+    /// 뭍 칸 전부를 한꺼번에 띄워 너비 우선으로 번진다 — 가로는 경도 -180/180 을 잇는다.
+    /// </summary>
+    private byte[]? BuildSeaDepth() =>
+        _world == null || _terrain == null ? null : MapShaderData.SeaDepth(_world, _terrain);
 
     // 마지막 프레임의 화면 원점. 클릭한 자리를 칸으로 되돌릴 때 쓴다.
     private (double X, double Y) _lastOrigin;
@@ -247,10 +642,23 @@ public sealed class ShipMapHost
 
     /// <summary>
     /// 지금 뱃머리를 8방위 이름으로. 속으로는 16방위 그대로 두고 보여줄 때만 절반으로 깎는다 —
-    /// 게임도 <c>0x48ABA2</c> 에서 방위를 2로 나눠 8방위 이름표를 찾는다. 그래서 화면에 "서" 로
+    /// 원본도 <c>0x48ABA2</c> 에서 방위를 2로 나눠 8방위 이름표를 찾는다. 그래서 화면에 "서" 로
     /// 보여도 속은 4일 수도 5일 수도 있다.
     /// </summary>
     public string HeadingName => CompassNames[(_heading & 0xF) >> 1];
+
+    /// <summary>지금 뱃머리(16방위, 0 이 북) — 원본의 <c>[0x005B63C8]</c>. 사건 연출이 자리를 고를 때 본다.</summary>
+    public int Heading => _heading & 0xF;
+
+    /// <summary>
+    /// 뱃머리를 박는다 — 적어 둔 판을 열 때 쓴다. 원본은 제독 <c>+0x328</c>(<c>0x005B63C8</c>)을 세이브에 적는다
+    /// (<c>0x0047CA21</c>). 바라는 쪽도 같이 두어 열자마자 돌지 않게 한다.
+    /// </summary>
+    public void SetHeading(int heading)
+    {
+        _heading = _desired = heading & 0xF;
+        _dirty = true;
+    }
 
     private int _heading;                  // 지금 뱃머리(반시계, 16방위). 그림도 이동도 이것이다
     private int _desired;                  // 커서가 바라는 쪽(8방위라 늘 짝수)
@@ -297,13 +705,13 @@ public sealed class ShipMapHost
     public bool Paused { get; set; }
 
     /// <summary>
-    /// 배(말)를 옮긴 <b>걸음 수</b>. 게임의 항해 고리 한 바퀴에 맞먹는다.
+    /// 배(말)를 옮긴 <b>걸음 수</b>. 원본의 항해 고리 한 바퀴에 맞먹는다.
     /// </summary>
     /// <remarks>
-    /// 게임은 고리를 한 바퀴 돌 때마다 발밑 칸의 눈금을 하나 붙이고
+    /// 원본은 고리를 한 바퀴 돌 때마다 발밑 칸의 눈금을 하나 붙이고
     /// (<c>0x0048EF7D</c>) 마흔여덟 눈금이 하루다. 그 고리 한 바퀴가 여기서는
     /// <see cref="TickSeconds"/> 짜리 걸음 하나라, 날을 세는 쪽이 이 수를 본다.
-    /// 멎어 있거나 닻을 내렸으면 안 오른다 — 게임도 그때는 고리가 안 돈다.
+    /// 멎어 있거나 닻을 내렸으면 안 오른다 — 원본도 그때는 고리가 안 돈다.
     /// </remarks>
     public long Steps { get; private set; }
 
@@ -330,8 +738,8 @@ public sealed class ShipMapHost
     /// </summary>
     public bool PathAssist { get; set; }
 
-    /// <summary>길찾기 보정이 마지막으로 셈한 커서 칸과 그 첫 길목.</summary>
-    private (int X, int Y) _assistFrom = (int.MinValue, int.MinValue);
+    /// <summary>길찾기 보정이 마지막으로 셈한 배 칸 · 커서 칸과 그 첫 길목.</summary>
+    private (int X, int Y, int ToX, int ToY) _assistFrom = (int.MinValue, int.MinValue, int.MinValue, int.MinValue);
     private (double X, double Y)? _assistStep;
 
     /// <summary>
@@ -349,7 +757,7 @@ public sealed class ShipMapHost
 
     /// <summary>
     /// 도시에 들어가 있는지. 참이면 지도 위에 남색 막을 씌운다 — 색을 칠하는 것이 아니라
-    /// 지도가 그 밑으로 비쳐 보인다(게임도 그렇다).
+    /// 지도가 그 밑으로 비쳐 보인다(원본도 그렇다).
     /// </summary>
     public bool InCity
     {
@@ -401,13 +809,27 @@ public sealed class ShipMapHost
 
     /// <summary>
     /// 참이면 바다 명령(닻·상륙·출항·배 놓기·조종)을 받지 않는다. 도시 화면이 떠 있는
-    /// 동안이 그렇다 — 게임도 도시에 들어가면 함대 명령 대신 도시 커맨드만 낸다.
+    /// 동안이 그렇다 — 원본도 도시에 들어가면 함대 명령 대신 도시 커맨드만 낸다.
     /// 막는 곳을 창이 아니라 여기에 둔 것은, 지도를 만지는 길이 여럿이라
     /// (마우스·커맨드 창·조작 줄) 부르는 쪽마다 검사를 흩어 놓으면 하나씩 새기 때문이다.
     /// </summary>
     public bool SeaBlocked => _inCity;
 
     public string Status { get; private set; } = "";
+
+    /// <summary>다음 프레임을 그린 뒤 넘겨받을 곳(<see cref="GrabNextFrame"/>). 없으면 null.</summary>
+    private Action<byte[], int, int>? _grab;
+
+    /// <summary>
+    /// 다음 프레임을 <b>반드시</b> 그리고, Present 앞에서 백버퍼를 내려받아 넘긴다(BGRA, 스왑체인 실픽셀 · 줄 틈 없음).
+    /// 화면 밖 시험의 스냅샷(<c>OffscreenHarness</c>)이 쓴다. 못 읽으면 빈 배열과 0 · 0 이다.
+    /// 지도가 안 돌고 있으면(타이틀 화면) 끝내 안 불린다 — 부르는 쪽이 기다림을 끊는다.
+    /// </summary>
+    public void GrabNextFrame(Action<byte[], int, int> done)
+    {
+        _grab = done;
+        _dirty = true;
+    }
 
     /// <summary>Present 까지 마친 프레임 수. 진짜 그려지고 있는지 밖에서 볼 때 쓴다.</summary>
     public long FrameCount { get; private set; }
@@ -450,10 +872,33 @@ public sealed class ShipMapHost
 
 
 
+    /// <summary>수에즈 운하 자리의 원래 지도 낱말 — 모드를 끌 때 되돌린다.</summary>
+    private int[]? _canalOriginal;
+
+    /// <summary>
+    /// 모드 「수에즈 운하」를 켜고 끈 것을 곧바로 지도에 들인다 — 운하 칸을 되돌리고 다시 뚫은 뒤, 지도와 그 지도에서 지은
+    /// 표(수심 · 타일 부류 · 물 색)를 다시 건다. 판을 다시 열지 않아도 된다.
+    /// </summary>
+    public void RefreshSuezCanal()
+    {
+        if (_world == null || _canalOriginal == null) return;
+        Engine.Sea.SuezCanal.Restore(_world, _canalOriginal);
+        Engine.Sea.SuezCanal.Apply(_world, _terrain);
+        Engine.Sea.SeaPathfinder.Forget(_world);
+        _routes.Open(_world);   // 지도가 바뀌었다 — 적어 둔 바닷길은 그 지도의 것만 쓴다
+        _renderer.UpdateWorld(_world);
+        if (_renderer.SeaDepthReady && BuildSeaDepth() is { } depth) _renderer.SetSeaDepth(depth);
+        if (_renderer.TileKindsReady && BuildTileKinds() is { } kinds) _renderer.SetTileKinds(kinds);
+        if (_renderer.WaterPaletteReady && BuildWaterPalette() is { } water) _renderer.SetWaterPalette(water);
+        _dirty = true;
+    }
+
     /// <summary>WORLD.CDS / OCEAN.CDS 를 올리고 스왑체인을 건다. 실패하면 까닭을 남기고 false.</summary>
     public bool Start(string gameDir)
     {
-        var world = WorldMapRenderer.LoadWorldData(System.IO.Path.Combine(gameDir, "WORLD.CDS"));
+        _gameDir = gameDir;
+        // 편집기에서 고친 지도(asset/cds/WORLD.CDS)가 있으면 그것을 먼저 쓴다.
+        var world = WorldMapRenderer.LoadWorldData(CdsAssetPath.Resolve(gameDir, "WORLD.CDS"));
         if (world == null) { Status = "WORLD.CDS 를 읽지 못했습니다"; return false; }
         _world = world;
 
@@ -462,18 +907,24 @@ public sealed class ShipMapHost
 
         // 칸을 지날 수 있는지는 게임 표가 가른다. 못 읽으면 옛 어림으로 물러선다.
         _terrain = TerrainTable.Open(gameDir);
+        // 모드 「수에즈 운하」 — 지협에 바닷길을 뚫는다. 그림 · 통행 · 길찾기가 다 이 지도 낱말을 본다.
+        // 원래 칸을 들고 있다가 모드를 끄면 되돌린다(RefreshSuezCanal).
+        _canalOriginal = Engine.Sea.SuezCanal.Capture(_world);
+        Engine.Sea.SuezCanal.Apply(_world, _terrain);
+        _routes.Open(_world);
         if (_terrain == null)
-            System.Diagnostics.Debug.WriteLine($"[ShipMap] 지형표 없음: {TerrainTable.LastError}");
+            System.Diagnostics.Debug.WriteLine($"[WorldMap] 지형표 없음: {TerrainTable.LastError}");
 
         var ocean = OceanTiles.LoadFromDirectory(gameDir);
         if (ocean == null) { Status = $"OCEAN.CDS 를 읽지 못했습니다 ({OceanTiles.LastError})"; return false; }
+        _ocean = ocean;   // 고해상도 바다의 물 색 표를 지을 때 다시 본다
 
         _renderer.Initialize(world, ocean);
 
         // 닻. 배 그림과 같은 48x48 이라 배가 놓일 자리에 그대로 겹치면 된다.
         var anchorSprite = AnchorSprite.LoadFromDirectory(gameDir);
         if (anchorSprite == null)
-            System.Diagnostics.Debug.WriteLine($"[ShipMap] 닻 없음: {AnchorSprite.LastError}");
+            System.Diagnostics.Debug.WriteLine($"[WorldMap] 닻 없음: {AnchorSprite.LastError}");
         else
         {
             _anchorPixels = [.. anchorSprite.Pixels];    // 덧그림을 나눠 쓰므로 들고 있는다
@@ -483,14 +934,14 @@ public sealed class ShipMapHost
         // 바람·해류. 못 열어도 지도는 그대로 돈다 — 물결이 안 일고 화살표가 안 나올 뿐이다.
         _wind = WindTable.Open(gameDir);
         if (_wind == null)
-            System.Diagnostics.Debug.WriteLine($"[ShipMap] 바람표 없음: {WindTable.LastError}");
+            System.Diagnostics.Debug.WriteLine($"[WorldMap] 바람표 없음: {WindTable.LastError}");
         else
             _renderer.SetRippleTiles(_wind.BuildRippleTiles(_terrain));
 
         // 구름. 없으면 안 뜰 뿐 나머지는 그대로 돈다.
         var clouds = CloudSprites.LoadFromDirectory(gameDir);
         if (clouds == null)
-            System.Diagnostics.Debug.WriteLine($"[ShipMap] 구름 없음: {CloudSprites.LastError}");
+            System.Diagnostics.Debug.WriteLine($"[WorldMap] 구름 없음: {CloudSprites.LastError}");
         else
             _renderer.SetCloudSprites(clouds.Bgra);
 
@@ -557,10 +1008,17 @@ public sealed class ShipMapHost
         if (_follow && _shipKnown) FollowShip(w, h);
         origin = (_centerX - w / 2.0 * _cellsPerPixel, _centerY - h / 2.0 * _cellsPerPixel);
 
-        var rect = _shipKnown && _spriteReady ? SpriteRectAt(_shipX, _shipY, origin) : (0f, 0f, 0f, 0f);
+        var rect = ShowShip && _shipKnown && _spriteReady
+                       ? CenteredFollow ? SpriteRectAt(_centerX, _centerY, origin) : SpriteRectAt(_shipX, _shipY, origin)
+                                             : (0f, 0f, 0f, 0f);
+
+        // 덧그림 한 장을 두 가지로 나눠 쓴다. 둘이 같이 뜰 일은 없다 — 상륙하면 닻이 풀린다.
+        //   정박 중  닻. 그림이 배와 같은 48x48 이고 그 안에서 왼쪽 아래에만 찍혀 있으므로
+        //           배와 같은 자리에 겹치면 원본처럼 배 왼쪽 아래에 걸린다.
+        //   뭍에 있을 때  대 둔 배. 어디로 상륙했는지 그 자리에 남는다.
         var overlay = (0f, 0f, 0f, 0f);
-        if (_anchored && !_onLand && _shipKnown && _spriteReady) overlay = rect;
-        else if (_onLand && _moored) overlay = SpriteRectAt(_mooredX, _mooredY, origin);
+        if (ShowShip && _anchored && !_onLand && _shipKnown && _spriteReady) overlay = rect;
+        else if (ShowShip && _onLand && _moored) overlay = SpriteRectAt(_mooredX, _mooredY, origin);
         SyncOverlaySprite();
         SyncFolk(origin, w, h);
         SyncRoute(origin);
@@ -577,13 +1035,14 @@ public sealed class ShipMapHost
     /// </summary>
     /// <remarks>
     /// 누가 어디 있는지는 <c>PersonWorld</c> 가 안다. 여기서는 <b>받아서 그리기만</b> 한다 —
-    /// 지도는 인물 표를 모르는 편이 낫다. 게임도 지도 객체가 인물 배열을 훑어 가까운
+    /// 지도는 인물 표를 모르는 편이 낫다. 원본도 지도 객체가 인물 배열을 훑어 가까운
     /// 열여섯을 채운다(<c>0x00426790</c>).
     /// </remarks>
-    public Func<IReadOnlyList<(double X, double Y, int Heading, int Person)>>? FolkAt { get; set; }
+    /// <remarks>Skin 은 그 사람 기함의 배 그림 벌(0 코구 · 1 카라벨 · 2 카락 · 3 갤리온)이다.</remarks>
+    public Func<IReadOnlyList<(double X, double Y, int Heading, int Person, int Skin)>>? FolkAt { get; set; }
 
     /// <summary>이번 프레임에 실제로 그린 사람들 — 가까운 차례다.</summary>
-    private readonly List<(double X, double Y, int Heading, int Person)> _folk = [];
+    private readonly List<(double X, double Y, int Heading, int Person, int Skin)> _folk = [];
 
     private readonly MapD3DRenderer.FolkDraw[] _folkDraw =
         new MapD3DRenderer.FolkDraw[MapD3DRenderer.MaxFolk];
@@ -591,10 +1050,10 @@ public sealed class ShipMapHost
     private bool _folkArtReady;
 
     /// <summary>
-    /// 남의 그림 여덟 장을 한 번 올린다 — 배 넉 장, 말 넉 장이고 각각 북 · 서 · 남 · 동 차례다.
+    /// 남의 그림을 한 번 올린다 — 배는 벌마다 여덟 장(북 · 북서 · 서 … 북동), 말은 넉 장(북 · 서 · 남 · 동)이다.
     /// </summary>
     /// <remarks>
-    /// 내 배·말과 같은 <c>asset/ship</c> 벌을 쓴다. 게임도 남의 배를 따로 그리지 않고 내 것과 같은
+    /// 내 배·말과 같은 <c>asset/ship</c> 벌을 쓴다. 원본도 남의 배를 따로 그리지 않고 내 것과 같은
     /// 그림 벌(바다 <c>0x00569FE4</c> · 뭍 <c>0x00569FE8</c>)을 쓴다.
     /// </remarks>
     private void UploadFolkSprites()
@@ -604,12 +1063,15 @@ public sealed class ShipMapHost
         int one = MapD3DRenderer.FolkSize * MapD3DRenderer.FolkSize;
         var atlas = new uint[one * MapD3DRenderer.FolkFrames];
 
-        // 16방위에서 북(0) · 서(4) · 남(8) · 동(12) 을 뽑는다. 앞 넉 장이 배, 뒤 넉 장이 말이다.
+        // 앞 서른두 장이 배 벌 넷(벌마다 16방위의 짝수 여덟 쪽)이고, 그 뒤가 말이다 — 북(0) · 서(4) · 남(8) · 동(12)
+        // 마다 걸음 여덟 장씩 서른두 장(걷는 그림이 없으면 선 그림 한 장이 여덟 번 든다).
         for (int i = 0; i < MapD3DRenderer.FolkFrames; i++)
         {
-            bool land = i >= MapD3DRenderer.FolkLandFrame;
-            int heading = (i % MapD3DRenderer.FolkLandFrame) * 4;
-            var frame = ShipSprites.Frame(heading, onLand: land);
+            int step = i - MapD3DRenderer.FolkLandFrame;
+            bool land = step >= 0;
+            int heading = land ? step / MapD3DRenderer.FolkLandPhases * 4 : i % MapD3DRenderer.FolkWays * 2;
+            var frame = land ? ShipSprites.Frame(heading, onLand: true, step % MapD3DRenderer.FolkLandPhases)
+                             : ShipSprites.SkinFrame(i / MapD3DRenderer.FolkWays, heading) ?? ShipSprites.Frame(heading);
             if (frame.Length != one) return;                 // 그림 벌이 아직 안 열렸다
             frame.CopyTo(atlas.AsSpan(i * one));
         }
@@ -622,7 +1084,7 @@ public sealed class ShipMapHost
     /// 가까운 사람 열여섯을 골라 화면 자리로 옮긴다.
     /// </summary>
     /// <remarks>
-    /// 게임은 인물 번호 차례로 앞에서 열여섯을 채우는데, 우리는 <b>가까운 차례</b>로 고른다 —
+    /// 원본은 인물 번호 차례로 앞에서 열여섯을 채우는데, 우리는 <b>가까운 차례</b>로 고른다 —
     /// 화면에 든 사람이 번호가 커서 밀리면 눈에 안 보여 이상하다.
     /// </remarks>
     /// <returns>지난 프레임과 <b>달라졌으면</b> 참 — 그때만 다시 그린다.</returns>
@@ -646,7 +1108,7 @@ public sealed class ShipMapHost
         {
             double x = Fold(one.X, origin.X);
             if (x < left || x > right || one.Y < top || one.Y > bottom) continue;
-            _folk.Add((x, one.Y, one.Heading, one.Person));
+            _folk.Add((x, one.Y, one.Heading, one.Person, one.Skin));
         }
 
         if (_folk.Count > MapD3DRenderer.MaxFolk)
@@ -662,9 +1124,11 @@ public sealed class ShipMapHost
         for (int i = 0; i < _folk.Count; i++)
         {
             var one = _folk[i];
-            // 16방위 → 넉 장. 뭍 칸에 서 있으면 말 쪽 넉 장으로 내린다(0x0048A799).
-            int frame = (one.Heading & 0xF) >> 2;
-            if (FolkOnLand(one.X, one.Y)) frame += MapD3DRenderer.FolkLandFrame;
+            // 16방위 → 바다면 그 사람 기함 벌의 여덟 장에서 고른다. 뭍 칸에 서 있으면 말 넉 장으로
+            // 내린다(0x0048A799) — 대각은 내 말처럼 가까운 쪽으로 돌린다.
+            int frame = FolkOnLand(one.X, one.Y)
+                ? MapD3DRenderer.FolkLandFrame + (((one.Heading + 1) & 0xF) >> 2) * MapD3DRenderer.FolkLandPhases + FolkStep(one)
+                : Math.Clamp(one.Skin, 0, MapD3DRenderer.FolkSkins - 1) * MapD3DRenderer.FolkWays + ((one.Heading & 0xF) >> 1);
 
             var draw = new MapD3DRenderer.FolkDraw(
                 (float)((one.X - origin.X) / _cellsPerPixel - size / 2),
@@ -684,11 +1148,28 @@ public sealed class ShipMapHost
     /// <summary>지난 프레임에 그린 남의 배 수.</summary>
     private int _folkShown;
 
+    /// <summary>사람마다 지난번 자리와 걸음 번호 — 자리가 옮겨질 때마다 한 걸음 는다.</summary>
+    private readonly Dictionary<int, (double X, double Y, int Phase)> _folkSteps = [];
+
     /// <summary>
-    /// 그 사람이 뭍 칸에 서 있는지 — 게임은 부류가 2 이상이면 배 대신 말을 그린다.
+    /// 그 사람의 걸음 번호. 내 말(<see cref="_walkPhase"/>)처럼 <b>움직일 때만</b> 늘어, 선 말은 다리도 선다.
+    /// </summary>
+    private int FolkStep((double X, double Y, int Heading, int Person, int Skin) one)
+    {
+        // 접힌 자리(Fold)는 화면을 따라 세계 폭만큼 뛰므로 접기 전 값으로 견준다.
+        double wide = WorldMapRenderer.UnfoldedW;
+        double x = ((one.X % wide) + wide) % wide;
+        if (!_folkSteps.TryGetValue(one.Person, out var was)) was = (x, one.Y, 0);
+        else if (was.X != x || was.Y != one.Y) was = (x, one.Y, (was.Phase + 1) % MapD3DRenderer.FolkLandPhases);
+        _folkSteps[one.Person] = was;
+        return was.Phase;
+    }
+
+    /// <summary>
+    /// 그 사람이 뭍 칸에 서 있는지 — 원본은 부류가 2 이상이면 배 대신 말을 그린다.
     /// </summary>
     /// <remarks>
-    /// 게임의 <c>0x0048A794</c> 가 자리를 열여섯으로 나눠 칸을 잡고 <c>0x00426710</c> 으로 부류를
+    /// 원본의 <c>0x0048A794</c> 가 자리를 열여섯으로 나눠 칸을 잡고 <c>0x00426710</c> 으로 부류를
     /// 본 뒤 <c>cmp eax, 2 / jge</c> 로 가른다. 부류표를 못 열었으면 뱃길 판정으로 물러선다.
     /// </remarks>
     private bool FolkOnLand(double cellX, double cellY)
@@ -702,7 +1183,7 @@ public sealed class ShipMapHost
     private const double FolkMargin = 3;
 
     /// <summary>내 배에서 그 사람까지 칸 거리의 제곱.</summary>
-    private double Near((double X, double Y, int Heading, int Person) one)
+    private double Near((double X, double Y, int Heading, int Person, int Skin) one)
     {
         double dx = one.X - _shipX, dy = one.Y - _shipY;
         return dx * dx + dy * dy;
@@ -721,7 +1202,7 @@ public sealed class ShipMapHost
     /// 내 배에서 <paramref name="radiusCells"/> 칸 안(경계 포함)에 든 사람들의 번호.
     /// </summary>
     /// <remarks>
-    /// 지금 그리고 있는 사람들 가운데서 고른다 — 게임도 화면 열여섯 칸에 든 사람만 잰다
+    /// 지금 그리고 있는 사람들 가운데서 고른다 — 원본도 화면 열여섯 칸에 든 사람만 잰다
     /// (<c>0x0048C049</c>).
     /// </remarks>
     public List<int> FolkWithin(double radiusCells)
@@ -734,7 +1215,7 @@ public sealed class ShipMapHost
     }
 
     /// <summary>
-    /// 칸 좌표에 48x48 그림 한 장이 놓일 화면 사각형. 게임에서 한 칸이 16점이니 세 칸이다.
+    /// 칸 좌표에 48x48 그림 한 장이 놓일 화면 사각형. 원본에서 한 칸이 16점이니 세 칸이다.
     /// </summary>
     private (float X, float Y, float W, float H) SpriteRectAt(
         double cellX, double cellY, (double X, double Y) origin)
@@ -838,21 +1319,243 @@ public sealed class ShipMapHost
     private double _stuckX, _stuckY;
     private int _stuckTicks;
 
+    /// <summary>그은 선 위에서 이만큼(칸) 앞을 바라보고 몬다.</summary>
+    private const double AutoLookahead = 2.0;
+
+    /// <summary>선에서 이만큼(칸) 넘게 벗어나면 선으로 곧장 돌아가고, 이만큼 안으로 들면 다시 앞을 본다.</summary>
+    private const double AutoStrayLimit = 1.2, AutoBackOnLine = 0.3;
+
+    /// <summary>마디까지 선을 따라 이만큼(칸) 남으면 다음 토막으로 넘어간다.</summary>
+    private const double AutoTurnEarly = 0.5;
+
+    /// <summary>선으로 돌아갈 때 바라보는 거리(칸) — 뱃머리가 도는 죽은 구역(<see cref="TurnDeadZoneCells"/>)보다 멀어야 한다.</summary>
+    private const double AutoRecoverReach = 3.0;
+
+    private bool _autoRecover;
+
+    /// <summary>
+    /// 지금 빠르기로 뱃머리를 끝까지 꺾을 때 그리는 원의 반지름(칸) — 한 틱 걸음 / 한 틱에 도는 각.
+    /// </summary>
+    /// <remarks>
+    /// 대형카락·중카락은 한 틱에 22.5도만 돌아(<see cref="Engine.Sea.Sailing.TurnRates"/>) 30노트를 넘기면
+    /// 반지름이 네 칸을 넘는다. 바라보는 자리가 이 원 안에 들면 영영 못 닿고 그 둘레를 맴돈다 —
+    /// 모퉁이에서 서너 바퀴 빙빙 돌던 것이 그것이다(제보). 자동항해의 거리들은 이 값 밑으로 내려가지 않는다.
+    /// </remarks>
+    private double TurnRadiusCells
+    {
+        get
+        {
+            int rate = Math.Max(1, TurnRateOf?.Invoke() ?? Engine.Sea.Sailing.DefaultTurnRate);
+            double step = LastStep * Engine.Sea.Sailing.LonScale(ShipLatLon.Lat);
+            return step / (rate * Math.PI / 8);
+        }
+    }
+
+    /// <summary>이 틱 수만큼 내리 막혀 있으면 길을 다시 짠다(0.1초 x 30 = 3초).</summary>
+    private const int ReplanTicks = 30;
+
+    private int _blockedTicks;
+
+    /// <summary>자동항해가 가는 자리(칸) — 길을 다시 짤 때 쓴다.</summary>
+    private (double X, double Y) _autoDest;
+
+    /// <summary>자동항해가 가는 도시. 도시가 아닌 자리로 가면 −1.</summary>
+    private int _autoCity = -1;
+
+    /// <summary>마지막 마디까지 끝까지 가는지 — 도시 어귀나 배 댈 자리로 갈 때다.</summary>
+    private bool _autoExact;
+
+    /// <summary>지금 자동항해가 길을 고른 법 — 다시 짤 때 같은 법을 쓴다.</summary>
+    private RouteKind _autoKind;
+
+    /// <summary>
+    /// 항구 없는 내륙 도시로 갈 때 배를 댈 자리 — <b>배로 가는 시간과 내려서 걸어가는 시간을 더한 것</b>이 가장
+    /// 짧은 해안이다(<see cref="Engine.Sea.SeaPathfinder.LandingByTime"/>). 없으면 null.
+    /// </summary>
+    /// <remarks>함대 속도를 모르면 시간을 못 재므로, 걸어갈 길이 트인 가장 가까운 해안으로 물러선다.</remarks>
+    public (double X, double Y)? LandingCellOf(int city) => LandingCellsOf(city) is [var first, ..] ? first.Cell : null;
+
+    /// <summary>
+    /// 내륙 도시로 갈 때 배를 댈 만한 자리 <b>몇 군데</b> — 가장 빠른 자리, 덜 걷는 자리, 가장 가까운 해안.
+    /// 서로 가까운 것은 하나로 친다. 앞의 것이 기본이다.
+    /// </summary>
+    public List<((double X, double Y) Cell, string Label)> LandingCellsOf(int city)
+    {
+        var got = new List<((double X, double Y) Cell, string Label)>();
+        if (_world == null || _terrain == null || _cities == null) return got;
+        if (!_cities.TryCell(city, out int cx, out int cy, out int reach)) return got;
+
+        void Add((double X, double Y)? cell, string label)
+        {
+            if (cell is not { } c) return;
+            foreach (var (had, _) in got)
+                if (Math.Abs(WrapDx(had.X - c.X)) <= SameLanding && Math.Abs(had.Y - c.Y) <= SameLanding) return;
+            got.Add((c, label));
+        }
+
+        if (FleetSpeed is { } fleet && _wind != null)
+        {
+            var pace = new Engine.Sea.SailCost(_wind, MonthOf?.Invoke() ?? DefaultMonth,
+                                               (dir, speed, heading) => fleet(dir, speed, heading, false));
+            double afoot = Engine.Sea.Sailing.CellsPerTick(fleet(0, 0, 0, true), false, onLand: true);
+            Add(Engine.Sea.SeaPathfinder.LandingByTime(_world, _terrain, (_shipX, _shipY), (cx, cy), reach, pace, afoot),
+                "가장 빠른 길");
+            Add(Engine.Sea.SeaPathfinder.LandingByTime(_world, _terrain, (_shipX, _shipY), (cx, cy), reach, pace, afoot,
+                                                       walkWeight: LessWalkWeight), "덜 걷는 길");
+        }
+        Add(Engine.Sea.SeaPathfinder.Landing(_world, _terrain, (_shipX, _shipY), (cx, cy), reach), "가장 가까운 해안");
+        return got;
+    }
+
+    /// <summary>배 댈 자리 둘이 이만큼(칸) 안이면 같은 자리로 친다.</summary>
+    private const double SameLanding = 12;
+
+    /// <summary>「덜 걷는 길」은 걷는 시간을 이만큼 곱해 견준다.</summary>
+    private const double LessWalkWeight = 3;
+
+    /// <summary>자동항해가 길을 고르는 법.</summary>
+    public enum RouteKind
+    {
+        /// <summary>짧은 길로 가되, 뚜렷이 빠르면 바람 · 해류를 본 길로.</summary>
+        Auto,
+        /// <summary>가장 짧은 길.</summary>
+        Short,
+        /// <summary>바람 · 해류를 보아 가장 빠른 길.</summary>
+        Quick,
+    }
+
+    /// <summary>
+    /// 지금 자리에서 그 칸까지의 항로를 <b>잡아만 본다</b> — 떠나기 전에 여럿을 견주어 보여 줄 때 쓴다.
+    /// 틱 수는 바람 · 해류를 넣은 어림이고, 함대 속도를 모르면 NaN 이다.
+    /// </summary>
+    public (IReadOnlyList<(double X, double Y)> Route, double Ticks)? PreviewRoute(double destX, double destY, RouteKind kind)
+    {
+        if (!_ready || !_shipKnown) return null;
+        var (route, _, ticks) = PlanSeaRoute(destX, destY, kind);
+        return route is { Count: >= 2 } ? (route, ticks) : null;
+    }
+
+    /// <summary>그 칸에서 그 도시까지 곧게 걸어가는 틱 수(어림). 함대 속도를 모르면 NaN.</summary>
+    public double WalkTicks((double X, double Y) from, int city)
+    {
+        if (FleetSpeed is not { } fleet || _cities == null || !_cities.TryCell(city, out int cx, out int cy, out int reach))
+            return double.NaN;
+        double step = Engine.Sea.Sailing.CellsPerTick(fleet(0, 0, 0, true), false, onLand: true);
+        if (step <= 0) return double.NaN;
+        double midY = cy + reach / 2.0;
+        double lon = Engine.Sea.Sailing.LonScale(90.0 - (from.Y + midY) / 2 * 180.0 / WorldMapRenderer.CellH);
+        double dx = WrapDx(cx + reach / 2.0 - from.X) / lon, dy = midY - from.Y;
+        return Math.Sqrt(dx * dx + dy * dy) * 1.05 / step;
+    }
+
+    /// <summary>지금 가고 있는 항로. 자동항해 중이 아니면 null.</summary>
+    public IReadOnlyList<(double X, double Y)>? AutoRoute => _autoRoute;
+
+    private static readonly string[] Compass16 =
+    [
+        "북", "북북동", "북동", "동북동", "동", "동남동", "남동", "남남동",
+        "남", "남남서", "남서", "서남서", "서", "서북서", "북서", "북북서",
+    ];
+
+    /// <summary>
+    /// 항로를 <b>어디서 어느 쪽으로 뱃머리를 트는지</b>의 줄들로 — 「1  북위38.7 서경9.1  남서로」.
+    /// 같은 쪽으로 이어지는 토막은 한 줄로 묶는다. 띠 · 목록 글꼴에 없는 글자(화살표 · 도 기호)는 안 쓴다.
+    /// </summary>
+    public static List<string> DescribeRoute(IReadOnlyList<(double X, double Y)> route)
+    {
+        static string Spot((double X, double Y) p)
+        {
+            double lat = 90.0 - p.Y * 180.0 / WorldMapRenderer.CellH;
+            double x = p.X % WorldMapRenderer.UnfoldedW;
+            if (x < 0) x += WorldMapRenderer.UnfoldedW;
+            double lon = x * 360.0 / WorldMapRenderer.UnfoldedW - 180.0;
+            return $"{(lat >= 0 ? "북" : "남")}위{Math.Abs(lat):0.0} {(lon >= 0 ? "동" : "서")}경{Math.Abs(lon):0.0}";
+        }
+
+        var lines = new List<string>();
+        string was = "";
+        for (int i = 0; i + 1 < route.Count; i++)
+        {
+            double dx = route[i + 1].X - route[i].X, dy = route[i + 1].Y - route[i].Y;
+            if (dx == 0 && dy == 0) continue;
+            // 북에서 시계로 잰 각을 16방위로.
+            double turn = Math.Atan2(dx, -dy) / (Math.PI * 2);
+            string way = Compass16[(int)Math.Round((turn < 0 ? turn + 1 : turn) * 16) % 16];
+            if (way == was) continue;
+            was = way;
+            lines.Add($"{lines.Count + 1}  {Spot(route[i])}  {way}{(way.EndsWith('동') ? "으로" : "로")}");
+        }
+        if (route.Count > 0) lines.Add($"도착  {Spot(route[^1])}");
+        return lines;
+    }
+
+    /// <summary>
+    /// 그 도시의 어귀 가운데 배가 설 물칸 — 자동항해가 이 칸으로 간다. 어귀에 물이 없으면 null.
+    /// </summary>
+    /// <remarks>
+    /// 어귀는 <see cref="TownsAt"/> 이 재는 네모다. 그 안의 물칸 가운데 <b>둘레에 물이 많은 칸</b>을 고르고
+    /// (뭍에 낀 칸은 배가 들어서기 어렵다), 같으면 네모 한가운데에 가까운 칸을 고른다.
+    /// </remarks>
+    public (double X, double Y)? PortCellOf(int city)
+    {
+        if (_cities == null || !_cities.TryCell(city, out int cx, out int cy, out int reach)) return null;
+
+        double midX = cx + (reach - TownSlack) / 2.0, midY = cy + (reach - TownSlack) / 2.0;
+        (double X, double Y)? best = null;
+        int bestOpen = -1;
+        double bestFar = double.MaxValue;
+        int slack = TouchSlack + MouthSlack(city);
+        for (int y = cy - TownSlack - slack; y <= cy + reach + slack; y++)
+            for (int x = cx - TownSlack - slack; x <= cx + reach + slack; x++)
+            {
+                if (IsLand(x + 0.5, y + 0.5)) continue;
+                int open = 0;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++)
+                        if (!IsLand(x + dx + 0.5, y + dy + 0.5)) open++;
+                double far = (x - midX) * (x - midX) + (y - midY) * (y - midY);
+                if (open < bestOpen || (open == bestOpen && far >= bestFar)) continue;
+                bestOpen = open;
+                bestFar = far;
+                best = (x + 0.5, y + 0.5);
+            }
+        return best;
+    }
+
+    /// <summary>닻을 내려 그 자리에 세운다.</summary>
+    public void DropAnchor()
+    {
+        _anchored = true;
+        _tickAccum = 0;
+    }
+
     /// <summary>
     /// 그 칸까지 바닷길을 찾아 자동항해를 시작한다. 뭍이나 도시 안에서는, 지도를 아직 못
     /// 읽었으면, 바닷길을 못 찾았으면 시작하지 않는다.
     /// </summary>
-    public (bool Ok, string Message) StartAutoSail(double destX, double destY)
+    /// <param name="city">
+    /// 가려는 도시. 주면 그 도시의 <b>어귀</b>(「항구로 들어가겠습니까」가 뜨는 칸)에 들어서야 도착이다 —
+    /// 안 주면 찍은 자리 두 칸 안에서 멎는데, 그러면 도시 코앞에 서고 물음은 안 뜬다.
+    /// </param>
+    /// <param name="exact">참이면 도시가 아니어도 찍은 칸까지 끝까지 간다 — 내륙 도시로 가려고 배를 댈 자리다.</param>
+    /// <param name="kind">길을 고르는 법 — 길이 막혀 다시 짤 때도 같은 법으로 짠다.</param>
+    public (bool Ok, string Message) StartAutoSail(double destX, double destY, int city = -1, bool exact = false,
+                                                   RouteKind kind = RouteKind.Auto)
     {
         if (!_ready || _world == null || _terrain == null) return (false, "지도를 아직 읽지 못했습니다");
         if (SeaBlocked) return (false, "도시 안에서는 자동항해를 쓸 수 없습니다");
         if (!_shipKnown || _onLand) return (false, "바다에 있을 때만 자동항해를 쓸 수 있습니다");
 
-        var route = Engine.Sea.SeaPathfinder.FindRoute(_world, _terrain, (_shipX, _shipY), (destX, destY));
+        var (route, gain, ticks) = PlanSeaRoute(destX, destY, kind);
         if (route == null) return (false, "바닷길을 찾지 못했습니다");
         if (route.Count < 2) return (false, "이미 그 자리 가까이 있습니다");
 
+        // 앱 기능: 길을 잘게 다듬어 16방위로 따른다(막히면 돌아 나간다 — AroundBlock).
         _autoRoute = Densify(route);
+        _autoDest = (destX, destY);
+        _autoCity = city;
+        _autoKind = kind;
+        _autoExact = exact || city >= 0;
         _autoIndex = 0;
         _anchored = false;
         _making = true;
@@ -860,8 +1563,133 @@ public sealed class ShipMapHost
         _stuckX = _shipX;
         _stuckY = _shipY;
         _stuckTicks = 0;
+        _blockedTicks = 0;
         _dirty = true;
-        return (true, $"{route.Count}개 마디로 바닷길을 짰습니다");
+        _routes.Save();   // 떠날 때 한 번 적어 둔다 — 다음에 같은 데로 갈 때 찾지 않는다
+        // 띠에는 걸리는 날수를 낸다 — 바람 · 해류로 셈한 어림이다(네비게이션 후보의 날수와 같은 셈). 못 셈했으면 날수 없이.
+        // 바람 · 해류를 탄 길을 골랐으면 가장 짧은 길보다 몇 % 빠른지도 붙인다.
+        // 띠 글꼴에 없는 글자(긴 줄표 따위)는 물음표로 찍힌다 — 쉼표와 마침표만 쓴다.
+        string days = double.IsNaN(ticks) ? ""
+            : $" 약 {Math.Max(1, (int)Math.Ceiling(ticks / TerrainTable.TicksPerDay))}일 걸립니다.";
+        string faster = gain.Length > 0 ? $" 가장 짧은 길보다 {gain}% 빠릅니다." : "";
+        return (true, $"항로를 잡았습니다.{days}{faster}");
+    }
+
+    /// <summary>지금 자리에서 그 칸까지의 바닷길 — 가장 짧은 길, 또는 뚜렷이 빠르면 바람 · 해류를 본 길.</summary>
+    private (List<(double X, double Y)>? Route, string Gain, double Ticks) PlanSeaRoute(
+        double destX, double destY, RouteKind kind = RouteKind.Auto)
+    {
+        if (_world is not { } world || _terrain is not { } terrain) return (null, "", double.NaN);
+        var route = RouteTo(world, terrain, destX, destY, null);
+        if (route == null || route.Count < 2) return (route, "", double.NaN);
+
+        // 바람 · 해류를 넣어 가장 빠른 길도 찾아 본다 — 어림으로 견줘 뚜렷이 빠를 때만 그 길로 간다.
+        string gain = "";
+        double ticks = double.NaN;
+        if (FleetSpeed is { } fleet && _wind != null)
+        {
+            var pace = new Engine.Sea.SailCost(_wind, MonthOf?.Invoke() ?? DefaultMonth,
+                                               (dir, speed, heading) => fleet(dir, speed, heading, false));
+            double plain = ticks = Engine.Sea.SeaPathfinder.RouteTicks(world, terrain, route, pace);
+            var quick = kind == RouteKind.Short ? null : RouteTo(world, terrain, destX, destY, pace);
+            if (quick is { Count: >= 2 })
+            {
+                double timed = Engine.Sea.SeaPathfinder.RouteTicks(world, terrain, quick, pace);
+                if (kind == RouteKind.Quick ? timed < plain : timed < plain * QuickRouteWorth)
+                {
+                    ticks = timed;
+                    route = quick;
+                    gain = $"{(1 - timed / plain) * 100:0}";   // 가장 짧은 길보다 빠른 %
+                }
+            }
+        }
+        // 최소 조타 — 토막을 8방위로 곧게 뻗게 꺾어, 토막마다 뱃머리를 한 번만 세운다.
+        if (Local.Settings.GameSettings.SteadyHelm)
+            route = Engine.Sea.SeaPathfinder.Dogleg(world, terrain, route);
+        return (route, gain, ticks);
+    }
+
+    /// <summary>한 번 찾은 바닷길 — 같은 길은 다시 찾지 않고, 가까이 지나는 길에는 올라탄다.</summary>
+    private readonly Engine.Sea.RouteCache _routes = new();
+
+    /// <summary>적어 둔 길이 배에서 이만큼(칸) 안을 지나면 그 길에 올라탄다.</summary>
+    private const double JoinReach = 30;
+
+    /// <summary>올라타러 가는 길이 곧은 거리의 이 곱절(더하기 덤)보다 길면 안 쓴다 — 곶 너머의 길이다.</summary>
+    private const double JoinDetour = 2.5, JoinSlack = 12;
+
+    /// <summary>
+    /// 지금 자리에서 그 칸까지의 바닷길. 적어 둔 것이 있으면 그것을, 같은 데로 가는 길이 가까이 지나면 거기
+    /// 올라타는 데까지만 새로 찾아 이어 붙인 것을, 없으면 처음부터 찾은 것을 준다.
+    /// </summary>
+    /// <param name="pace">걸음 값. 주면 가장 빠른 길, 안 주면 가장 짧은 길이다.</param>
+    private List<(double X, double Y)>? RouteTo(byte[] world, TerrainTable terrain, double destX, double destY,
+                                               Engine.Sea.SailCost? pace)
+    {
+        int sx = (int)Math.Floor(_shipX), sy = (int)Math.Floor(_shipY);
+        int gx = (int)Math.Floor(destX), gy = (int)Math.Floor(destY);
+        long sig = pace?.Signature ?? 0;
+
+        if (_routes.Find(sx, sy, gx, gy, sig) is { } same) return same;
+
+        if (_routes.Near(_shipX, _shipY, gx, gy, sig, JoinReach) is var (old, join) && join < old.Count)
+        {
+            var onto = old[join];
+            var link = Engine.Sea.SeaPathfinder.FindRoute(world, terrain, (_shipX, _shipY), onto, pace: pace);
+            if (link is { Count: >= 2 })
+            {
+                double went = 0;
+                for (int i = 1; i < link.Count; i++)
+                    went += Math.Sqrt((link[i].X - link[i - 1].X) * (link[i].X - link[i - 1].X)
+                                      + (link[i].Y - link[i - 1].Y) * (link[i].Y - link[i - 1].Y));
+                double straight = Math.Sqrt(WrapDx(onto.X - _shipX) * WrapDx(onto.X - _shipX)
+                                            + (onto.Y - _shipY) * (onto.Y - _shipY));
+                if (went <= straight * JoinDetour + JoinSlack)
+                {
+                    // 올라탄 마디는 이은 길의 끝과 같은 자리다 — 한 번만 싣는다. 가로 바퀴는 적어 둔 길에 맞춘다.
+                    double lap = Math.Round((link[^1].X - onto.X) / WorldMapRenderer.UnfoldedW) * WorldMapRenderer.UnfoldedW;
+                    for (int i = join + 1; i < old.Count; i++) link.Add((old[i].X + lap, old[i].Y));
+                    _routes.Add(sx, sy, gx, gy, sig, whole: false, link);
+                    return link;
+                }
+            }
+        }
+
+        var found = Engine.Sea.SeaPathfinder.FindRoute(world, terrain, (_shipX, _shipY), (destX, destY), pace: pace);
+        if (found is { Count: >= 2 }) _routes.Add(sx, sy, gx, gy, sig, whole: true, found);
+        return found;
+    }
+
+    /// <summary>빠른 길이 짧은 길의 이 몫보다 덜 걸려야 그 길로 간다 — 어림끼리의 견줌이라 비슷하면 짧은 길이 낫다.</summary>
+    private const double QuickRouteWorth = 0.97;
+
+    /// <summary>
+    /// 그 칸까지 <b>뭍길</b>을 찾아 걸어간다(모드 「뭍 자동이동」) — 자동항해와 같은 마디 따라가기다.
+    /// 뭍에 있을 때만, 길을 찾았을 때만 시작한다. 도착하면 멈춰 선다.
+    /// </summary>
+    public (bool Ok, string Message) StartAutoWalk(double destX, double destY)
+    {
+        if (!_ready || _world == null || _terrain == null) return (false, "지도를 아직 읽지 못했습니다");
+        if (SeaBlocked) return (false, "도시 안에서는 자동이동을 쓸 수 없습니다");
+        if (!_shipKnown || !_onLand) return (false, "뭍에 있을 때만 자동이동을 쓸 수 있습니다");
+
+        var route = Engine.Sea.SeaPathfinder.FindRoute(_world, _terrain, (_shipX, _shipY), (destX, destY), land: true);
+        if (route == null) return (false, "뭍길을 찾지 못했습니다");
+        if (route.Count < 2) return (false, "이미 그 자리 가까이 있습니다");
+
+        _autoRoute = route;
+        _autoDest = (destX, destY);
+        _autoCity = -1;
+        _autoExact = false;
+        _autoIndex = 0;
+        _anchored = false;
+        _tickAccum = 0;
+        _stuckX = _shipX;
+        _stuckY = _shipY;
+        _stuckTicks = 0;
+        _blockedTicks = 0;
+        _dirty = true;
+        return (true, "그 자리로 걸어갑니다");
     }
 
     /// <summary>자동항해를 끈다. 그 자리에 세우지 않는다 — 손으로 이어서 몰 수 있게 둔다.</summary>
@@ -874,22 +1702,108 @@ public sealed class ShipMapHost
     }
 
     /// <summary>
-    /// 다음 마디를 바라보게 목표 자리를 잡는다. 이미 다가선 마디는 건너뛴다.
+    /// 다음 마디 쪽으로 목표 자리를 잡는다. 이미 다가선 마디는 건너뛴다.
     /// 마지막 마디까지 다다랐으면 도착으로 치고 닻을 내린다.
     /// </summary>
+    /// <remarks>
+    /// 마디를 곧장 바라보지 않고 <b>그은 선 위에서 조금 앞</b>(<see cref="AutoLookahead"/>)을 바라본다.
+    /// 뱃머리가 8방위뿐이라 먼 마디를 바라보면 선에서 한참 벗어났다가 돌아오고(동쪽으로 죽 가다가
+    /// 나중에야 대각으로 꺾는다), 해류에도 밀린다 — 그 사이에 해안에 걸린다.
+    /// </remarks>
     private void UpdateAutoTarget()
     {
         if (_autoRoute is not { } route) return;
+        // 도시로 가는 길이면 그 어귀에 들어선 것이 도착이다 — 거기서 입항 물음이 뜬다.
+        if (_autoCity >= 0 && !_onLand && TownsAt().Contains(_autoCity))
+        {
+            CompleteAutoSail("도착했습니다. 닻을 내렸습니다");
+            return;
+        }
+        // 빠르고 굼뜬 배는 도는 원이 커서, 바라보는 거리들을 그 원에 맞춰 늘린다 — 여느 배는 그대로다.
+        double radius = _onLand ? 0 : TurnRadiusCells;
+        double lookahead = Math.Max(AutoLookahead, radius * 1.2);
+        double strayLimit = Math.Max(AutoStrayLimit, radius);
+        double recoverReach = Math.Max(AutoRecoverReach, radius * 1.5);
+        double turnEarly = Math.Max(AutoTurnEarly, radius * 0.7);
+        double arrive = Math.Max(AutoWaypointRadius, radius);
         while (_autoIndex < route.Count)
         {
+            // 첫 마디는 떠난 자리다.
+            if (_autoIndex == 0) { _autoIndex++; continue; }
+
             var (wx, wy) = route[_autoIndex];
+            var (px, py) = route[_autoIndex - 1];
             double dx = WrapDx(wx - _shipX), dy = wy - _shipY;
-            if (dx * dx + dy * dy <= AutoWaypointRadius * AutoWaypointRadius) { _autoIndex++; continue; }
+            double sx = wx - px, sy = wy - py, len = Math.Sqrt(sx * sx + sy * sy);
+            if (len == 0) { _autoIndex++; continue; }
+            double ux = sx / len, uy = sy / len;
+
+            // 이 마디까지 선을 따라 남은 칸 수. 마지막 마디는 둘레 안에 들 때까지 다가서고, 그 밖의
+            // 마디는 선을 따라 다 왔을 때 넘긴다 — 멀리서 미리 넘기면 모퉁이를 질러가다 뭍에 걸린다.
+            double left = dx * ux + dy * uy;
+            bool last = _autoIndex == route.Count - 1;
+            // 도시로 가는 길은 마지막 마디도 끝까지 간다 — 두 칸 앞에서 멎으면 어귀에 못 들어선다.
+            // 도는 원만큼 미리 넘기는 것은 다음 마디가 곧게 보일 때만이다 — 도버 해협은 한두 칸 폭으로 비스듬히
+            // 꺾인 물길이라, 짧은 토막들을 미리 넘기면 뭍 너머를 바라보고 해협 서쪽의 막다른 데에 처박혔다(제보).
+            bool passed = last && !_autoExact
+                ? dx * dx + dy * dy <= arrive * arrive
+                : left <= AutoTurnEarly || (left <= turnEarly && (last || SeaClear(route[_autoIndex + 1])));
+            if (passed)
+            {
+                _autoIndex++;
+                continue;
+            }
+
+            // 선에서 벗어난 만큼 — 배에서 선 위 가장 가까운 자리까지.
+            double back = Math.Clamp(left, 0, len);
+            double ox = dx - back * ux, oy = dy - back * uy, off = Math.Sqrt(ox * ox + oy * oy);
+            // 걸음이 크면 선을 사이에 두고 왔다 갔다 한다 — 한 걸음에 넘어설 만큼 가까우면 돌아온 것으로 친다.
+            if (off <= Math.Max(AutoBackOnLine, LastStep * 0.6)) _autoRecover = false;
+            if (_blocked || off > strayLimit) _autoRecover = true;
+
+            if (_autoRecover && off > 0.05)
+            {
+                // 뭍에 닿았거나 많이 벗어났다 — 앞을 보지 않고 선으로 곧장 돌아간다. 좁은 물길에서
+                // 한 줄 어긋난 채 앞만 보면 뭍에 대고 서 버린다.
+                // 도는 원이 크면 선을 비스듬히 잡는다 — 곧추 다가가면 선에 닿아 꺾는 사이에 다시 반지름만큼 넘어선다.
+                double along = lookahead - AutoLookahead;
+                dx = ox / off * recoverReach + ux * along;
+                dy = oy / off * recoverReach + uy * along;
+            }
+            else if (Local.Settings.GameSettings.SteadyHelm && !_onLand)
+            {
+                // 최소 조타 — 선에서 조금 벗어난 것은 두고 토막의 쪽만 본다. 많이 벗어나면 위에서 돌아온다.
+                // 선 쪽으로 조금씩 고치려 들면 방위가 갈리는 금에서 뱃머리가 이쪽저쪽으로 떤다.
+                if (!last || back > lookahead) { dx = ux * lookahead; dy = uy * lookahead; }
+            }
+            else if (!last || back > lookahead)
+            {
+                // 선 위 가장 가까운 자리에서 조금 앞 — 마디를 지나서도 선의 쪽을 그대로 본다.
+                dx = ox + ux * lookahead;
+                dy = oy + uy * lookahead;
+            }
+            // 도는 원으로 넓힌 거리로 본 자리가 뭍 너머면 여느 배의 거리로 되돌린다 — 좁은 물길에서 그 자리를
+            // 바라보면 뭍에 대고 서서, 선으로 돌아가려 해도 뱃머리가 뭍 쪽 그대로라 15초 뒤 「길이 막혀」로 멈췄다(제보).
+            if (radius > 0 && !SeaClear((_shipX + dx, _shipY + dy)))
+            {
+                if (_autoRecover && off > 0.05) { dx = ox / off * AutoRecoverReach; dy = oy / off * AutoRecoverReach; }
+                else if (!last || back > AutoLookahead) { dx = ox + ux * AutoLookahead; dy = oy + uy * AutoLookahead; }
+            }
             _targetX = _shipX + dx;
             _targetY = _shipY + dy;
             return;
         }
-        CompleteAutoSail("도착했습니다 — 닻을 내렸습니다");
+        CompleteAutoSail(_onLand ? "도착했습니다" : "도착했습니다. 닻을 내렸습니다");
+    }
+
+    /// <summary>배에서 그 자리까지 곧게 물이 이어지는지 — 반 칸마다 짚어 본다.</summary>
+    private bool SeaClear((double X, double Y) to)
+    {
+        double dx = WrapDx(to.X - _shipX), dy = to.Y - _shipY;
+        int n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(dx * dx + dy * dy) / 0.5));
+        for (int i = 1; i <= n; i++)
+            if (!CanGo(_shipX + dx * i / n, _shipY + dy * i / n)) return false;
+        return true;
     }
 
     private void CompleteAutoSail(string message)
@@ -908,6 +1822,20 @@ public sealed class ShipMapHost
     /// </summary>
     private void UpdateStuckGuard()
     {
+        // 뭍에 닿은 채로 이어지면 지금 자리에서 길을 다시 짠다 — 선에서 벗어나 만에 갇힌 것을 푼다.
+        if (!_blocked) _blockedTicks = 0;
+        else if (++_blockedTicks >= ReplanTicks)
+        {
+            _blockedTicks = 0;
+            if (_world != null && _terrain != null)
+            {
+                var again = _onLand
+                    ? Engine.Sea.SeaPathfinder.FindRoute(_world, _terrain, (_shipX, _shipY), _autoDest, land: true)
+                    : PlanSeaRoute(_autoDest.X, _autoDest.Y, _autoKind).Route;
+                if (again is { Count: >= 2 }) { _autoRoute = again; _autoIndex = 0; _dirty = true; }
+            }
+        }
+
         double dx = _shipX - _stuckX, dy = _shipY - _stuckY;
         if (dx * dx + dy * dy >= StuckMoveThreshold * StuckMoveThreshold)
         {
@@ -941,29 +1869,32 @@ public sealed class ShipMapHost
         new MapD3DRenderer.RouteDraw[MapD3DRenderer.MaxRoutePoints];
 
     /// <summary>
-    /// 항로 마디를 화면 자리로 옮겨 렌더러에 건넨다. 마디가 화면에 다 못 실으면 고르게 골라 줄인다 —
-    /// 길찾기 자체는 그대로 다 쓴다(<see cref="UpdateAutoTarget"/>).
+    /// 항로 마디를 화면 자리로 옮겨 렌더러에 건넨다. 다 못 실으면 지금 가는 토막부터 실을 수 있는 만큼만
+    /// 싣는다 — 길찾기 자체는 그대로 다 쓴다(<see cref="UpdateAutoTarget"/>).
     /// </summary>
     private void SyncRoute((double X, double Y) origin)
     {
-        if (_autoRoute is not { Count: > 0 } route)
+        if (_autoRoute is not { Count: > 0 } route || !Local.Settings.GameSettings.ShowAutoRoute)
         {
             if (_routeShown > 0) { _renderer.SetRoute([]); _routeShown = 0; }
             return;
         }
 
-        int n = route.Count;
-        int shown = Math.Min(n, MapD3DRenderer.MaxRoutePoints);
+        // 지금 가는 토막부터 차례로 싣는다. 고르게 골라 줄이면 건너뛴 마디 사이가 곧은 선으로 이어져
+        // 육지를 가로지르고, 배가 가는 길과도 어긋나 보인다 — 다 못 실은 먼 뒤쪽은 다가가면 보인다.
+        int from = Math.Clamp(_autoIndex - 1, 0, route.Count - 1);
+        int shown = Math.Min(route.Count - from, MapD3DRenderer.MaxRoutePoints);
         for (int i = 0; i < shown; i++)
         {
-            int src = shown == 1 ? 0 : i * (n - 1) / (shown - 1);
-            var (wx, wy) = route[src];
+            var (wx, wy) = route[from + i];
             double x = Fold(wx, origin.X);
             _routeDraw[i] = new MapD3DRenderer.RouteDraw(
                 (float)((x - origin.X) / _cellsPerPixel),
                 (float)((wy - origin.Y) / _cellsPerPixel), true);
         }
-        _renderer.SetRoute(_routeDraw.AsSpan(0, shown));
+        _renderer.SetRoute(_routeDraw.AsSpan(0, shown),
+                           Local.Settings.GameSettings.AutoRouteWidth / 100f,
+                           Local.Settings.GameSettings.AutoRouteOpacity / 100f);
         _routeShown = shown;
     }
 
@@ -978,6 +1909,9 @@ public sealed class ShipMapHost
     private enum OverlayArt { None, Anchor, MooredShip }
 
     private OverlayArt _overlayArt = OverlayArt.None;
+
+    /// <summary>덧그림에 올라가 있는 대 둔 배가 어느 그림인지 - 기함 그림(폴더 · 벌)과 뱃머리.</summary>
+    private (string? Folder, int Skin, int Heading) _mooredArt;
     private uint[]? _anchorPixels;
 
     /// <summary>
@@ -990,7 +1924,11 @@ public sealed class ShipMapHost
         var want = _anchored && !_onLand ? OverlayArt.Anchor
                  : _onLand && _moored ? OverlayArt.MooredShip
                  : OverlayArt.None;
-        if (want == _overlayArt || want == OverlayArt.None) { _overlayArt = want; return; }
+        // 대 둔 배는 <b>기함 그림이 바뀌면</b> 다시 올린다 - 불러올 때는 배를 뭍에 놓는 것이 기함 그림을 정하는 것보다
+        // 먼저라, 안 그러면 앞 판(또는 처음 값)의 배 모양이 그대로 남았다(다우가 카라벨로 보이던 것).
+        var art = (ShipSprites.Folder, ShipSprites.Skin, _mooredHeading);
+        bool stale = want == OverlayArt.MooredShip && art != _mooredArt;
+        if ((want == _overlayArt && !stale) || want == OverlayArt.None) { _overlayArt = want; return; }
 
         if (want == OverlayArt.Anchor)
         {
@@ -1002,13 +1940,13 @@ public sealed class ShipMapHost
             // 살아 있는 게임 함대를 읽는 길(GameShipReader)은 지금 뱃머리만 내주므로
             // 대 둔 배의 방향을 물을 수가 없다.
             var frame = ShipSprites.Frame(_mooredHeading, onLand: false);
-            if (!frame.IsEmpty) _renderer.SetOverlay(frame);
+            if (!frame.IsEmpty) { _renderer.SetOverlay(frame); _mooredArt = art; }
         }
         _overlayArt = want;
         _dirty = true;
     }
 
-    /// <summary>표를 못 열었을 때 볼 달. 놀이가 시작하는 달이다.</summary>
+    /// <summary>표를 못 열었을 때 볼 달. 게임이 시작하는 달이다.</summary>
     private const int DefaultMonth = 4;
 
     /// <summary>
@@ -1016,8 +1954,8 @@ public sealed class ShipMapHost
     /// 이것이 지난 프레임과 같으면 다시 그릴 것이 없다.
     /// </summary>
     /// <remarks>
-    /// 게임은 항해 루프를 한 번 돌 때마다 틱을 하나 올린다(<c>0x0048EF82</c>). 여기서도 한
-    /// 걸음(<see cref="TickSeconds"/>)과 같은 길이로 올린다 — 60fps 로 올리면 물결이 게임보다
+    /// 원본은 항해 루프를 한 번 돌 때마다 틱을 하나 올린다(<c>0x0048EF82</c>). 여기서도 한
+    /// 걸음(<see cref="TickSeconds"/>)과 같은 길이로 올린다 — 60fps 로 올리면 물결이 원본보다
     /// 여섯 배 빨리 흐르고, 프레임마다 지도를 다시 그리게 된다.
     ///
     /// 무늬는 <c>세기 x 틱 x 16 / 64</c> 만큼 흐르므로 세기가 1 이면 네 틱에 한 칸이다.
@@ -1029,7 +1967,7 @@ public sealed class ShipMapHost
 
         // 창이 떠 있는 동안에는 물결도 구름도 선다 — 도시 창이 지도를 남색 막으로 덮은
         // 때(<see cref="_inCity"/>)만이 아니라 커맨드 창·물음창으로 멈춘 때
-        // (<see cref="Paused"/>)도 그렇다. 게임은 창이 뜨면 항해 루프째로 서서
+        // (<see cref="Paused"/>)도 그렇다. 원본은 창이 뜨면 항해 루프째로 서서
         // 날짜도 구름도 그 자리에 멎는다 — 하늘만 살아 있으면 멈춘 것으로 안 보인다.
         int ticks = 0;
         if (!_inCity && !Paused)
@@ -1041,11 +1979,12 @@ public sealed class ShipMapHost
         int month = MonthOf?.Invoke() ?? DefaultMonth;
         if (month != _flowMonth) { _flowMonth = month; RefreshFlowGrid(month); }
 
-        // 게임은 함대가 선 칸의 바람·해류 하나로 화면 전체를 흘린다. 여기서도 그대로 한다.
+        // 원본은 함대가 선 칸의 바람·해류 하나로 화면 전체를 흘린다. 여기서도 그대로 한다.
         int cell = WindTable.CellOf((int)(_shipX * OceanTiles.TileW), (int)(_shipY * OceanTiles.TileW));
         var flow = cell < 0 ? default : _wind.CurrentAt(cell);
         var (dx, dy) = _wind.Vector(flow.Dir);
         _renderer.Ripple = (dx, dy, flow.Speed, _rippleTick);
+        DriftSea(dx, dy, flow.Speed, !_inCity && !Paused ? dt : 0);
 
         var wind = cell < 0 ? default : HeldWind(cell, month);
         UpdateClouds(wind.Dir, wind.Speed, ticks);
@@ -1053,6 +1992,50 @@ public sealed class ShipMapHost
         // 구름이 떠 있으면 틱마다 자리가 달라지므로 틱 자체가 곧 그림이다.
         if (_cloudCount > 0) return _rippleTick;
         return (flow.Dir << 26) | (flow.Speed << 22) | ((flow.Speed * _rippleTick / 4) & 0x3FFFFF);
+    }
+
+    /// <summary>고해상도 바다의 물 무늬가 해류를 타고 흘러간 만큼(칸)과, 부드럽게 따라가는 방향·또렷함.</summary>
+    private double _driftX, _driftY, _driftDirX, _driftDirY, _driftStrength;
+
+    /// <summary>무늬가 흘러간 만큼을 이 칸 수에서 되감는다 — 값이 커지면 셰이더의 소수 자리가 거칠어진다.</summary>
+    private const double DriftWrap = 4096;
+
+    /// <summary>
+    /// 고해상도 바다의 해류 무늬를 한 프레임만큼 흘린다(<see cref="MapD3DRenderer.FlowDrift"/>).
+    /// </summary>
+    /// <remarks>
+    /// 방향과 또렷함은 지금 칸의 해류를 <b>서서히</b> 따라간다 — 함대가 해류 칸을 넘나들 때 결이 툭 바뀌지 않게.
+    /// 빠르기는 세기 1 에 초당 0.45칸, 7 에 1.65칸이다. 원본 띠(세기 1 에 초당 2.5칸)대로 밀면 잔무늬가
+    /// 프레임마다 한 눈금씩 건너뛰어 지글거린다. 창이 떠서 멈춘 동안에는 흐르지 않는다.
+    /// </remarks>
+    private void DriftSea(float dx, float dy, int speed, double dt)
+    {
+        double len = Math.Sqrt(dx * dx + dy * dy);
+        double tx = len > 0 ? dx / len : 0, ty = len > 0 ? dy / len : 0;
+        double want = speed > 0 && len > 0 ? 0.4 + 0.6 * Math.Min(speed, 7) / 7.0 : 0;
+
+        double k = 1 - Math.Exp(-dt * 2.5);
+        _driftStrength += (want - _driftStrength) * k;
+        if (want > 0)
+        {
+            // 흐름이 없던 자리에서 들어서면 방향은 곧바로 잡는다 — 돌려 맞출 옛 방향이 없다.
+            if (_driftStrength < 0.05 || (_driftDirX == 0 && _driftDirY == 0)) (_driftDirX, _driftDirY) = (tx, ty);
+            else
+            {
+                _driftDirX += (tx - _driftDirX) * k;
+                _driftDirY += (ty - _driftDirY) * k;
+                double n = Math.Sqrt(_driftDirX * _driftDirX + _driftDirY * _driftDirY);
+                if (n > 1e-6) { _driftDirX /= n; _driftDirY /= n; }
+                else (_driftDirX, _driftDirY) = (tx, ty);
+            }
+        }
+
+        double rate = _driftStrength > 0.01 ? 0.25 + 0.2 * Math.Max(speed, 1) : 0;
+        _driftX = (_driftX + _driftDirX * rate * _driftStrength * dt) % DriftWrap;
+        _driftY = (_driftY + _driftDirY * rate * _driftStrength * dt) % DriftWrap;
+
+        _renderer.FlowDrift = ((float)_driftX, (float)_driftY, (float)_driftDirX, (float)_driftDirY,
+                               (float)_driftStrength, (float)(_rippleTick + _rippleAccum / TickSeconds));
     }
 
     /// <summary>
@@ -1130,7 +2113,7 @@ public sealed class ShipMapHost
     /// <summary>이보다 작아지면 안 그린다. 멀리서 보면 점 여섯 개라 티끌만 남는다.</summary>
     private const double CloudMinPixels = 48;
 
-    /// <summary>게임 한 점이 덮는 칸 수. 게임은 칸 하나를 16점으로 그린다.</summary>
+    /// <summary>게임 한 점이 덮는 칸 수. 원본은 칸 하나를 16점으로 그린다.</summary>
     private const double GamePixelsPerCell = OceanTiles.TileW;
 
     /// <summary>
@@ -1139,13 +2122,17 @@ public sealed class ShipMapHost
     /// <remarks>
     /// 게임(<c>0x004893D0</c>)은 구름을 <b>화면 좌표</b>로 들고 640x480 을 돌린다. 여기서는
     /// 지도를 키우고 줄일 수 있으니 <b>게임 점</b>(칸당 16점)으로 들고 있다가 그릴 때만
-    /// 배율을 곱한다 — 그래야 구름 한 장이 늘 지도 10칸 x 7.5칸을 덮어, 게임에서 보던
+    /// 배율을 곱한다 — 그래야 구름 한 장이 늘 지도 10칸 x 7.5칸을 덮어, 원본에서 보던
     /// 크기 그대로다. 장 수도 보이는 넓이에 맞춰 줄인다(640x480 에 여섯 장 꼴).
     /// </remarks>
     private void UpdateClouds(int windDir, int windSpeed, int ticks)
     {
         double scale = 1.0 / (_cellsPerPixel * GamePixelsPerCell);   // 실픽셀 / 게임점
-        if (scale <= 0 || _pixelW <= 0 || _pixelH <= 0
+        // 「부드러운 구름」을 끄면 구름이 원본 그대로 바둑판 점무늬라, 한 점이 온 실픽셀 몇 개가 아니면
+        // (기본 배율 0.75 면 1.5) 점이 2·1·2·1 픽셀로 번갈아 찍혀 줄무늬가 지고 군데군데 꽉 차거나 비어 보였다.
+        // 그때는 정수 배로 맞춘다 — 구름이 조금 커지거나 작아질 뿐 무늬는 깨지지 않는다.
+        if (!_renderer.SmoothClouds && scale > 0) scale = Math.Max(1, Math.Round(scale));
+        if (_cloudsHidden || scale <= 0 || _pixelW <= 0 || _pixelH <= 0
             || CloudSprites.Width * scale < CloudMinPixels)
         {
             _cloudCount = 0;
@@ -1160,6 +2147,9 @@ public sealed class ShipMapHost
             1, MapD3DRenderer.MaxClouds);
 
         if (!_cloudsPlaced) PlaceClouds(gw, gh);
+        _cloudGw = gw;
+        _cloudGh = gh;
+        _cloudScale = scale;
 
         var (vx, vy) = _wind!.Vector(windDir);
         for (int t = 0; t < ticks; t++)
@@ -1167,14 +2157,50 @@ public sealed class ShipMapHost
                 DriftCloud(ref _cloudState[i], vx * windSpeed * CloudSpeed[i],
                            vy * windSpeed * CloudSpeed[i], gw, gh);
 
+        SubmitClouds();
+    }
+
+    /// <summary>구름 자리를 renderer 에 건넨다 — 지도가 흐르다 남긴 소수 자리(<see cref="_cloudSubX"/>)까지 더해서.</summary>
+    private void SubmitClouds()
+    {
+        double scale = _cloudScale;
         for (int i = 0; i < _cloudCount; i++)
             _cloudDraw[i] = new MapD3DRenderer.CloudDraw(
-                (float)(_cloudState[i].X * scale), (float)(_cloudState[i].Y * scale),
+                (float)((_cloudState[i].X + _cloudSubX) * scale), (float)((_cloudState[i].Y + _cloudSubY) * scale),
                 CloudBase[i] + CloudShape[_cloudState[i].Shape], (float)scale);
         _renderer.SetClouds(_cloudDraw.AsSpan(0, _cloudCount));
     }
 
-    /// <summary>게임과 같이 3열로 벌려 놓는다(<c>0x0048906B</c>).</summary>
+    /// <summary>마지막으로 구름을 굴린 화면 크기(게임 점)와 배율.</summary>
+    private int _cloudGw = 1, _cloudGh = 1;
+    private double _cloudScale;
+
+    /// <summary>「배 중심」에서 지도가 흐르며 구름에 아직 못 옮긴 몫(게임 점, -2~2). 구름 무늬 짝을 지키려고 두 점씩 옮긴다.</summary>
+    private double _cloudSubX, _cloudSubY;
+
+    /// <summary>
+    /// 지도가 (<paramref name="dx"/>, <paramref name="dy"/>) 게임 점만큼 흘렀으니 구름을 거꾸로 민다 — 구름이 바다에 실려
+    /// 같이 흘러가 보이게. 정수 자리는 두 점씩만 옮겨(<see cref="FixParity"/> 짝 유지) 남는 몫은 그릴 때 더한다.
+    /// </summary>
+    private void ScrollClouds(double dx, double dy)
+    {
+        if (_cloudCount == 0 || (dx == 0 && dy == 0)) return;
+        _cloudSubX -= dx;
+        _cloudSubY -= dy;
+        int stepX = 2 * (int)Math.Truncate(_cloudSubX / 2), stepY = 2 * (int)Math.Truncate(_cloudSubY / 2);
+        _cloudSubX -= stepX;
+        _cloudSubY -= stepY;
+        if (stepX != 0 || stepY != 0)
+            for (int i = 0; i < _cloudCount; i++)
+            {
+                _cloudState[i].X += stepX;
+                _cloudState[i].Y += stepY;
+                WrapCloud(ref _cloudState[i], _cloudGw, _cloudGh);
+            }
+        SubmitClouds();
+    }
+
+    /// <summary>원본과 같이 3열로 벌려 놓는다(<c>0x0048906B</c>).</summary>
     private void PlaceClouds(int gw, int gh)
     {
         for (int i = 0; i < _cloudState.Length; i++)
@@ -1194,7 +2220,13 @@ public sealed class ShipMapHost
         while (c.AccY >= WindTable.VectorLength) { c.AccY -= WindTable.VectorLength; c.Y++; }
         while (c.AccY <= -WindTable.VectorLength) { c.AccY += WindTable.VectorLength; c.Y--; }
 
-        // 화면 밖으로 나가면 반대쪽 끝에서 아무 자리로 다시 들어온다(0x00489456~).
+        WrapCloud(ref c, gw, gh);
+        c.Shape = (c.Shape + 1) % 3;
+    }
+
+    /// <summary>화면 밖으로 나가면 반대쪽 끝에서 아무 자리로 다시 들어온다(0x00489456~).</summary>
+    private void WrapCloud(ref Cloud c, int gw, int gh)
+    {
         int w = CloudSprites.Width, h = CloudSprites.Height;
         if (c.X <= -w) { c.X = gw - 1; c.Y = _cloudRng.Next(gh) - (h - 1); }
         else if (c.X >= gw) { c.X = -(w - 1); c.Y = _cloudRng.Next(gh) - (h - 1); }
@@ -1202,7 +2234,6 @@ public sealed class ShipMapHost
         else if (c.Y >= gh) { c.Y = -(h - 1); c.X = _cloudRng.Next(gw) - (w - 1); }
 
         FixParity(ref c);
-        c.Shape = (c.Shape + 1) % 3;
     }
 
     /// <summary>
@@ -1220,6 +2251,25 @@ public sealed class ShipMapHost
     /// </summary>
     private void FollowShip(int w, int h)
     {
+        // 모드 「배 중심」 — 넘기지 않고 매 프레임 배를 한가운데에 둔다(실시간으로 흐른다).
+        if (Local.Settings.GameSettings.ShipCentered)
+        {
+            // 배는 틱(0.1초)마다 한 걸음씩 뛴다 — 그대로 따라가면 화면이 초당 열 번 툭툭 끊긴다.
+            // 지난 틱 자리와 지금 자리 사이를 틱이 지난 만큼 메운 자리를 따라간다.
+            var (sx0, sy0) = SmoothShip();
+            // 한가운데는 <b>온 실픽셀</b>에 맞춘다. 반 픽셀씩 밀리면 점그림 지도가 칸마다 들쑥날쑥 번져 어지럽다.
+            double nx = Math.Round(sx0 / _cellsPerPixel) * _cellsPerPixel;
+            double ny = Math.Round(sy0 / _cellsPerPixel) * _cellsPerPixel;
+            double moveX = WrapDx(nx - _centerX), moveY = ny - _centerY;
+            _centerX = nx;
+            _centerY = ny;
+            // 구름은 화면 자리로 들고 있어 그냥 두면 바다가 흘러도 화면에 붙어 선다 — 지도가 흐른 만큼 같이 민다.
+            // 구름 배율을 정수로 맞췄으면 게임 점과 구름 점이 어긋난다 — 화면 픽셀로 바꿔 구름 점으로 민다.
+            if (_cloudScale > 0)
+                ScrollClouds(moveX / _cellsPerPixel / _cloudScale, moveY / _cellsPerPixel / _cloudScale);
+            return;
+        }
+
         // 창이 여백 두 겹보다 좁으면 여백이 화면을 다 먹는다 — 반보다는 작게 잡는다.
         double mx = Math.Min(EdgeMarginPixels, w / 2.0 - 1);
         double my = Math.Min(EdgeMarginPixels, h / 2.0 - 1);
@@ -1234,13 +2284,33 @@ public sealed class ShipMapHost
         _centerY = _shipY;
     }
 
+    /// <summary>지난 틱이 시작될 때 배 자리 — 「배 중심」이 걸음 사이를 메우는 데 쓴다.</summary>
+    private double _prevShipX, _prevShipY;
+
+    /// <summary>이보다 멀리 뛰면(입항·상륙·불러오기 같은 순간이동) 메우지 않고 곧장 지금 자리로 간다.</summary>
+    private const double SmoothJumpCells = 4;
+
+    /// <summary>
+    /// 그릴 배 자리 — 지난 틱 자리에서 지금 자리로, 다음 틱까지 지난 몫만큼 나아간 자리. 한 틱 늦게 따라가는 대신 매끈하다.
+    /// </summary>
+    private (double X, double Y) SmoothShip()
+    {
+        double dx = WrapDx(_shipX - _prevShipX), dy = _shipY - _prevShipY;
+        if (dx * dx + dy * dy > SmoothJumpCells * SmoothJumpCells) return (_shipX, _shipY);
+        double t = Math.Clamp(_tickAccum / TickSeconds, 0, 1);
+        return (_shipX - dx * (1 - t), _shipY - dy * (1 - t));
+    }
+
+    /// <summary>「배 중심」으로 배를 한가운데에 두고 따라가는 중인지.</summary>
+    private bool CenteredFollow => _follow && Local.Settings.GameSettings.ShipCentered;
+
     /// <summary>가로로 이어진 지도에서 가장 가까운 쪽으로 잰 가로 차이.</summary>
     private static double WrapDx(double dx) =>
         dx - Math.Floor(dx / WorldMapRenderer.UnfoldedW + 0.5) * WorldMapRenderer.UnfoldedW;
 
     private void UpdateShip(double dt, (double X, double Y) origin, double dpiX, double dpiY)
     {
-        // 그림은 게임 것을 쓴다 — 게임이 떠 있어야 배 모양이 나온다.
+        // 그림은 원본 것을 쓴다 — 원본이 떠 있어야 배 모양이 나온다.
         if (!_ship.IsAttached) _ship.TryAttach();
 
         if (SteerWithMouse)
@@ -1267,7 +2337,7 @@ public sealed class ShipMapHost
             // <b>멈춤과 커서 놓침을 먼저 적는다.</b> 이 둘은 뱃머리가 안 도는 까닭인데,
             // 예전 줄은 그래도 "커서 쪽으로 항해 중" 이라 적어 서 있는 배와 구별이 안 됐다.
             Status = AutoSailing
-                ? $"자동항해 중 {_shipX:F1}, {_shipY:F1} 칸 · 방향 {HeadingName} · " +
+                ? $"{(_onLand ? "자동이동" : "자동항해")} 중 {_shipX:F1}, {_shipY:F1} 칸 · 방향 {HeadingName} · " +
                   (Paused ? "멈춤(창이 떠 있다)" : $"마디 {_autoIndex + 1}/{AutoRouteCount} 쪽으로")
                 : $"{(_onLand ? "말" : "배")} {_shipX:F1}, {_shipY:F1} 칸 · 방향 {HeadingName} · " +
                      (Paused ? "멈춤(창이 떠 있다)"
@@ -1297,11 +2367,12 @@ public sealed class ShipMapHost
             _shipY += (_targetY - _shipY) * 0.15;
             var spr0 = _ship.TryReadSprite();
             if (spr0 != null) UploadGameSprite(spr0);
+            _renderer.SetShipHi(null, 0);
             _spriteKey = null;   // 이쪽에서 올린 그림은 우리 뱃머리와 무관하다 — 돌아가면 다시 올린다
             return;
         }
 
-        // 게임이 떠 있으면 그 그림을(함선 종류에 맞는 4벌 중 하나), 아니면 asset/ship 의 것을 쓴다.
+        // 원본이 떠 있으면 그 그림을(함선 종류에 맞는 4벌 중 하나), 아니면 asset/ship 의 것을 쓴다.
         // 같은 그림이면 게임 메모리를 읽지도, 텍스처를 올리지도 않는다 — 뱃머리가 그대로면
         // 프레임마다 할 일이 없다.
         var key = (_heading, _onLand, _ship.IsAttached, _onLand ? _walkPhase : 0,
@@ -1311,6 +2382,10 @@ public sealed class ShipMapHost
         var indices = _ship.IsAttached
             ? _ship.TryReadSprite(_heading, _onLand, _onLand ? _walkPhase : -1)
             : null;
+        // 고해상도 그림은 우리 그림(asset)으로 바다에 떠 있을 때만 건다 — 원본에서 읽은 그림과 말에는 짝이 없다.
+        var hi = indices == null && !_onLand ? ShipSprites.HiFrame(_heading) : null;
+        _renderer.SetShipHi(hi?.Pixels, hi?.Side ?? 0);
+
         if (indices != null) UploadGameSprite(indices);
         else
         {
@@ -1326,7 +2401,7 @@ public sealed class ShipMapHost
         _spriteKey = key;
     }
 
-    /// <summary>게임에서 읽은 팔레트 색인 그림을 색으로 풀어 올린다. 색인 0 은 비침이다.</summary>
+    /// <summary>원본에서 읽은 팔레트 색인 그림을 색으로 풀어 올린다. 색인 0 은 비침이다.</summary>
     private void UploadGameSprite(byte[] indices)
     {
         // 같은 그림이면 아무것도 하지 않는다. 게임 함대를 따라가는 쪽은 방향을 우리가 모르므로
@@ -1354,7 +2429,7 @@ public sealed class ShipMapHost
     /// 서는 것도 아니다. 한 번 뱃머리를 잡으면 막힐 때까지 그 쪽으로 간다.
     /// </summary>
     /// <remarks>
-    /// 게임의 조타 그대로다(볼트 <c>86.분석-바다 조타(커서 방향·뱃머리·이동 벡터)</c>).
+    /// 원본의 조타 그대로다(볼트 <c>86.분석-바다 조타(커서 방향·뱃머리·이동 벡터)</c>).
     /// <code>
     ///   커서 → 바라는 쪽   0x0048ECC2   기울기 1/2·2 로 가르는 8방위(늘 짝수)
     ///   한 틱 돌기·가기    0x0048D0A0   뱃머리를 1~3 눈금 돌리고 그 벡터로 나아간다
@@ -1364,14 +2439,14 @@ public sealed class ShipMapHost
     /// 벡터로 삼았는데, 배 그림은 뱃머리를 둘로 접은 여덟 장뿐이라(<c>h &gt;&gt; 1</c>) 홀수
     /// 방위로 갈 때마다 선체가 <b>22.5도 틀어진 채</b> 갔다 — 배가 옆으로 미끄러져 보이던
     /// 것이 그것이다. 바라는 쪽을 짝수로만 내고 이동을 뱃머리 벡터로 되돌리면, 서 있을 때는
-    /// 늘 그림과 맞고 도는 동안만 게임처럼 잠깐 어긋난다.
+    /// 늘 그림과 맞고 도는 동안만 원본처럼 잠깐 어긋난다.
     ///
-    /// 죽은 구역(<see cref="TurnDeadZoneCells"/>)은 우리 것이다 — 게임은 커서가 배 한가운데에
+    /// 죽은 구역(<see cref="TurnDeadZoneCells"/>)은 우리 것이다 — 원본은 커서가 배 한가운데에
     /// 와도 동쪽으로 돌린다.
     /// </remarks>
     private void Sail(double dt)
     {
-        if (Paused) { _tickAccum = 0; return; }
+        if (Paused) { _tickAccum = 0; (_prevShipX, _prevShipY) = (_shipX, _shipY); return; }
 
         // 커서가 창 밖으로 나가도 배는 가던 쪽으로 계속 간다. 커서는 바라는 쪽을 바꿀 때만 쓴다.
         // 자동항해 중에는 커서 대신 다음 마디가 같은 몫을 한다(_hasHeadingTarget).
@@ -1389,10 +2464,11 @@ public sealed class ShipMapHost
         while (_tickAccum >= TickSeconds)
         {
             _tickAccum -= TickSeconds;
+            (_prevShipX, _prevShipY) = (_shipX, _shipY);
             Ticks++;                       // 날 눈금은 서 있어도 쌓인다(0x0044AF90)
             Turn();
 
-            // 닻을 내렸으면 뱃머리만 돌고 그 자리에 선다 — 게임도 돌기가 닻 검사보다 앞이라,
+            // 닻을 내렸으면 뱃머리만 돌고 그 자리에 선다 — 원본도 돌기가 닻 검사보다 앞이라,
             // 서서 뱃머리를 맞춰 두었다가 닻을 올리면 곧바로 그 쪽으로 나아간다.
             if (_anchored || !_making) continue;
 
@@ -1422,7 +2498,7 @@ public sealed class ShipMapHost
     private static int Sector8(double dx, double dy)
     {
         double ax = Math.Abs(dx), ay = Math.Abs(dy);
-        if (ay * 2 <= ax) return dx >= 0 ? 12 : 4;             // 동 · 서 (가운데면 게임처럼 동)
+        if (ay * 2 <= ax) return dx >= 0 ? 12 : 4;             // 동 · 서 (가운데면 원본처럼 동)
         if (ax * 2 <= ay) return dy > 0 ? 8 : 0;               // 남 · 북
         return dx > 0 ? (dy > 0 ? 10 : 14) : (dy > 0 ? 6 : 2); // 남동 · 북동 · 남서 · 북서
     }
@@ -1472,7 +2548,7 @@ public sealed class ShipMapHost
     /// 이 걸음에 나아갈 칸 수와, 해류가 옆으로 미는 만큼.
     /// </summary>
     /// <remarks>
-    /// 게임 셈 그대로다(볼트 <c>30.분석-항해 속도(돛·바람·해류)</c>).
+    /// 원본 셈 그대로다(볼트 <c>30.분석-항해 속도(돛·바람·해류)</c>).
     /// <code>
     ///   속도  = 0x0048BCF0()                         ; 추진력 x (풍속+1) x 돛효율 / 100
     ///   부류 1 : 이동 = 9 * 속도 / 10        + 해류
@@ -1526,7 +2602,7 @@ public sealed class ShipMapHost
     /// 항해지도 한 장을 BGRA 로 짓는다. 지도를 못 읽었으면 null.
     /// </summary>
     /// <remarks>
-    /// 게임의 <c>0x00416A00</c> 그대로다. 점 하나가 칸 <b>4x4</b> 고, 그 열여섯 칸 가운데
+    /// 원본의 <c>0x00416A00</c> 그대로다. 점 하나가 칸 <b>4x4</b> 고, 그 열여섯 칸 가운데
     /// 뭍이 바다보다 많으면 뭍색이다(같으면 바다). <b>안 밝힌 점은 아예 안 본다</b> — 그 자리는
     /// 양피지로 남는다. 배·도시·발견물 같은 <b>표식은 하나도 안 찍는다</b>.
     /// </remarks>
@@ -1563,6 +2639,20 @@ public sealed class ShipMapHost
     }
 
     /// <summary>
+    /// 두 칸 사이 바닷길 — 인물 함대가 쓴다(<see cref="Local.Helpers.PersonWorld.SeaRouter"/>). 지도를 못 읽었거나 못 찾으면 null.
+    /// </summary>
+    /// <remarks>뒤 일꾼에서 부르므로 지금 지도 배열을 붙들어 둔 채 찾는다.</remarks>
+    public List<(double X, double Y)>? SeaRouteBetween((double X, double Y) from, (double X, double Y) to)
+    {
+        var (world, terrain) = (_world, _terrain);
+        return world == null || terrain == null ? null : Engine.Sea.SeaPathfinder.FindRoute(world, terrain, from, to);
+    }
+
+    /// <summary>그 칸이 육지인지 — 지도 그림(<see cref="Chart"/>)과 같은 셈이다. 지도를 못 읽었으면 null.</summary>
+    public bool? IsLandCell(int cellX, int cellY) =>
+        _world == null || _terrain == null ? null : !IsSeaClass(CellValue(cellX, cellY));
+
+    /// <summary>
     /// 지도 그림에서 바다로 치는 칸인지 — 부류(<c>0x00426710</c> = <c>0x004CD048[타일]</c>)가
     /// <b>0·1</b> 일 때만이다. 음수를 포함한 그 밖은 뭍이다.
     /// </summary>
@@ -1587,7 +2677,7 @@ public sealed class ShipMapHost
     private const byte NearShip = 0x0A, NearCity = 0x24, NearFind = 0x38,
                        NearLand = 0x18, NearSea = 0x2E, NearPole = 0x49;
 
-    /// <summary>주변지도가 한 점에 나아가는 거리 밑값(1/16 칸). 게임은 <c>측량 + 2</c> 다.</summary>
+    /// <summary>주변지도가 한 점에 나아가는 거리 밑값(1/16 칸). 원본은 <c>측량 + 2</c> 다.</summary>
     public const int LocalStepBase = 2;
 
     /// <summary>WORLD.CDS 칸 낱말에서 <b>그림이 박힌 칸</b>(도시·발견물 그림 조각)을 뜻하는 비트.</summary>
@@ -1600,7 +2690,7 @@ public sealed class ShipMapHost
     /// 주변지도 한 장을 BGRA 로 짓는다. 지도를 못 읽었거나 배가 없으면 null.
     /// </summary>
     /// <remarks>
-    /// 게임의 <c>0x00416B60(칸x, 칸y, 측량 + 2)</c> 다. 항해지도와 크기는 같은데
+    /// 원본의 <c>0x00416B60(칸x, 칸y, 측량 + 2)</c> 다. 항해지도와 크기는 같은데
     /// (<b>625 x 313</b>) <b>배 둘레를 크게 본 것</b>이고, 밝힘과 상관없이 다 보인다.
     /// <code>
     ///   416ba6  왼쪽 끝 = 배칸x * 16 - 625 * r / 2       (자리는 1/16 칸)
@@ -1760,11 +2850,18 @@ public sealed class ShipMapHost
         return cellX < 0 ? cellX + w : cellX;
     }
 
-    /// <summary>발밑이 빠른 부류(그림 번호 <c>0x80</c>)인지.</summary>
+    /// <summary>발밑이 빠른 부류(부류 1 - 난바다)인지.</summary>
+    /// <remarks>
+    /// 원본은 <b>부류표</b>(<c>0x004CD048</c>)에 칸 값을 그대로 넣어 본다(<c>0x00426710</c>). 예전에는 칸 값의
+    /// <c>0x80</c> 비트로 갈랐는데, 난바다 칸은 <c>0x800 · 0x880 · 0x900 · 0x980 ...</c> 이 물결 무늬로 섞여 있고
+    /// 표에서는 <b>모두 부류 1</b> 이다 - 비트로 가르면 한 칸 걸러 느린 식(해류 없음)으로 떨어져, 역풍에 역류면
+    /// 배가 칸마다 섰다 갔다 했다. 표를 못 읽었을 때만 옛 어림을 쓴다.
+    /// </remarks>
     private bool FastTile()
     {
         if (_world == null) return false;
         var (_, _, _, _, off) = RawAt(_shipX, _shipY);
+        if (_terrain != null) return _terrain.ClassOfCell(SailCellValue(_shipX, _shipY)) == 1;
         return (WorldMapRenderer.CellToTile(_world, off) & 0x80) != 0;
     }
 
@@ -1775,6 +2872,11 @@ public sealed class ShipMapHost
     private void Step(double dx, double dy)
     {
         if (CanGo(_shipX + dx, _shipY + dy)) { Move(dx, dy); _blocked = false; return; }
+        // 자동항해는 걸음을 줄여서라도 다가선다 — 한 걸음이 한 칸을 넘는 빠른 배는 좁은 물길의 막다른
+        // 모퉁이에서 온 걸음을 못 떼어 그대로 서 버린다.
+        if (AutoSailing)
+            for (double part = 0.5; part >= 0.25; part /= 2)
+                if (CanGo(_shipX + dx * part, _shipY + dy * part)) { Move(dx * part, dy * part); _blocked = false; return; }
         if (dx != 0 && CanGo(_shipX + dx, _shipY)) { Move(dx, 0); _blocked = true; return; }
         if (dy != 0 && CanGo(_shipX, _shipY + dy)) { Move(0, dy); _blocked = true; return; }
         _blocked = true;
@@ -1784,7 +2886,7 @@ public sealed class ShipMapHost
     /// 말의 걸음 번호(0~7). 한 걸음 뗄 때마다 늘어 다리가 움직인다.
     /// </summary>
     /// <remarks>
-    /// 게임도 이렇게 한다 — 지도 한 틱마다 <c>0x00569550</c> 이 늘고, 그림 번호가
+    /// 원본도 이렇게 한다 — 지도 한 틱마다 <c>0x00569550</c> 이 늘고, 그림 번호가
     /// <c>(방향 &gt;&gt; 2) * 8 + 걸음</c> 이다. 우리 틱은 0.1초라 여덟 걸음이 0.8초에 돈다.
     /// 멈춰 있으면 늘지 않으므로 선 말은 다리도 선다.
     /// </remarks>
@@ -1813,19 +2915,18 @@ public sealed class ShipMapHost
 
     /// <summary>지금 모드에서 지날 수 있는 칸인지. 배는 물을, 말은 뭍을 간다.</summary>
     /// <remarks>
-    /// 게임이 쓰는 표를 그대로 본다(<see cref="TerrainTable"/>) — 칸의 <b>첫 바이트</b>로
+    /// 원본이 쓰는 표를 그대로 본다(<see cref="TerrainTable"/>) — 칸의 <b>첫 바이트</b>로
     /// 부류를 찾고, 0·1 이면 물, 2 이상이면 뭍이다.
     ///
     /// 예전에는 그림을 그리려고 재어 둔 육지 비율이 반을 넘으면 막았다. 그것은 색을 섞는
     /// 비율이지 통행 규칙이 아니어서, 런던 앞 하구처럼 육지가 50~55% 인 칸이 막혀
-    /// 게임에서는 들어가지는 데를 못 들어갔다. 표를 못 읽을 때만 그 어림으로 물러선다.
+    /// 원본에서는 들어가지는 데를 못 들어갔다. 표를 못 읽을 때만 그 어림으로 물러선다.
     /// </remarks>
     private bool CanGo(double cellX, double cellY)
     {
         if (_terrain != null && _world != null)
         {
-            int cell = CellValue(cellX, cellY);
-            return _onLand ? _terrain.CanWalk(cell) : _terrain.CanSail(cell);
+            return _onLand ? _terrain.CanWalk(CellValue(cellX, cellY)) : _terrain.CanSail(SailCellValue(cellX, cellY));
         }
 
         double land = LandRatioAt(cellX, cellY);
@@ -1891,6 +2992,16 @@ public sealed class ShipMapHost
     /// </remarks>
     private int CellValue(double cellX, double cellY) => CellAt(RawAt(cellX, cellY).Offset);
 
+    /// <summary>
+    /// 배가 지날 수 있는지 볼 칸 값 — 못 찾은 발견물 자리는 덮어 그린 값(<see cref="_placeCells"/>)이다.
+    /// <b>배에만</b> 쓴다. 뭍 걷기 · 그림에까지 쓰면 덮개 칸의 부류가 어긋나 상륙한 말이 발견물 둘레에 끼었다.
+    /// </summary>
+    private int SailCellValue(double cellX, double cellY)
+    {
+        var at = RawAt(cellX, cellY);
+        return _placeCells.TryGetValue((at.CellX, at.CellY), out ushort shown) ? shown : CellAt(at.Offset);
+    }
+
     /// <summary>WORLD.CDS 의 그 자리에 적힌 칸 값.</summary>
     private int CellAt(int offset) =>
         _world == null || offset + 1 >= _world.Length
@@ -1927,7 +3038,7 @@ public sealed class ShipMapHost
     /// 지금 선 칸의 <b>지형 부류</b>(0~6). 모르면 -1.
     /// </summary>
     /// <remarks>
-    /// 게임도 뭍 사건을 이 값으로 가른다 — <c>0x00426740</c> 이 자리를 열여섯으로 나눠
+    /// 원본도 뭍 사건을 이 값으로 가른다 — <c>0x00426740</c> 이 자리를 열여섯으로 나눠
     /// 칸을 잡고, 그 칸의 그림 번호(하위 열넉 비트)로 부류표(<c>0x004CD048</c>)를 찾는다.
     /// 짐승과 회오리는 <b>2</b>, 독충은 <b>6</b> 에서만 난다.
     /// </remarks>
@@ -2077,11 +3188,15 @@ public sealed class ShipMapHost
     /// <summary>
     /// 배를 그 칸에 갖다 놓는다(바다에서 적은 판을 불러올 때). 뭍이면 가까운 물칸으로 민다.
     /// </summary>
-    public bool PlaceAtSea(double x, double y)
+    /// <param name="waterOnly">참이면 둘레에 물이 없을 때 안 옮긴다(발견물 지도 순간이동). 거짓이면 예전처럼 그 칸에 둔다(세이브 열기).</param>
+    public bool PlaceAtSea(double x, double y, bool waterOnly = false)
     {
         if (!_ready) return false;
-        StopAutoSail();   // 다른 자리로 옮기면 짜 둔 항로가 더는 안 맞는다
+        // 내륙 깊이 짚어 둘레 64 칸에 물이 없으면 NearestWater 가 그 뭍 칸을 그대로 돌려준다 — 순간이동으로 배가 뭍
+        // 한가운데 서 버렸다. 그때는 안 옮긴다.
         (x, y) = NearestWater(x, Math.Clamp(y, 0, WorldMapRenderer.CellH - 1));
+        if (waterOnly && IsLand(x, y)) return false;
+        StopAutoSail();   // 다른 자리로 옮기면 짜 둔 항로가 더는 안 맞는다
         _shipX = _targetX = x;
         _shipY = _targetY = y;
         _shipKnown = true;
@@ -2139,20 +3254,36 @@ public sealed class ShipMapHost
 
     /// <summary>
     /// 커서 칸으로 가는 바닷길의 <b>첫 길목</b>. 길을 못 찾거나 이미 그 자리면 null 이다.
-    /// 같은 칸을 두 번 셈하지 않게 마지막 결과를 쥐고 있는다.
+    /// 배 칸과 커서 칸이 그대로면 셈하지 않고 마지막 결과를 쓴다.
     /// </summary>
+    /// <remarks>
+    /// 예전에는 커서 칸만 보고 결과를 쥐고 있어서, 커서를 가만두면 배가 첫 길목을 지나친 뒤에도 그 길목으로
+    /// 되돌아가려 해 해안선 · 좁은 물길에서 뱅글뱅글 돌았다. 배가 한 칸 옮길 때마다 다시 셈한다.
+    /// </remarks>
     private (double X, double Y)? NextWaypoint(double toX, double toY)
     {
         if (_world == null || _terrain == null) return null;
 
-        var want = ((int)Math.Floor(toX), (int)Math.Floor(toY));
+        var want = ((int)Math.Floor(_shipX), (int)Math.Floor(_shipY), (int)Math.Floor(toX), (int)Math.Floor(toY));
         if (want == _assistFrom) return _assistStep;
 
         _assistFrom = want;
         _assistStep = null;
 
         var route = Engine.Sea.SeaPathfinder.FindRoute(_world, _terrain, (_shipX, _shipY), (toX, toY));
-        if (route is { Count: > 1 }) _assistStep = (route[1].X + 0.5, route[1].Y + 0.5);
+        // 도는 원이 큰 배(빠른 카락)는 원 안에 든 길목을 못 밟고 그 둘레를 맴돈다 — 그런 길목은 지난 것으로 친다.
+        if (route is { Count: > 1 })
+        {
+            double radius = TurnRadiusCells;
+            int at = 1;
+            while (at < route.Count - 1)
+            {
+                double gx = WrapDx(route[at].X + 0.5 - _shipX), gy = route[at].Y + 0.5 - _shipY;
+                if (gx * gx + gy * gy > radius * radius) break;
+                at++;
+            }
+            _assistStep = (route[at].X + 0.5, route[at].Y + 0.5);
+        }
         return _assistStep;
     }
 
@@ -2191,13 +3322,64 @@ public sealed class ShipMapHost
     /// 대 둔 배 곁인지 — 해상 커맨드의 「승선」은 상륙한 자리(<c>0x005B63B8</c>·<c>0x005B63BC</c>)에서
     /// 가로세로 두 칸(1/16 눈금 0x20) 안일 때만 선다(<c>0x0048B397</c>). 경도는 한 바퀴 돌아 잰다.
     /// </summary>
-    public bool IsNearMoor(int radiusCells = 2)
+    /// <remarks>
+    /// <b>원본보다 넓게 네 칸으로 잡는다.</b> 배 · 말 그림이 세 칸 폭이라 두 칸으로는 화면에서 둘이 맞붙어 보여도
+    /// 줄이 안 섰다 — 물가가 꺾인 자리에서는 더 다가갈 뭍도 없어 배에 못 오르는 것처럼 보였다.
+    /// </remarks>
+    public bool IsNearMoor(int radiusCells = 4)
     {
         if (!_onLand || !_moored) return false;
         double dx = _shipX - _mooredX, w = WorldMapRenderer.CellW;
         if (dx < -w / 2) dx += w;
         else if (dx > w / 2) dx -= w;
         return Math.Abs(dx) <= radiusCells && Math.Abs(_shipY - _mooredY) <= radiusCells;
+    }
+
+    /// <summary>
+    /// 뭍에 올라 걷는 자리. 배에 타 있으면 null — 적을 때 쓴다(제독 <c>+0x114</c> 뭍 깃발 · <c>+0x310</c>/<c>+0x314</c> 지금 자리).
+    /// </summary>
+    public (double X, double Y)? AshoreSpot => _shipKnown && _onLand ? (_shipX, _shipY) : null;
+
+    /// <summary>대 둔 배의 뱃머리. 적을 때 쓴다.</summary>
+    public int MooredHeading => _mooredHeading & 0xF;
+
+    /// <summary>
+    /// 뭍에 오른 채로 판을 연다 — 배는 <paramref name="mooredX"/>·<paramref name="mooredY"/> 에 대 두고 사람은 걷던 칸에 선다.
+    /// </summary>
+    /// <remarks>
+    /// 원본은 제독 <c>+0x114</c>(뭍 깃발 <c>0x005B61B4</c>) · <c>+0x310</c>/<c>+0x314</c>(지금 자리) ·
+    /// <c>+0x318</c>/<c>+0x31C</c>(대 둔 배 자리)를 세이브에 적어(<c>0x0047C90C</c>~<c>0x0047C9C5</c>) 뭍에서 중단한
+    /// 판을 뭍에서 잇는다. 대 둔 자리가 물이 아니면 가까운 물칸으로, 걷던 칸이 뭍이 아니면 가까운 뭍칸으로 민다.
+    /// </remarks>
+    public bool PlaceAshore(double x, double y, double mooredX, double mooredY, int mooredHeading)
+    {
+        if (!_ready) return false;
+        StopAutoSail();
+        (mooredX, mooredY) = NearestWater(mooredX, Math.Clamp(mooredY, 0, WorldMapRenderer.CellH - 1));
+        y = Math.Clamp(y, 0, WorldMapRenderer.CellH - 1);
+        var spot = NearestCell(x, y, wantLand: true, maxRing: 3);
+        if (spot == null) return false;
+
+        _mooredX = mooredX;
+        _mooredY = mooredY;
+        _mooredHeading = mooredHeading & 0xF;
+        _moored = true;
+        (_shipX, _shipY) = spot.Value;
+        _targetX = _shipX;
+        _targetY = _shipY;
+        _shipKnown = true;
+        _onLand = true;
+        _blocked = false;
+        _anchored = false;
+        SteerArmed = false;
+        _tickAccum = 0;
+        _making = false;
+        _desired = _heading;
+        _centerX = _shipX;
+        _centerY = _shipY;
+        _follow = true;
+        _dirty = true;
+        return true;
     }
 
     /// <summary>
@@ -2215,7 +3397,7 @@ public sealed class ShipMapHost
         StopAutoSail();   // 뭍에 오르면 자동항해는 뜻이 없다
 
         // 배는 지금 자리에 대 둔다 — 뭍에 있는 동안 그 자리에 남아 어디로 상륙했는지 보인다.
-        // 게임도 자리를 적어 두었다가 출항할 때 그대로 되돌린다(0x004936DE).
+        // 원본도 자리를 적어 두었다가 출항할 때 그대로 되돌린다(0x004936DE).
         _mooredX = _shipX;
         _mooredY = _shipY;
         _mooredHeading = _heading;
@@ -2238,7 +3420,7 @@ public sealed class ShipMapHost
         if (SeaBlocked || !_onLand) return false;
         ShiftWind();   // 배에 오르면 바람을 다시 읽는다(0x0048EB94)
 
-        // 대 둔 자리로 돌아간다 — 게임도 상륙할 때 적어 둔 자리를 그대로 되돌린다
+        // 대 둔 자리로 돌아간다 — 원본도 상륙할 때 적어 둔 자리를 그대로 되돌린다
         // (0x004936DE). 그 자리가 물이 아니게 됐으면(있을 수 없지만) 가까운 물칸으로 간다.
         var spot = _moored && !IsLand(_mooredX, _mooredY)
             ? (_mooredX, _mooredY)
@@ -2286,7 +3468,7 @@ public sealed class ShipMapHost
     /// 배가 닿은 도시 ID. 없으면 -1.
     /// </summary>
     /// <remarks>
-    /// <b>뭍과 같은 규칙이다.</b> 게임도 바다와 뭍을 <see cref="CityAt"/> 한 자리에서 가리고
+    /// <b>뭍과 같은 규칙이다.</b> 원본도 바다와 뭍을 <see cref="CityAt"/> 한 자리에서 가리고
     /// (<c>0x0048DA19</c>), <c>[0x005B61B4]</c> 로는 어느 표시를 볼지만 가른다 — 바다면
     /// 항구가 있는가(<c>+0x1C &amp; 1</c>), 뭍이면 성문이 있는가(<c>+0x1D &amp; 4</c>).
     /// 그 두 표시는 아직 안 든다.
@@ -2311,7 +3493,7 @@ public sealed class ShipMapHost
     /// 놓이므로 한 칸이다(<see cref="SpriteRectAt"/> 의 <c>size / 2</c>).
     /// </summary>
     /// <remarks>
-    /// 게임은 함대 자리를 그림 왼쪽 위께로 잡아 훑는 칸이 <c>-3 .. +1</c> 로 한쪽에
+    /// 원본은 함대 자리를 그림 왼쪽 위께로 잡아 훑는 칸이 <c>-3 .. +1</c> 로 한쪽에
     /// 쏠려 있다. 우리는 가운데에 놓으므로 그만큼을 양쪽으로 갈라 얹는다 — 그래야
     /// <b>그림끼리 닿는 순간</b> 물어본다. 안 얹으면 도시 그림 한복판까지 밀고
     /// 들어가야 물었다.
@@ -2329,11 +3511,35 @@ public sealed class ShipMapHost
     /// </remarks>
     private const int TouchSlack = 0;
 
+    /// <summary>도시 ID -> 어귀에 물이 없어 배 쪽으로만 더 얹는 여유 칸(<see cref="MouthSlack"/>).</summary>
+    private readonly Dictionary<int, int> _mouthSlack = [];
+
+    /// <summary>
+    /// 배로 다가갈 때 그 도시에만 더 얹는 여유 칸 — 어귀 네모 안에 <b>물칸이 하나도 없는</b> 항구면 1, 아니면 0 이다.
+    /// </summary>
+    /// <remarks>
+    /// 항구가 있는 135곳 가운데 캘커타(157) 하나가 그렇다 — 네모(<c>1863..1866</c>, <c>472..475</c>)가 온통 뭍이고
+    /// 물은 바로 아랫줄(<c>476</c>)부터라, 우리 셈으로는 배가 영영 못 닿았다. 원본의 훑는 셈(<c>0x0048DA29</c>)은
+    /// 같으므로 원본과 다른 것은 배 자리를 잡는 쪽일 텐데 거기까지는 못 밝혔다 — 그 한 곳만 한 칸 넓혀 닿게 한다.
+    /// </remarks>
+    private int MouthSlack(int city)
+    {
+        if (_mouthSlack.TryGetValue(city, out int known)) return known;
+        if (_cities == null || _world == null || _terrain == null
+            || !_cities.TryCell(city, out int cx, out int cy, out int reach)) return 0;
+
+        int slack = 1;
+        for (int y = cy - TownSlack - TouchSlack; y <= cy + reach + TouchSlack && slack > 0; y++)
+            for (int x = cx - TownSlack - TouchSlack; x <= cx + reach + TouchSlack; x++)
+                if (!IsLand(x + 0.5, y + 0.5)) { slack = 0; break; }
+        return _mouthSlack[city] = slack;
+    }
+
     /// <summary>
     /// 말이 닿은 도시 ID. 없으면 -1.
     /// </summary>
     /// <remarks>
-    /// 게임 그대로다(<c>0x0048DA19</c>). 거리를 재는 것이 아니라 <b>둘레 칸을 훑는다</b>.
+    /// 원본 그대로다(<c>0x0048DA19</c>). 거리를 재는 것이 아니라 <b>둘레 칸을 훑는다</b>.
     /// <code>
     ///   0048DA21  dy = -3 .. +1
     ///   0048DA34  칸y = [0x5B63B4] &gt;&gt; 4          ; 원본값 열여섯이 한 칸
@@ -2368,7 +3574,7 @@ public sealed class ShipMapHost
     /// 아직 안 선 도시를 지도에서 <b>지운다</b>.
     /// </summary>
     /// <remarks>
-    /// 지도 자료에는 도시 그림이 박혀 있어 그냥 두면 안 선 도시도 보인다. 게임은 그릴
+    /// 지도 자료에는 도시 그림이 박혀 있어 그냥 두면 안 선 도시도 보인다. 원본은 그릴
     /// 때마다 도시 표 <c>+0x74</c> 의 3×3 바탕 타일로 덮는데(<c>0x0048A1E0</c>), 우리는
     /// 칸 지도를 한 장으로 올려 두므로 그 자리를 미리 갈아 끼워 둔다.
     ///
@@ -2391,15 +3597,27 @@ public sealed class ShipMapHost
             }
         }
 
-        foreach (int city in hidden)
+        var hiddenList = hidden.ToList();
+        var placeList = (places ?? []).ToList();
+        _lastHiddenCities = hiddenList;
+        _lastHiddenPlaces = placeList;
+        ApplyHiddenSprites();   // 도시 분리일 때 그림을 얹지 않을 도시 · 발견물
+        foreach (int city in hiddenList)
         {
             if (!cities.TryCell(city, out int cx, out int cy, out _)) continue;
             Lay(cx, cy, cities.EraseOf(city), CityExeTable.EraseWidth, CityExeTable.Keep);
         }
 
         // 아직 못 찾은 발견물도 같은 손으로 가린다 — 그쪽은 2×2 다.
-        foreach (var (x, y, block) in places ?? [])
+        var placeCells = new Dictionary<(int X, int Y), ushort>();
+        foreach (var (x, y, block) in placeList)
+        {
             Lay(x, y, block, DiscoveryTable.EraseWidth, DiscoveryTable.Keep);
+            for (int i = 0; i < block.Length; i++)
+                if (block[i] != DiscoveryTable.Keep)
+                    placeCells[(x + i % DiscoveryTable.EraseWidth, y + i / DiscoveryTable.EraseWidth)] = block[i];
+        }
+        _placeCells = placeCells;
 
         _renderer.Erase(patch);
     }
@@ -2419,11 +3637,12 @@ public sealed class ShipMapHost
         {
             if (CityOpen is { } open && !open(id)) continue;
             if (!_cities.TryCell(id, out int cx, out int cy, out int reach)) continue;
-            if (fy < cy - TownSlack - TouchSlack || fy > cy + reach + TouchSlack) continue;
+            int slack = TouchSlack + (_onLand ? 0 : MouthSlack(id));
+            if (fy < cy - TownSlack - slack || fy > cy + reach + slack) continue;
             int dx = fx - cx;
             if (dx > WorldMapRenderer.UnfoldedW / 2) dx -= WorldMapRenderer.UnfoldedW;
             if (dx < -WorldMapRenderer.UnfoldedW / 2) dx += WorldMapRenderer.UnfoldedW;
-            if (dx < -TownSlack - TouchSlack || dx > reach + TouchSlack) continue;
+            if (dx < -TownSlack - slack || dx > reach + slack) continue;
             got.Add(id);
         }
         return got;
@@ -2439,13 +3658,14 @@ public sealed class ShipMapHost
         {
             if (CityOpen is { } open && !open(id)) continue;   // 아직 안 선 도시
             if (!_cities.TryCell(id, out int cx, out int cy, out int reach)) continue;
-            if (fy < cy - TownSlack - TouchSlack || fy > cy + reach + TouchSlack) continue;
+            int slack = TouchSlack + (_onLand ? 0 : MouthSlack(id));
+            if (fy < cy - TownSlack - slack || fy > cy + reach + slack) continue;
 
             // 가로는 이어져 있다 — 날짜변경선을 넘어도 같은 도시다.
             int dx = fx - cx;
             if (dx > WorldMapRenderer.UnfoldedW / 2) dx -= WorldMapRenderer.UnfoldedW;
             if (dx < -WorldMapRenderer.UnfoldedW / 2) dx += WorldMapRenderer.UnfoldedW;
-            if (dx < -TownSlack - TouchSlack || dx > reach + TouchSlack) continue;
+            if (dx < -TownSlack - slack || dx > reach + slack) continue;
 
             return id;
         }
@@ -2504,6 +3724,32 @@ public sealed class ShipMapHost
         _desired = _heading;
         Status = $"[{cityName}] 입항 — {_shipX:F1}, {_shipY:F1} 칸";
     }
+
+    /// <summary>
+    /// 도시에서 나오면 <b>닻을 내린 채</b> 선다 — 왼쪽 클릭으로 닻을 올려야 나아간다.
+    /// </summary>
+    /// <remarks>
+    /// 원본은 도시 화면(<c>0x00492430</c>)에서 돌아오자마자 <c>0x005B3A00</c> 에 1 을 놓는다
+    /// (<c>0x0048EB32</c>) — 바다든 뭍이든 가리지 않는다. 입항할 때 <see cref="EnterPort"/> 가
+    /// 나아가기를 세워 두므로, 닻이 없으면 닻도 안 보이고 움직이지도 않는 어정쩡한 채로 남았다.
+    /// </remarks>
+    public void HoldAfterCity()
+    {
+        if (!_ready) return;
+        _anchored = true;
+        _tickAccum = 0;
+        _dirty = true;
+    }
+
+    /// <summary>
+    /// 커맨드 창을 열면 <b>닻을 내린다</b> — 창을 닫아도 선 채로 남아 왼쪽 클릭으로 올려야 나아간다.
+    /// </summary>
+    /// <remarks>
+    /// 커맨드 창을 짓는 <c>0x0048B190</c> 이 맨 앞(<c>0x0048B1C2</c>)에서 <c>0x005B3A00</c> 에 1 을 놓고
+    /// 아무 데서도 되돌리지 않는다. 알림 글은 안 낸다 — 닻 알림(<c>0x0056F970</c> 벌)은 클릭으로 뒤집을
+    /// 때(<c>0x0048B0C8</c>)만 뜬다. 바다든 뭍이든 가리지 않는다.
+    /// </remarks>
+    public void HoldForCommand() => HoldAfterCity();
 
     /// <summary>배가 있는 자리로 되돌아가 다시 따라다닌다.</summary>
     public void RecenterOnShip()

@@ -19,12 +19,12 @@ namespace Sim
         static readonly string[] SkipRows = ["출항", "탐험을 떠난다", "떠난다", "은퇴", "기능", "게임 종료", "로드"];
 
         /// <summary>도시마다 들어가 건물을 누르고 차림표 줄을 하나씩 돌린다.</summary>
-        public static void Cities(ShipMapWindow map, CostaDelSol.Droid.Town.CityStage stage, int from, int to)
+        public static void Cities(WorldMapWindow map, CostaDelSol.Droid.Town.CityStage stage, int from, int to)
         {
             Drive.Qa = true;
             var game = map.Game;
             if (Environment.GetEnvironmentVariable("NOSTORY") != null) game.Player.SetActiveStoryBook(null);
-            var enter = typeof(ShipMapWindow).GetMethod("ShowCityPicture", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var enter = typeof(WorldMapWindow).GetMethod("ShowCityPicture", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
             // 새 판은 리스본 그림에서 시작한다 — 먼저 걷어야 첫 도시가 제 그림으로 열린다.
             if (CityPicView.Active is { } first) { first.Close(); GameThread.Drain(); }
             for (int city = from; city <= to; city++)
@@ -96,7 +96,7 @@ namespace Sim
         }
 
         /// <summary>발견물마다 사건 대본을 돌린다(관문을 건너뛴다).</summary>
-        public static void Discoveries(ShipMapWindow map, int from, int to)
+        public static void Discoveries(WorldMapWindow map, int from, int to)
         {
             Drive.Qa = true;
             var game = map.Game;
