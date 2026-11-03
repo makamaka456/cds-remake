@@ -1,4 +1,4 @@
-using Android.App;
+﻿using Android.App;
 using Android.Widget;
 using System.Text.Json;
 using Android.Content;
@@ -50,10 +50,11 @@ public sealed class OnScreenPad : FrameLayout
         (PadControl.B, "B", .94f, .74f, true),
         (PadControl.X, "X", .80f, .74f, true),
         (PadControl.Y, "Y", .87f, .62f, true),
-        (PadControl.L1, "LB", .06f, .30f, true),
-        (PadControl.R1, "RB", .94f, .30f, true),
-        (PadControl.L2, "LT", .06f, .17f, false),
-        (PadControl.R2, "RT", .94f, .17f, false),
+        // 기본으로 L2 · R2(앞장 · 뒷장)를 내고 L1 · R1 은 숨긴다(사용자 요청).
+        (PadControl.L1, "LB", .06f, .30f, false),
+        (PadControl.R1, "RB", .94f, .30f, false),
+        (PadControl.L2, "LT", .06f, .17f, true),
+        (PadControl.R2, "RT", .94f, .17f, true),
         (PadControl.L3, "LS", .24f, .93f, false),
         (PadControl.R3, "RS", .27f, .86f, true),
         (PadControl.Select, "SEL", .43f, .93f, true),
@@ -256,8 +257,8 @@ public sealed class OnScreenPad : FrameLayout
                 canvas.DrawCircle(knob.Item1, knob.Item2, r * 0.42f, _fill);
             }
 
-            // 이름 한 줄 — 사용자가 적은 것(4글자까지), 없으면 단추 고유 이름.
-            string name = string.IsNullOrEmpty(spot.Label) ? label : spot.Label!;
+            // 이름 한 줄 — 사용자가 적은 것(4글자까지), 없으면 지금 맡은 기능 이름(결정 · 닻 …, 없으면 단추 고유 이름).
+            string name = string.IsNullOrEmpty(spot.Label) ? FunctionName(control) : spot.Label!;
             _text.Color = Color.Argb(Math.Min(255, alpha), 255, 255, 255);
             _text.TextSize = Math.Max(10 * _dp, r * (name.Length <= 2 ? 0.62f : name.Length == 3 ? 0.5f : 0.42f));
             canvas.DrawText(name, cx, cy + _text.TextSize / 3, _text);
@@ -484,7 +485,7 @@ public sealed class OnScreenPad : FrameLayout
         input.SetFilters([new Android.Text.InputFilterLengthFilter(4)]);
         input.SetSingleLine(true);
         new AlertDialog.Builder(Context)
-            .SetTitle($"{PadBindings.ControlName(c)} 이름 (4글자까지 · 비우면 {DefaultLabel(c)})")!
+            .SetTitle($"{PadBindings.ControlName(c)} 이름 (4글자까지 · 비우면 {FunctionName(c)})")!
             .SetView(input)!
             .SetPositiveButton("확인", (_, _) =>
             {
@@ -499,10 +500,21 @@ public sealed class OnScreenPad : FrameLayout
 
     private static string DefaultLabel(PadControl c) => Specs.First(s => s.Control == c).Label;
 
+    /// <summary>
+    /// 이름을 따로 안 적은 단추에 쓰는 이름 — 그 단추가 지금 맡은 기능(결정 · 취소 · 닻 …, 4글자까지).
+    /// 매핑을 바꾸면 따라 바뀐다. 기능을 모르면 단추 고유 이름(A · LT …)이다.
+    /// </summary>
+    private string FunctionName(PadControl c)
+    {
+        string f = Function?.Invoke(c) is { Length: > 0 } fn ? fn : Hint?.Invoke(c) ?? "";
+        return f.Length > 0 ? f[..Math.Min(4, f.Length)] : DefaultLabel(c);
+    }
+
     // ── 프리셋 ──
 
     private const string PresetKey = "presets";
-    private const string SampleName = "샘플: 기능 이름";
+    /// <summary>앱에 실린 프리셋 둘 — 기본 배치에 기능 이름(기본값과 같다) · 단추 고유 이름(A · B · LT …).</summary>
+    private const string FunctionPreset = "기본: 기능 이름", ButtonPreset = "기본: 버튼 이름";
 
     private Dictionary<string, Stored> Presets()
     {
@@ -543,7 +555,7 @@ public sealed class OnScreenPad : FrameLayout
             .SetPositiveButton("저장", (_, _) =>
             {
                 string name = input.Text?.Trim() ?? "";
-                if (name.Length == 0 || name == SampleName) return;
+                if (name.Length == 0 || name == FunctionPreset || name == ButtonPreset) return;
                 var all = Presets();
                 all[name] = Snapshot();
                 StorePresets(all);
@@ -556,14 +568,15 @@ public sealed class OnScreenPad : FrameLayout
     private void LoadPreset()
     {
         var all = Presets();
-        var names = new List<string> { SampleName };
+        var names = new List<string> { FunctionPreset, ButtonPreset };
         names.AddRange(all.Keys.OrderBy(n => n));
         new AlertDialog.Builder(Context)
             .SetTitle("프리셋 불러오기")!
             .SetItems(names.ToArray(), (_, e) =>
             {
                 string name = names[e.Which];
-                if (name == SampleName) { Apply(Sample()); return; }
+                if (name == FunctionPreset) { Apply(BuiltIn(buttonNames: false)); return; }
+                if (name == ButtonPreset) { Apply(BuiltIn(buttonNames: true)); return; }
                 new AlertDialog.Builder(Context)
                     .SetTitle(name)!
                     .SetPositiveButton("불러오기", (_, _) => Apply(all[name]))!
@@ -576,18 +589,14 @@ public sealed class OnScreenPad : FrameLayout
     }
 
     /// <summary>
-    /// 샘플 프리셋 — 기본 배치에 단추 고유 이름 대신 <b>지금 맡은 기능</b>(결정 · 취소 · 닻 …, 4글자까지)을 적은 것.
-    /// 앱에 실려 있어 언제든 불러올 수 있다.
+    /// 앱에 실린 프리셋 — 기본 배치에, 기능 이름(이름 칸을 비워 두어 매핑을 따라간다) 또는 단추 고유 이름(A · B · LT …)을 적은 것.
     /// </summary>
-    private Stored Sample()
+    private Stored BuiltIn(bool buttonNames)
     {
         ResetLayout();
         var stored = Snapshot();
-        foreach (var (control, _, _, _, _) in Specs)
-        {
-            string hint = Function?.Invoke(control) is { Length: > 0 } f ? f : Hint?.Invoke(control) ?? "";
-            if (hint.Length > 0) stored.Spots[control.ToString()].Label = hint[..Math.Min(4, hint.Length)];
-        }
+        if (buttonNames)
+            foreach (var (control, label, _, _, _) in Specs) stored.Spots[control.ToString()].Label = label;
         return stored;
     }
 

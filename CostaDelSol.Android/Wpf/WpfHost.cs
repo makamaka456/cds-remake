@@ -609,6 +609,29 @@ namespace System.Windows
                 if (_front == null) return;
                 canvas.DrawBitmap(_front, null, new ARectF(x * s, y * s, (x + _w) * s, (y + _h) * s), WpfPaints.Bitmap(true));
             }
+            if (HasCloseBox) DrawCloseBox(canvas, x, y, s);
+        }
+
+        // ── 닫기 단추 — PC 판에서 윈도 제목 줄(X)로 닫던 창(편집 · 도구 창)은 안드로이드에 그 줄이 없다.
+        //    창 오른쪽 위에 X 를 그려 주고, 누르면 그 X 를 누른 것처럼 닫는다. 게임 창(제목 줄 없음)에는 안 단다.
+
+        private const float CloseSize = 22, CloseMargin = 2;
+        private bool HasCloseBox => _window.WindowStyle != WindowStyle.None;
+        private bool InCloseBox(float x, float y) =>
+            HasCloseBox && x >= _w - CloseSize - CloseMargin && x <= _w - CloseMargin && y >= CloseMargin && y <= CloseMargin + CloseSize;
+        private bool _closeDown;
+
+        private static readonly APaint CloseFill = new() { Color = new Android.Graphics.Color(0xB0, 0x30, 0x28, 255), AntiAlias = true };
+        private static readonly APaint CloseEdge = new() { Color = Android.Graphics.Color.White, AntiAlias = true, StrokeWidth = 2 };
+
+        private void DrawCloseBox(ACanvas canvas, float x, float y, float s)
+        {
+            float l = (x + _w - CloseSize - CloseMargin) * s, t = (y + CloseMargin) * s, r = l + CloseSize * s, b = t + CloseSize * s;
+            canvas.DrawRect(l, t, r, b, CloseFill);
+            float pad = CloseSize * 0.28f * s;
+            CloseEdge.StrokeWidth = Math.Max(2, 2 * s);
+            canvas.DrawLine(l + pad, t + pad, r - pad, b - pad, CloseEdge);
+            canvas.DrawLine(r - pad, t + pad, l + pad, b - pad, CloseEdge);
         }
 
         /// <summary>손을 흘려보낼 곳(떠 있는 쪽지면 주인 창).</summary>
@@ -617,6 +640,17 @@ namespace System.Windows
         public void Key(GameKey key)
         {
             if (Target != this) { Target.Key(key); return; }
+            // 취소(ESC) — 창이 ESC 를 안 받았고 윈도 제목 줄이 있던 창(편집 · 도구 창)이면 그 닫기 단추(X)를 누른 것으로 친다.
+            // 게임 창은 ESC 만 보낸다(「뒤로」처럼 오른쪽 딸깍까지 치면 해전 항복 차림표 따위가 뜬다).
+            if (key == GameKey.Escape)
+            {
+                GameThread.Post(() =>
+                {
+                    if (WpfHost.Key(_window, System.Windows.Input.Key.Escape) || !_window.IsShown) return;
+                    if (_window.WindowStyle != WindowStyle.None) _window.Close();
+                });
+                return;
+            }
             var k = WpfHost.KeyOf(key);
             if (k == System.Windows.Input.Key.None) return;
             GameThread.Post(() => WpfHost.Key(_window, k));
@@ -626,6 +660,17 @@ namespace System.Windows
         {
             if (Target is var t && t != this) { t.Touch(action, (x + _x - t._x), (y + _y - t._y)); return; }
             var p = new Point(x / _fit, y / _fit);
+            var act = action & Android.Views.MotionEventActions.Mask;
+            if (act == Android.Views.MotionEventActions.Down && InCloseBox(x, y)) { _closeDown = true; return; }
+            if (_closeDown)
+            {
+                if (act is Android.Views.MotionEventActions.Up or Android.Views.MotionEventActions.Cancel)
+                {
+                    _closeDown = false;
+                    if (act == Android.Views.MotionEventActions.Up && InCloseBox(x, y)) GameThread.Post(() => { if (_window.IsShown) _window.Close(); });
+                }
+                return;
+            }
             switch (action & Android.Views.MotionEventActions.Mask)
             {
                 case Android.Views.MotionEventActions.Down:

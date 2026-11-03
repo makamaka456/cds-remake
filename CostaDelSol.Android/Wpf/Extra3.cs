@@ -149,3 +149,20 @@ namespace System.Windows
     [Flags]
     public enum MessageBoxOptions { None = 0, DefaultDesktopOnly = 0x20000, RightAlign = 0x80000, RtlReading = 0x100000, ServiceNotification = 0x200000 }
 }
+
+namespace System.Windows
+{
+    /// <summary>
+    /// WPF 가 켤 때 하는 일 — 앱 안 자료 주소(<c>pack://application:,,,/…</c>)를 알아듣게 등록한다.
+    /// 안 하면 .NET 이 「포트가 잘못됐다」며 그 주소를 못 만든다 — 모드 창의 리디바탕 글꼴(UiFont)을 처음 열 때 오류가 났다.
+    /// </summary>
+    internal static class PackScheme
+    {
+        [System.Runtime.CompilerServices.ModuleInitializer]
+        internal static void Register()
+        {
+            if (!UriParser.IsKnownScheme("pack"))
+                UriParser.Register(new GenericUriParser(GenericUriParserOptions.GenericAuthority), "pack", -1);
+        }
+    }
+}

@@ -198,6 +198,40 @@ if (Environment.GetEnvironmentVariable("MODE") == "qa-long")
     Log.W($"[긴 항해 끝] 입항 {ports} · 오류 {errs} · {clock.Elapsed.TotalMinutes:F1}분 · {State()} · 발견 {player().Discoveries.Count} · 억지로 닫음 {string.Join(",", Drive.Stuck)}");
     return;
 }
+if (Environment.GetEnvironmentVariable("MODE") == "tools")
+{
+    // 도구 창마다: 띄우고 → 찍고 → 「뒤로/취소」(창 판의 Cancel)를 눌러 닫히는지 본다.
+    Leave();
+    Drive.Dir = Environment.GetEnvironmentVariable("SHOTS") ?? ".";
+    Drive.Install();
+    try { Log.W($"  리디바탕 글꼴(UiFont): {CdsHelper.Game.UI.Views.UiFont.ListFont.Source}"); }
+    catch (Exception ex) { Log.W($"  !! UiFont: {ex.GetType().Name}: {ex.InnerException?.Message ?? ex.Message}"); }
+    for (int i = 0; i < WorldMapWindow.Tools.Length; i++)
+    {
+        string name = WorldMapWindow.Tools[i].Name;
+        Drive.Steps.Clear();
+        bool closed = false;
+        Drive.Add("찍고 취소", w =>
+        {
+            Drive.Shot(w, $"tool-{i:D2}");
+            var layer = System.Windows.WpfHost.LayerOf(w)!;
+            if (i % 2 == 0) layer.Key(CostaDelSol.Droid.Input.GameKey.Escape);   // 패드 「취소」
+            else
+            {
+                // 오른쪽 위 X 를 손가락으로 누른다
+                layer.Touch(Android.Views.MotionEventActions.Down, layer.Width - 12, 12);
+                layer.Touch(Android.Views.MotionEventActions.Up, layer.Width - 12, 12);
+            }
+            GameThread.Drain();
+            closed = !w.IsShown;
+            Log.W($"  {name}: 창 {w.GetType().Name} 제목줄={w.WindowStyle} {(i % 2 == 0 ? "취소 단추" : "X 누름")}로 닫힘={closed}");
+            if (!closed) w.Close();
+        });
+        try { map.OpenTool(i); } catch (Exception ex) { Log.W($"  !! {name}: {ex.GetType().Name}: {ex.Message}"); }
+        GameThread.Drain();
+    }
+    return;
+}
 if (Environment.GetEnvironmentVariable("MODE") == "lag")
 {
     // 렉 재기: 창을 띄우고 아무것도 안 할 때 · 손가락을 움직일 때 자리 잡기 · 그리기를 몇 번, 몇 ms 하는지 센다.
