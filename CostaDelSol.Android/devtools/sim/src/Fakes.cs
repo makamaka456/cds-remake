@@ -116,6 +116,7 @@ namespace CostaDelSol.Droid.Town
 {
     public sealed class CityStage
     {
+        public const int PicW = 400, PicH = 320;
         public sealed record Spot(Android.Graphics.RectF Area, string Tag, Action Left, Action? Right, int Code);
         public sealed record Guest(Android.Graphics.Bitmap Art, string Name, Action? Click);
         public readonly List<Spot> Spots = [];
@@ -203,12 +204,14 @@ namespace CdsHelper.Game.Local.Helpers
 namespace CdsHelper.Game.Engine.Menu
 {
     using Sim;
-    internal sealed record GameMenuRow(string Text, Action? Run = null, BandStyle? Style = null, bool Dim = false);
+    internal sealed record GameMenuRow(string Text, Action? Run = null, BandStyle? Style = null, bool Dim = false, bool Grey = false);
+    internal interface IMenuRing { bool Active { get; } bool Enter(int way); bool Move(int way); void Run(); void Clear(); }
     internal sealed class GameMenu
     {
         public string Title { get; }
         public IReadOnlyList<GameMenuRow> Rows { get; }
         public Action? OnClose { get; }
+        public Func<IMenuRing?>? Ring { get; set; }
         public GameMenu(string title, IReadOnlyList<GameMenuRow> rows, Action? onClose = null) { Title = title; Rows = rows; OnClose = onClose; }
         public GameMenu(string title, Action? onClose, params (string Text, Action? Run)[] rows) : this(title, [.. rows.Select(r => new GameMenuRow(r.Text, r.Run))], onClose) { }
         public GameMenu(params (string Text, Action? Run)[] rows) : this("", null, rows) { }
@@ -256,11 +259,22 @@ namespace CdsHelper.Game.UI.Views
     {
         public static bool Ask(Window owner, string text, string? title = null, uint[]? face = null, Action<Window>? place = null)
         {
+            if (CdsHelper.Game.Engine.Town.KeeperTongue.Hear(text, face) is { } got)
+            {
+                var (heard, relayFace, relay) = got;
+                if (relay == null) text = heard; else { Tell(owner, heard, title); text = relay; face = relayFace; }
+            }
             string? a = Script.Next(); bool yes = a == null || a is "Y" or "YES" or "예" || a == "0";
             Log.W($"[물음{(title != null ? " " + title : "")}] {text} → {(yes ? "YES" : "NO")}"); Script.Tick(); return yes;
         }
         public static void Tell(Window owner, string text, string? title = null, uint[]? face = null, double indent = 0, Window? under = null, Action<Window>? place = null)
-        { Log.W($"[말{(title != null ? " " + title : "")}{(face != null ? " 얼굴" : "")}] {text}"); Script.Tick(); }
+        {
+            string? relay = null; uint[]? relayFace = null;
+            if (CdsHelper.Game.Engine.Town.KeeperTongue.Hear(text, face) is { } got) (text, relayFace, relay) = got;
+            Log.W($"[말{(title != null ? " " + title : "")}{(face != null ? " 얼굴" : "")}] {text}"); Script.Tick();
+            if (relay != null) Tell(owner, relay, title, relayFace);
+        }
+        public static Window Hold(Window owner, string text, string? title = null) { Log.W($"[띄워 둔 글] {text}"); return new Window(); }
     }
     public static class TalkDialog
     {
@@ -278,8 +292,14 @@ namespace CdsHelper.Game.UI.Views
     {
         public static void Show(Window o, string t, string? title = null) => ConfirmDialog.Tell(o, t, title);
         public static void Explain(Window o, string t, string title = "게임 설명") => ConfirmDialog.Tell(o, t, title);
+        public static void Notes(Window o, string t, string title) => ConfirmDialog.Tell(o, t, title);
     }
-    internal static class ChoiceDialog
+    internal sealed class LoadingDialog
+    {
+        public static LoadingDialog Open(Window o, string text) { Log.W($"[읽는 중] {text}"); return new(); }
+        public void Close() { }
+    }
+    internal sealed class ChoiceDialog : Window
     {
         static string? _last; static int _rep;
         static int Pick(string title, IReadOnlyList<string> rows, bool[]? dim = null)
@@ -296,8 +316,8 @@ namespace CdsHelper.Game.UI.Views
             Log.W($"[고르기 {title}] {string.Join(" | ", rows)} → {(at >= 0 && at < rows.Count ? rows[at] : "취소")}"); Script.Tick();
             return at;
         }
-        public static int Ask(Window owner, string title, IReadOnlyList<string> rows, string cancel = "취소", int dim = -1)
-        { int at = Pick(title, [.. rows, cancel]); return at >= rows.Count ? -1 : at; }
+        public static int Ask(Window owner, string title, IReadOnlyList<string> rows, string? cancel = "취소", int dim = -1, Window? under = null)
+        { int at = Pick(title, cancel != null ? [.. rows, cancel] : rows); return at >= rows.Count ? -1 : at; }
         public static int Pick(Window owner, string title, IReadOnlyList<string> rows) => Pick(title, rows);
         public static int Pick(Window owner, string title, IReadOnlyList<(string Text, bool On)> rows, Action<Window>? place = null, bool exitRow = true)
             => Pick(title, [.. rows.Select(r => r.Text)], [.. rows.Select(r => !r.On)]);
@@ -305,6 +325,7 @@ namespace CdsHelper.Game.UI.Views
     public static class CountDialog
     {
         public readonly record struct Gauge(string Name, int Value, string? Unit = null);
+        public static int NextShare(int now, int max) { if (max <= 0) return 0; int half = max / 2; if (now == max) return half; if (now == half && half > 0) return 0; return max; }
         public static int Ask(Window owner, string caption, string label, string unit, int max, int step = 1, bool full = false, params Gauge[] lines)
         { string? a = Script.Next(); int v = a != null && int.TryParse(a, out int n) ? Math.Min(n, max) : max; Log.W($"[수량 {caption}] 최대 {max} → {v}"); return Math.Max(0, v); }
         public static int? Set(Window owner, string caption, string label, string unit, int start, int max, params Gauge[] lines) => Ask(owner, caption, label, unit, max);
@@ -324,14 +345,19 @@ namespace CdsHelper.Game.UI.Views
         public static IReadOnlyList<int> PickMany(Window o, IReadOnlyList<string> items, string caption, IReadOnlyCollection<int>? preset = null)
         { int at = Pick(o, items, caption); return at >= 0 ? [at] : []; }
     }
-    public static class ShipNameDialog { public static string? Ask(Window o, string current, bool mustName = false) { Log.W($"[선명] {current}"); return current; } }
+    public static class ShipNameDialog
+    {
+        public static string? Ask(Window o, string current) { Log.W($"[선명] {current}"); return current; }
+        public static string? Ask(Window o, string current, IReadOnlyList<string> names, string heading, int maxLength) { Log.W($"[{heading}] {current}"); return current; }
+        public static string Settle(Window o, string current) => Ask(o, current) is { Length: > 0 } n ? n : current;
+    }
     public static class TextInputDialog { public static string? Ask(Window o, string start, int max, string caption = "문자입력") { Log.W($"[글자 {caption}] {start}"); return start.Length > 0 ? start : "테스트"; } }
 }
 
 namespace CdsHelper.Game.UI.Views
 {
     using Sim;
-    internal static class EventAnimationPopup { public static void Play(Window o, Engine.Game g, int scene, Rect area, double scale, Point? ship) => Log.W($"[사건 연출 {scene}]"); }
+    internal static class EventAnimationPopup { public static void Play(Window o, Engine.Game g, int scene, Rect area, double scale, Point? ship, int heading = -1) => Log.W($"[사건 연출 {scene}]"); }
 }
 namespace CostaDelSol.Droid.Game
 {

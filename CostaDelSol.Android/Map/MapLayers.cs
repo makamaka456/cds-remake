@@ -54,7 +54,7 @@ namespace CdsHelper.Game.UI.Views
             {
                 if (_world is { } old && old.Length == world.Length)
                 {
-                    int stride = global::CostaDelSol.Droid.WorldMapImage.RawStride, half = global::CostaDelSol.Droid.WorldMapImage.CellW;
+                    const int stride = 2500, half = 1250;   // 지도 파일 한 줄 바이트 · 반쪽 한 줄 칸 수(WorldMapImage)
                     for (int i = 0; i + 1 < world.Length; i += 2)
                     {
                         if (old[i] == world[i] && old[i + 1] == world[i + 1]) continue;

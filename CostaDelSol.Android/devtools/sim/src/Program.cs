@@ -1,4 +1,4 @@
-using CdsHelper.Game.Engine;
+﻿using CdsHelper.Game.Engine;
 using CdsHelper.Game.Engine.Menu;
 using CdsHelper.Game.Local.Helpers;
 using CdsHelper.Game.UI.Views;
@@ -13,7 +13,7 @@ using Sim;
 string root = args[0];
 AppContext.SetData("APP_CONTEXT_BASE_DIRECTORY", root + "/");
 TableCache.FolderOverride = root + "/exe-tables";
-GameSave.FolderOverride = root + "/save";
+CdsHelper.Support.Local.Helpers.UserDataFolder.Roaming = root + "/save";
 Directory.CreateDirectory(root + "/save");
 foreach (var f in Directory.GetFiles(root + "/save")) File.Delete(f);
 foreach (var a in args.Skip(1)) Script.Answers.Enqueue(a);
