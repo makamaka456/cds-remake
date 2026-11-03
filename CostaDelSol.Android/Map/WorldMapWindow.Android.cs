@@ -52,6 +52,15 @@ public sealed partial class WorldMapWindow
     /// <summary>놀이가 시작됐다(타이틀을 지났다).</summary>
     public bool Started => _started;
 
+    /// <summary>
+    /// 모드 「항해 일수」 동그라미에 적을 날수(PC 판 SyncDaysBadge) — 모드를 켰고, 지도가 앞이고, <b>바다</b>(뭍 · 도시 아님)이고
+    /// 배가 있을 때만 출항한 지 며칠(<see cref="Player.DaysAtSea"/>). 아니면 -1. 덧그림 판이 그린다.
+    /// </summary>
+    public int SeaDaysShown =>
+        GameSettings.ShowSeaDays && _started && OnMap && !_host.IsOnLand && !_host.InCity
+        && _game.Player.Ships.Count > 0 && !OverlayNotes.Held
+            ? _game.Player.DaysAtSea : -1;
+
     /// <summary>지금 비 · 눈(그림은 덧그림 판이 그린다).</summary>
     public SeaWeather.Kind Weather { get; private set; } = SeaWeather.Kind.None;
 
@@ -72,7 +81,24 @@ public sealed partial class WorldMapWindow
         // 지도에 남의 배를 낸다 — 누가 어디 있는지는 인물 세상이 안다.
         _host.FolkAt = FolkAfloat;
         // 자동항해가 도착하거나 막혀서 스스로 멎으면 아래 띠로 알린다.
-        _host.AutoSailEnded += Say;
+        // 자동항해가 스스로 멎으면 알린다 — 내륙 도시면 「해안에 닿았습니다. 상륙해서 걸어가십시오」(PC 판 AutoSailEnded).
+        _host.AutoSailEnded += AutoSailEnded;
+
+        // ── PC 판 생성자가 꽂는 연결(진검수에서 빠진 것을 찾아 옮겼다) ──
+        // 인물 세상을 새로 지을 때마다(불러오기 포함) 누적 캐릭터를 다시 앉힌다.
+        _game.WorldBuilt = AttachCumulative;
+        // 적기 바로 앞에 지도가 들고 있는 것(하루 눈금 · 뱃머리 · 쥔 바람 · 뭍 자리 · 대 둔 배)을 주인공 쪽에 옮긴다.
+        _game.BeforeSave = CaptureMap;
+        // 하드코어 판은 설정이 바뀔 때마다 켠 모드를 적어 둔다 — 한 번이라도 켰으면 기록에 남는다.
+        HardcoreRules.Current = () => _game.Player;
+        GameSettings.Changed += () => HardcoreRules.Note(_game.Player);
+        // 바다 인물 함대의 바닷길(모드 「향상된 NPC 이동」) — 지도 배열을 가진 지도 엔진이 길을 찾아 준다.
+        PersonWorld.SeaRouter = _host.SeaRouteBetween;
+        // 육상전 · 일기토가 열려도 비 · 눈이 그친다(0x0044AA31 · 0x004AA87F) — 이 창 밖에서 열리므로 판 쪽이 알린다.
+        Action endWeather = EndWeather;
+        LandBattleScene.Opening += endWeather;
+        DuelDialog.Opening += endWeather;
+
         Current = this;
     }
 
@@ -127,12 +153,16 @@ public sealed partial class WorldMapWindow
     {
         // 한 틱의 차례는 원본 고리 그대로다(0x0048EF18~0x0048EF7D) —
         // 조우 → 극지 → 발견 → 도시 발견·입항 물음 → 이동·날 눈금. 조우가 걸린 틱은 나머지를 통째로 건너뛴다.
+        // 배가 없으면 바다에 그릴 배가 없다. 뭍에서는 말이라 배가 없어도 그린다 — 안 그리면 보이지 않는 채로 돌아다닌다.
+        _host.ShowShip = _game.Player.Ships.Count > 0 || _host.IsOnLand;
         _folkEntered = MeetFolk();
         if (_folkEntered) return;
         if (!CheckPolar()) return;
         CheckDiscovery();
         SpotCities();
         CheckPort();
+        // 걸어서 대 둔 배 곁에 닿으면 한 번 승선을 묻는다(리메이크가 더한 물음).
+        CheckBoard();
         PassTime();
         MarkSeen();
         // 커서 쪽 길찾기 보정은 항해사(자리 1)와 나침반이 있을 때만 든다(0x0048ECEF).
@@ -232,9 +262,41 @@ public sealed partial class WorldMapWindow
         StartMap(fresh: false, path);
     }
 
+    /// <summary>
+    /// 더해 넣은 발견물의 출처 — 설명 · 힌트 · 대사는 위키백과 문서(CC BY-SA 4.0)를 바탕으로 썼고, 그림은
+    /// 위키미디어 공용의 퍼블릭 도메인 그림을 발견물 그림처럼 바꾼 것이다(<c>asset/dstill/README.md</c>).
+    /// </summary>
+    private const string ExtraCredits =
+        "원본에 없던 발견물의 글과 그림은 아래에서 가져왔습니다.\n" +
+        "\n" +
+        "■ 돌묵상어\n" +
+        "  글: 위키백과 「돌묵상어」\n" +
+        "      ko.wikipedia.org/wiki/돌묵상어 (CC BY-SA 4.0)\n" +
+        "  그림: Greg Skomal / NOAA Fisheries Service\n" +
+        "      위키미디어 공용, 퍼블릭 도메인\n" +
+        "\n" +
+        "■ 여우원숭이\n" +
+        "  글: 위키백과 「호랑꼬리여우원숭이」\n" +
+        "      ko.wikipedia.org/wiki/호랑꼬리여우원숭이 (CC BY-SA 4.0)\n" +
+        "  그림: Charles d'Orbigny, Dictionnaire universel\n" +
+        "      d'histoire naturelle (1849) 도판\n" +
+        "      위키미디어 공용, 퍼블릭 도메인";
+
+    /// <summary>차림표 「출처」 — 더해 넣은 발견물의 글 · 그림 출처(PC 판 햄버거 「출처」와 같은 창).</summary>
+    public void ShowCredits() => NoticeDialog.Notes(this, ExtraCredits, "출처");
+
+    /// <summary>하드코어에서 단축키 · 커맨드로 저장하려 할 때(PC 판 문구 그대로).</summary>
+    public const string HardcoreNoQuickSave = "하드코어 모드에서는 단축키로 저장할 수 없습니다. 여관에서 저장해 주세요.";
+
     internal void SaveByKey(Window owner)
     {
         if (!OnMap) return;
+        // 하드코어는 원본처럼 시설에서만 적는다 — 단축키(V) · 커맨드 저장은 죽기 직전에 적어 두고 되돌리는 길이 된다.
+        if (_game.Player.Hardcore)
+        {
+            NoticeDialog.Show(owner, HardcoreNoQuickSave);
+            return;
+        }
         _game.Player.SetSeaCell(_host.SeaSpot);
         GameSystemMenu.Save(owner, _game);
     }
@@ -441,7 +503,13 @@ public sealed partial class WorldMapWindow
         Point? ship = null;
         if (_host.ShipOnSurface is { } p && w > 0 && h > 0)
             ship = new Point(p.X * 640.0 / w, p.Y * (480 - 58.0) / h);
-        EventAnimationPopup.Play(this, _game, scene, MapAreaOnScreen(), 1, ship);
+        // 폭풍 · 눈보라 장면 동안은 구름을 걷는다 — 대본이 트는 폭풍도 같다. 끝나면 앞의 상태로 되돌린다(PC 판 그대로).
+        bool stormy = scene is EventAnimation.Storm or EventAnimation.Blizzard;
+        bool hidden = _host.CloudsHidden;
+        if (stormy) _host.CloudsHidden = true;
+        // 뱃머리(16방위)를 넘긴다 — 고래 · 돌고래 · 유령선 같은 바다 짐승이 배 앞뒤 어디에 나올지 이것으로 정한다.
+        try { EventAnimationPopup.Play(this, _game, scene, MapAreaOnScreen(), 1, ship, _host.Heading); }
+        finally { if (stormy) _host.CloudsHidden = hidden; }
     }
 
     internal void ShowSeaChart(Window owner, Window? menu) =>
@@ -618,6 +686,14 @@ public sealed partial class WorldMapWindow
         ("묘책 확률 표", w => RuseEditDialog.Show(w)),
         ("메뉴 디자이너", w => new MenuDesignerDialog { Owner = w }.ShowDialog()),
         ("모션 메이커(일기토 그림)", w => new MotionMakerDialog { Owner = w }.ShowDialog()),
+        // v1.1.x 도구 앱에 새로 생긴 편집 창(PC 판 CdsHelperWindow 햄버거 차림표와 같은 것)
+        ("퀘스트 편집기", w => DisevEditorDialog.Show(w, "PEX")),
+        ("술집 소문 편집", w => TavernRumorEditDialog.Show(w)),
+        ("패시브 편집", w => PassiveEditDialog.Show(w)),
+        ("스폰서 목록", w => SponsorListDialog.Show(w)),
+        ("괴물 관리", w => MonsterMotionDialog.Show(w)),
+        ("초상화 필터", w => PortraitFilterDialog.Show(w)),
+        ("도시 그림 조각", w => CitySpriteDialog.Show(w)),
         // 도구 앱 본체 화면(XAML 틀을 코드로 옮긴 것)
         .. CostaDelSol.Droid.Tools.ToolPages.Pages,
     ];
@@ -630,6 +706,7 @@ public sealed partial class WorldMapWindow
         ShowDiscoveryMap();
     }
 
+    // PC 판 ShowDiscoveryMap 그대로(도시 동그라미 · 건물 속 발견물 · 뭍 자동이동 · 대본만 마친 사건 · 순간이동 모드).
     private void ShowDiscoveryMap()
     {
         var all = new ExploredMap();
@@ -639,9 +716,47 @@ public sealed partial class WorldMapWindow
         if (chart == null) { NoticeDialog.Show(this, "지도를 아직 못 읽었습니다"); return; }
 
         var at = _host.ShipCell is { } cell ? ((double, double)?)(cell.CellX, cell.CellY) : null;
-        DiscoveryMapDialog.Show(this, chart, w, h, _game.Discoveries?.Table, _game.Player, at,
-                                WindTable.Open(_game.Directory), WarpTo, AutoSail);
+        // 도시 — 지금 아는 도시만(자동항해 고르기와 같다). 도서관이 있으면 동그라미에 「도」.
+        // 도서관은 원본 건물표로 가린다(cities.json 은 손으로 적어 항주 · 베니스가 빠져 있었다).
+        var cities = Enumerable.Range(0, GameMapCoords.CityCount)
+            .Where(id => _game.CityVisible(id))
+            .Select(id => GameMapCoords.TryCityCell(id, out double cx, out double cy)
+                ? ((string, double, double, bool)?)(_game.CityName(id), cx, cy,
+                                                    _game.Buildings is { } bt
+                                                        ? bt.Find(id, "도서관") != null
+                                                        : _game.CityTable.Find(id)?.HasLibrary == true)
+                : null)
+            .OfType<(string Name, double X, double Y, bool Library)>()
+            .ToList();
+
+        // 건물 속에서 찾는 발견물(진흙 모스크 따위)은 바다 · 뭍 자리가 없다 — 그 도시 자리로 찍는다.
+        var inTown = new Dictionary<int, (double X, double Y)>();
+        foreach (var b in _game.Buildings?.Buildings ?? [])
+            if (b.IsDiscovery && !inTown.ContainsKey(b.Discovery)
+                && GameMapCoords.TryCityCell(b.City, out double bx, out double by))
+                inTown[b.Discovery] = (bx, by);
+
+        // 모드 「뭍 자동이동」 — 뭍에 있을 때 발견물 점을 오른쪽 단추로 누르면 그 자리까지 걸어간다.
+        Func<double, double, (bool, string)>? walk = GameSettings.LandAutoWalk && _host.IsOnLand
+            ? (x, y) => _host.StartAutoWalk(x, y)
+            : null;
+        // 도시 화면이 떠 있으면 그 창을 주인으로 삼는다 — 세계지도가 주인이면 도시 화면과 형제가 되어, 다른 창에
+        // 갔다 오면 Windows 가 형제 차례를 되살리며 도시 화면 · 그 쪽지들이 발견물 지도 위로 올라왔다.
+        Window owner = this;   // 안드로이드는 창 겹 차례가 판 하나라 도시 화면을 주인으로 삼지 않아도 위에 뜬다
+        DiscoveryMapDialog.Show(owner, chart, w, h, _game.Discoveries?.Table, _game.Player, at,
+                                WindTable.Open(_game.Directory), GameSettings.DiscoveryMapWarp ? WarpTo : null,
+                                AutoSail, cities, inTown, walk,
+                                EventsDoneDiscoveries());
     }
+
+    /// <summary>
+    /// 대본이 발견을 안 적는 사건(코페르니쿠스의 망원경 · 돌고래 따위) 가운데 사건을 마친 것 — 발견물 지도와
+    /// 미니맵이 찾은 것으로 찍는다.
+    /// </summary>
+    private HashSet<int> EventsDoneDiscoveries() => _game.Player.Settled
+        .Where(id => !_game.Player.HasFound(id) && !Engine.Disev.DisevRunner.RecordsDiscovery(_game, id))
+        .ToHashSet();
+
 
     // ── 위 띠 칸 · 도시정보 창(PC 판 InfoCell · ShowCityInfoMenu) ──────────
 

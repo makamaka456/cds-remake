@@ -93,6 +93,12 @@
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GameFont.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GameFont.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GamePalette.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GamePalette.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\FrameArt.cs" Link="Shared\CdsHelper.Game\UI\Views\FrameArt.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CitySpriteDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CitySpriteDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\MonsterMotionDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MonsterMotionDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PassiveEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PassiveEditDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\PortraitFilterDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PortraitFilterDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\SponsorListDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\SponsorListDialog.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\TavernRumorEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\TavernRumorEditDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\BookPickerDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\BookPickerDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\CityPickerDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CityPickerDialog.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\CrashReport.cs" Link="Shared\CdsHelper.Game\Local\Helpers\CrashReport.cs" />

@@ -761,7 +761,22 @@ namespace System.Windows
 
     public sealed class WindowCollection : List<Window> { }
 
-    public class Style { }
+    /// <summary>모양 묶음(Style) — 값 몇 개를 들고만 있다. 표 칸 글 줄바꿈 따위는 WpfLite 표가 알아서 한다.</summary>
+    public class Style
+    {
+        public Style() { }
+        public Style(Type targetType) { TargetType = targetType; }
+        public Type? TargetType { get; set; }
+        public List<Setter> Setters { get; } = [];
+    }
+
+    public sealed class Setter
+    {
+        public Setter() { }
+        public Setter(DependencyProperty property, object? value) { Property = property; Value = value; }
+        public DependencyProperty? Property { get; set; }
+        public object? Value { get; set; }
+    }
     public class ResourceDictionary : Dictionary<object, object> { }
 
     public class DataTemplate

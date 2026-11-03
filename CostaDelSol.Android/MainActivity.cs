@@ -214,7 +214,9 @@ public sealed class MainActivity : Activity
         if (AskAccessOnce(ChooseHero)) return;
         if (_introDone) { ShowTitle(); return; }
         _introDone = true;
-        PlayIntro(["LOGO", "OPEN"], ShowTitle);
+        // 모드 「오프닝 동영상」을 끄면 둘 다 건너뛰고 곧장 메인메뉴다(PC 판과 같다).
+        if (GameSettings.PlayOpeningMovie) PlayIntro(["LOGO", "OPEN"], ShowTitle);
+        else ShowTitle();
     }
 
     private bool _introDone;
@@ -776,6 +778,7 @@ public sealed class MainActivity : Activity
         rows.Add(("모드", () => GameThread.Post(_map.ShowModDialog), false));
         rows.Add(("개발", () => GameThread.Post(_map.ShowDevDialog), !_map.Started));
         rows.Add(("도구", ShowToolMenu, false));
+        rows.Add(("출처", () => GameThread.Post(_map.ShowCredits), false));   // 더해 넣은 발견물 글 · 그림의 출처(CC BY-SA)
         rows.Add(("돌아간다", Resume, false));
         _panel.Show("차림표", [.. rows.Select(r => r.Text)], at =>
         {

@@ -1,4 +1,4 @@
-using CdsHelper.Game.Local.Helpers;
+﻿using CdsHelper.Game.Local.Helpers;
 
 using Android.App;
 using Android.Widget;
@@ -98,7 +98,31 @@ public sealed class MapOverlay : View
         float board = Height / (480f - 58f);   // 지도는 판 높이 422 다(두 띠 사이)
         _map.MapBoardWidth = Width / Math.Max(0.01f, board);
         System.Windows.WpfHost.DrawMapLayers(canvas, board, 29);
+        DrawSeaDays(canvas, board);
         PostInvalidateOnAnimation();
+    }
+
+    private readonly Paint _daysFill = new() { AntiAlias = true, Color = Color.Argb(0xC0, 0x10, 0x18, 0x28) };
+    private readonly Paint _daysEdge = new() { AntiAlias = true, Color = Color.Argb(0xE0, 0xD4, 0xC8, 0xB0) };
+    private readonly Paint _daysText = new() { AntiAlias = true, Color = Color.White, TextAlign = Paint.Align.Center, FakeBoldText = true };
+
+    /// <summary>
+    /// 모드 「항해 일수」 — 지도 왼쪽 위(10 들여)에 지름 40 동그라미, 안에 출항한 지 며칠(PC 판 SeaDaysBadge 와 같은 크기 · 색 ·
+    /// 글자 크기 15.5, 세 자리면 12.5). <paramref name="board"/> 는 판 점 하나의 화소 수.
+    /// </summary>
+    private void DrawSeaDays(Canvas canvas, float board)
+    {
+        int days = _map.SeaDaysShown;
+        if (days < 0) return;
+        const float Inset = 10, Size = 40;
+        float r = Size / 2 * board, cx = (Inset + Size / 2) * board, cy = (Inset + Size / 2) * board;
+        canvas.DrawCircle(cx, cy, r, _daysFill);
+        _daysEdge.SetStyle(Paint.Style.Stroke);
+        _daysEdge.StrokeWidth = 2 * board;
+        canvas.DrawCircle(cx, cy, r - board, _daysEdge);
+        _daysText.TextSize = (days >= 100 ? 12.5f : 15.5f) * board;   // 동그라미와 같은 단위(WPF 단위 = 판 점)
+        _daysText.SetShadowLayer(2 * board, 1.2f * board, 1.2f * board, Color.Black);
+        canvas.DrawText(days.ToString(), cx, cy + _daysText.TextSize / 3, _daysText);
     }
 
     private readonly Paint _arrow = new() { AntiAlias = true, StrokeCap = Paint.Cap.Round };
