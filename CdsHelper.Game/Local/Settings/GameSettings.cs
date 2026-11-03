@@ -114,7 +114,12 @@ public sealed class GameSettingsData
     public bool DiscoveryMapHideYet { get; set; }
 
     /// <summary>바다 입체 효과(물결 굴곡·햇빛·깊이·해안 물보라). 켜 두고 시작한다.</summary>
+#if ANDROID
+    /// <remarks>안드로이드판은 고해상도 탭을 모두 꺼 두고 시작한다(사용자 요청).</remarks>
+    public bool SeaEffect { get; set; }
+#else
     public bool SeaEffect { get; set; } = true;
+#endif
 
     /// <summary>조우하면 저절로 「도망」을 고를지. 꺼 두고 시작한다.</summary>
     public bool AutoFlee { get; set; }
@@ -147,10 +152,20 @@ public sealed class GameSettingsData
     public double SeaFlowAmount { get; set; } = 0.1;
 
     /// <summary>구름을 부드럽게(바둑판 반투명을 참 반투명으로 풀어 매끈하게 늘려) 그릴지. 켜 두고 시작한다.</summary>
+#if ANDROID
+    /// <remarks>안드로이드판은 고해상도 탭을 모두 꺼 두고 시작한다(사용자 요청).</remarks>
+    public bool SmoothClouds { get; set; }
+#else
     public bool SmoothClouds { get; set; } = true;
+#endif
 
     /// <summary>고해상도 바다(물 점을 화면 해상도로 새로 그리고 해안선을 곡선으로). 켜 두고 시작한다.</summary>
+#if ANDROID
+    /// <remarks>안드로이드판은 고해상도 탭을 모두 꺼 두고 시작한다(사용자 요청).</remarks>
+    public bool HiResSea { get; set; }
+#else
     public bool HiResSea { get; set; } = true;
+#endif
 
     /// <summary>도트 확대 필터(대각선 계단을 사선으로). 꺼 두고 시작한다.</summary>
     public bool PixelFilter { get; set; }
