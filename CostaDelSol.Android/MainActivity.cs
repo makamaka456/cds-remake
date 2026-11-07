@@ -164,6 +164,9 @@ public sealed class MainActivity : Activity
         _pad.MapClick += (x, y, left) => { _cursor.MoveTo(x, y); Click(x, y, left); };
         _pad.Pinch += Zoom;
         _pad.EditDone += () => ShowPadMenu();
+        // 메뉴 · 차림표가 떠 있는 동안은 결정 · 취소 단추만 남긴다.
+        _pad.KeepInMenu = c => FunctionOf(c) is "결정" or "취소";
+        _panel.Changed += SyncMenuPad;
         _root.AddView(_pad, Match());
 
         _cursor = new CursorView(this);
@@ -741,6 +744,23 @@ public sealed class MainActivity : Activity
         _map.Host.Paused = true;
     }
 
+    /// <summary>차림표 줄이 띄운 창 수 — 떠 있는 동안 가상 패드는 결정 · 취소만 남긴다.</summary>
+    private int _menuWindows;
+
+    private void SyncMenuPad() => _pad.MenuOpen = _menuWindows > 0 || (_panel.IsOpen && _panel.Tag0 == "menu");
+
+    /// <summary>차림표 줄의 창을 게임 줄에서 띄운다 — 배 · 말을 세우고(PC MenuItem), 떠 있는 동안 패드를 줄인다.</summary>
+    private void RunMenuWindow(Action show)
+    {
+        _menuWindows++;
+        SyncMenuPad();
+        GameThread.Post(() =>
+        {
+            try { _map.MenuItem(show)(); }
+            finally { RunOnUiThread(() => { _menuWindows--; SyncMenuPad(); }); }
+        });
+    }
+
     private void ShowMainMenu()
     {
         Hold();
@@ -754,7 +774,7 @@ public sealed class MainActivity : Activity
                 case 1: StartActivity(new Intent(this, typeof(PadSettingsActivity))); Resume(); break;
                 case 2: ShowPadMenu(); break;
                 case 3: ToggleKeyboard(); Resume(); break;
-                case 4: _panel.ShowText("대항해시대3 단축키", ShortcutText(), ShowMainMenu); break;
+                case 4: _panel.ShowText("대항해시대3 단축키", ShortcutText(), ShowMainMenu, tag: "menu"); break;
                 case 5: ShowSaveFolderMenu(); break;
                 default: Resume(); break;
             }
@@ -769,18 +789,18 @@ public sealed class MainActivity : Activity
         // PC 판 햄버거와 같은 줄 — 원본에 없는 줄(여급 수첩 · 인물 이동 · 발견물 지도)은 모드 창에서 켜야 뜬다.
         var rows = new List<(string Text, Action Run, bool Dim)>
         {
-            ("설정", () => GameThread.Post(_map.MenuItem(_map.ShowSettingsDialog)), false),
+            ("설정", () => RunMenuWindow(_map.ShowSettingsDialog), false),
             ("화면 · 소리", ShowSettings, false),
         };
-        if (GameSettings.ShowBarmaidBookMenu) rows.Add(("여급 수첩", () => GameThread.Post(_map.MenuItem(_map.ShowBarmaidBook)), !_map.Started));
-        if (GameSettings.ShowPersonMoveMenu) rows.Add(("인물 이동", () => GameThread.Post(_map.MenuItem(_map.ShowPersonMove)), !_map.Started));
+        if (GameSettings.ShowBarmaidBookMenu) rows.Add(("여급 수첩", () => RunMenuWindow(_map.ShowBarmaidBook), !_map.Started));
+        if (GameSettings.ShowPersonMoveMenu) rows.Add(("인물 이동", () => RunMenuWindow(_map.ShowPersonMove), !_map.Started));
         rows.Add(("발견물 지도", () => GameThread.Post(() => _map.Key(GameKey.D)), !_map.OnMap));
-        rows.Add(("모드", () => GameThread.Post(_map.MenuItem(_map.ShowModDialog)), false));
-        rows.Add(("개발", () => GameThread.Post(_map.MenuItem(_map.ShowDevDialog)), !_map.Started));
+        rows.Add(("모드", () => RunMenuWindow(_map.ShowModDialog), false));
+        rows.Add(("개발", () => RunMenuWindow(_map.ShowDevDialog), !_map.Started));
         rows.Add(("도구", ShowToolMenu, false));
         // 역대 판 노트(원본 리메이크의 릴리즈노트.md) — 판 목록 · 낱말 찾기.
-        rows.Add(("릴리즈 노트", () => GameThread.Post(_map.MenuItem(_map.ShowReleaseNotes)), false));
-        rows.Add(("출처", () => GameThread.Post(_map.MenuItem(_map.ShowCredits)), false));   // 더해 넣은 발견물 글 · 그림의 출처(CC BY-SA)
+        rows.Add(("릴리즈 노트", () => RunMenuWindow(_map.ShowReleaseNotes), false));
+        rows.Add(("출처", () => RunMenuWindow(_map.ShowCredits), false));   // 더해 넣은 발견물 글 · 그림의 출처(CC BY-SA)
         rows.Add(("돌아간다", Resume, false));
         _panel.Show("차림표", [.. rows.Select(r => r.Text)], at =>
         {
@@ -799,7 +819,7 @@ public sealed class MainActivity : Activity
         {
             if (at < 0 || at >= tools.Length) { ShowAppMenu(); return; }
             Resume();
-            GameThread.Post(_map.MenuItem(() => _map.OpenTool(at)));
+            RunMenuWindow(() => _map.OpenTool(at));
         }, cancelIndex: rows.Length - 1, tag: "menu");
     }
 

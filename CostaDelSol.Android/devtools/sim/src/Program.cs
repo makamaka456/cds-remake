@@ -434,6 +434,15 @@ if (Environment.GetEnvironmentVariable("MODE") == "gallery")
     Try("릴리즈노트", map.ShowReleaseNotes);
     return;
 }
+if (Environment.GetEnvironmentVariable("MODE") == "savedel")
+{
+    // 세이브 목록 「삭제」: 둘 적고 → 목록에서 맨 위를 골라 삭제 → 다시 뜬 목록은 닫는다.
+    map.Game.Save(); Thread.Sleep(1100); map.Game.Save(suspended: true);
+    Log.W($"앞: 목록 {CdsHelper.Game.Engine.GameSave.ManualSaves().Count}칸");
+    var picked = map.PickManualSave(map);
+    Log.W($"뒤: 목록 {CdsHelper.Game.Engine.GameSave.ManualSaves().Count}칸 · 고른 것 {picked ?? "없음"}");
+    return;
+}
 if (Environment.GetEnvironmentVariable("MODE") == "sea")
 {
     Log.W("--- 모의해전");

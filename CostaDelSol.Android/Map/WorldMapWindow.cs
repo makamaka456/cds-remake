@@ -1623,7 +1623,7 @@ public sealed partial class WorldMapWindow : Window
     /// </summary>
     /// <returns>고른 칸의 파일 자리. 그만두었으면 null.</returns>
     internal string? PickManualSave(Window owner) =>
-        PickSave(owner, GameSave.ManualSaves(), "게임 로드", "저장한 데이터가 없습니다");
+        PickSave(owner, GameSave.ManualSaves, "게임 로드", "저장한 데이터가 없습니다");
 
     /// <summary>
     /// 자동저장 칸을 새것부터 늘어놓고 하나를 고르게 한다 — 첫 화면의 <b>CONTINUE</b> 다.
@@ -1634,12 +1634,13 @@ public sealed partial class WorldMapWindow : Window
     /// </remarks>
     /// <returns>고른 칸의 파일 자리. 그만두었으면 null.</returns>
     private string? PickAutoSave() =>
-        PickSave(this, GameSave.AutoSaves(), "자동저장 불러오기", "자동저장한 데이터가 없습니다");
+        PickSave(this, GameSave.AutoSaves, "자동저장 불러오기", "자동저장한 데이터가 없습니다");
 
     /// <summary>세이브 칸 목록 — 줄마다 캐릭터 이름 · 도시 · 게임 날짜 · 저장한 시각 · 찾은 발견물 수.</summary>
     /// <remarks>게임 날짜는 그 세이브의 게임 안 연월일이다 — 어느 칸이 몇 년 몇 월인지 알아야 고를 수 있다(요청).</remarks>
-    private static string? PickSave(Window owner, List<GameSave.AutoSlot> slots, string caption, string whenEmpty)
+    private static string? PickSave(Window owner, Func<List<GameSave.AutoSlot>> source, string caption, string whenEmpty)
     {
+        var slots = source();
         static string Row(string name, string city, string day, string at, string found) =>
             GameUi.Pad(name, 28) + GameUi.Pad(city, 12) + GameUi.Pad(day, 18) + GameUi.Pad(at, 18) + Lang.T(found);
         // 달 · 날이 한 자리면 앞을 한 칸 띄워 줄끼리 「월 · 일」 자리를 맞춘다(요청) — 「1506년  1월  9일」.
@@ -1697,7 +1698,14 @@ public sealed partial class WorldMapWindow : Window
                                      // 「바르톨로메우 · 벨라스케스」처럼 긴 이름에 도시·게임 날짜·시각·발견물까지 한 줄에 들게 넓힌다.
                                      listWidth: 740,
                                      // 맨 위(가장 새것)를 골라 둔다 — 결정만 누르면 곧바로 불러온다.
-                                     preselect: 0);
+                                     preselect: 0,
+                                     // 안드로이드: 오른쪽 끝 「삭제」 — 세이브가 쌓여 목록이 길어진다(사용자 요청). 묻고 지운 뒤 목록을 다시 띄운다.
+                                     sideText: "삭제");
+        if (ListPickDialog.SideRow(at) is var gone and >= 0 && gone < slots.Count)
+        {
+            DeleteSaveSlot(owner, slots[gone], rows[gone]);
+            return PickSave(owner, source, caption, whenEmpty);
+        }
         if (slots.Count > 0 && (at < 0 || at >= slots.Count)) GameSave.LastLoadOutcome = $"{caption}: 고르지 않고 닫음({slots.Count}칸)";
         return at >= 0 && at < slots.Count ? slots[at].File : null;
     }

@@ -183,8 +183,28 @@ public sealed class OnScreenPad : FrameLayout
     }
     private bool _keyboardOpen;
 
-    /// <summary>지금 그리고 받는 단추인지 — 키보드가 떠 있으면 메뉴 단추만.</summary>
-    private bool Live(PadControl control) => _editing || !_keyboardOpen || control == PadControl.Menu;
+    /// <summary>
+    /// 메뉴 · 차림표(와 그 줄이 띄운 창)가 떠 있다 — 그동안은 결정 · 취소 단추만 남긴다(사용자 요청). 나오면 다시 다 보인다.
+    /// </summary>
+    public bool MenuOpen
+    {
+        get => _menuOpen;
+        set
+        {
+            if (_menuOpen == value) return;
+            _menuOpen = value;
+            if (value) ReleaseAll();
+            Invalidate();
+        }
+    }
+    private bool _menuOpen;
+
+    /// <summary>메뉴가 떠 있는 동안에도 남길 단추인지(결정 · 취소) — 단추가 지금 하는 일로 가린다.</summary>
+    public Func<PadControl, bool>? KeepInMenu { get; set; }
+
+    /// <summary>지금 그리고 받는 단추인지 — 키보드가 떠 있으면 메뉴 단추만, 메뉴가 떠 있으면 결정 · 취소만.</summary>
+    private bool Live(PadControl control) =>
+        _editing || (_keyboardOpen ? control == PadControl.Menu : !_menuOpen || KeepInMenu?.Invoke(control) == true);
 
     public bool PadVisible => _editing || Mode switch
     {

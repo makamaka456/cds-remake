@@ -285,6 +285,33 @@ public sealed partial class WorldMapWindow
     /// <summary>차림표 「출처」 — 더해 넣은 발견물의 글 · 그림 출처(PC 판 햄버거 「출처」와 같은 창).</summary>
     public void ShowCredits() => NoticeDialog.Notes(this, ExtraCredits, "출처");
 
+    /// <summary>
+    /// 세이브 목록 「삭제」 — 정말 지울지 묻고 그 칸의 파일을 지운다(안드로이드에만 있는 것, 사용자 요청).
+    /// 손으로 적은 가장 새 칸은 세이브 파일(<see cref="GameSave.Path"/>)과 같은 판이라 둘 다 지운다 — 안 그러면 지운 줄이 다시 나온다.
+    /// </summary>
+    private static void DeleteSaveSlot(Window owner, GameSave.AutoSlot slot, string row)
+    {
+        string who = row.Split("  ", StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? "";
+        string city = string.IsNullOrEmpty(slot.Save.CityName) ? "바다" : slot.Save.CityName;
+        string day = slot.Save.Date == default ? "" : $" {slot.Save.Date.Year}년 {slot.Save.Date.Month}월 {slot.Save.Date.Day}일";
+        if (!ConfirmDialog.Ask(owner, $"{who} · {city}{day}\n이 세이브를 정말 삭제하시겠습니까?\n삭제하면 되돌릴 수 없습니다.", "세이브 삭제"))
+            return;
+        var files = new List<string> { slot.File };
+        if (!string.Equals(slot.File, GameSave.Path, StringComparison.OrdinalIgnoreCase)
+            && !GameSave.IsSuspendFile(slot.File)
+            && GameSave.Load(GameSave.Path) is { } latest && latest.SavedAt == slot.Save.SavedAt)
+            files.Add(GameSave.Path);
+        try
+        {
+            foreach (var f in files)
+                if (File.Exists(f)) File.Delete(f);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            NoticeDialog.Show(owner, $"삭제하지 못했습니다.\n{ex.Message}");
+        }
+    }
+
     /// <summary>릴리즈 노트 — 역대 판 목록 · 판별 보기 · 낱말 찾기(PC 판 ShowReleaseNotes 와 같다). 노트는 APK 의 release-notes.md.</summary>
     public void ShowReleaseNotes() => ReleaseNotesDialog.Show(this);
 

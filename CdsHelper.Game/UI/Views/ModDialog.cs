@@ -65,7 +65,16 @@ public sealed class ModDialog : GameWindow
     }
 
     /// <summary>줄 목록과 설명 칸의 너비.</summary>
+#if ANDROID
+    // 안드로이드 화면 판은 640x480 — 창이 그보다 크면 통째로 줄어 글자가 작아진다. 설명 칸을 좁혀 창이 판에 들게 한다.
+    private const double ListWidth = 290, TipWidth = 270;
+    /// <summary>안드로이드: 줄 목록 칸의 높이 — 넘치면 손가락으로 쓸어 굴린다.</summary>
+    private const double AndroidPageHeight = 300;
+    /// <summary>안드로이드에 쓸모없는 줄(마우스 · 키보드 · 휠) — 모드 창에서 뺀다(사용자 요청).</summary>
+    private static readonly string[] AndroidHidden = ["Ctrl+클릭 배 놓기", "마우스 따라 고르기", "휠 확대"];
+#else
     private const double ListWidth = 290, TipWidth = 480;
+#endif
     // 막대 줄 = 들여쓰기 18 + 이름 64 + 틈 18 + 막대 + 수치 48 — 목록 너비(250)를 넘으면 오른쪽 수치가 잘려 안 보인다
     private const double SliderWidth = 102;
 
@@ -781,10 +790,26 @@ public sealed class ModDialog : GameWindow
         lab.Visibility = Visibility.Hidden;
         general.Visibility = Visibility.Hidden;
 
+#if ANDROID
+        // 안드로이드: 빼는 줄을 걷고, 목록은 정한 높이 안에서 손가락으로 쓸어 굴린다 — 창이 화면 판(640x480)에 든다.
+        foreach (string gone in AndroidHidden)
+            if (_boxes.TryGetValue(gone, out var goneBox) && goneBox.Parent is Panel holder) holder.Children.Remove(goneBox);
+        _pageScroller = new ScrollViewer
+        {
+            Height = AndroidPageHeight,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = pages,
+        };
+        side.Height = AndroidPageHeight - 14;
+        var body = new StackPanel { Orientation = Orientation.Horizontal };
+        body.Children.Add(_pageScroller);
+        body.Children.Add(side);
+#else
         pages.SizeChanged += (_, e) => side.Height = Math.Max(0, e.NewSize.Height - 14);
         var body = new StackPanel { Orientation = Orientation.Horizontal };
         body.Children.Add(pages);
         body.Children.Add(side);
+#endif
 
         var stack = new StackPanel();
         stack.Children.Add(title);
@@ -809,7 +834,12 @@ public sealed class ModDialog : GameWindow
                                   FrameworkElement hires, FrameworkElement ui, FrameworkElement extra, FrameworkElement font, FrameworkElement character, FrameworkElement discovery, FrameworkElement save, FrameworkElement general,
                                   FrameworkElement lab)
     {
+#if ANDROID
+        // 안드로이드: 탭 머리가 한 줄이면 창이 화면 판보다 넓어진다 — 여러 줄로 접는다.
+        var bar = new WrapPanel { Width = ListWidth + TipWidth + 30, Margin = new Thickness(12, 8, 12, 0) };
+#else
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(12, 8, 12, 0) };
+#endif
         var heads = new List<(Border Head, FrameworkElement Page)>();
 
         void Select(FrameworkElement page)
@@ -817,10 +847,18 @@ public sealed class ModDialog : GameWindow
             foreach (var (head, p) in heads)
             {
                 bool on = ReferenceEquals(p, page);
+#if ANDROID
+                // 굴림 칸 안이라 안 보이는 판은 자리도 접는다 — 짧은 탭에서 빈 곳까지 굴러가지 않게. 탭을 바꾸면 맨 위로.
+                p.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+#else
                 p.Visibility = on ? Visibility.Visible : Visibility.Hidden;
+#endif
                 head.Background = on ? new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
                 ((TextBlock)head.Child).Opacity = on ? 1 : 0.6;
             }
+#if ANDROID
+            _pageScroller?.ScrollToTop();
+#endif
             _tipName.Text = "";
             _tipText.Text = Greeting;
             ShowTipImage(null);
@@ -1162,6 +1200,10 @@ public sealed class ModDialog : GameWindow
     }
 
     /// <summary>켜고 끄는 줄 하나.</summary>
+#if ANDROID
+    private ScrollViewer? _pageScroller;
+#endif
+
     private CheckBox Toggle(string label, bool on, Action<bool> set, string tip, IReadOnlyList<string>? images = null)
     {
         var box = new CheckBox
@@ -1170,7 +1212,11 @@ public sealed class ModDialog : GameWindow
             IsChecked = on,
             Foreground = GameUi.Text,
             FontWeight = FontWeights.Bold,
+#if ANDROID
+            FontSize = 17,   // 안드로이드: 손가락으로 누르기 쉽게 조금 크게
+#else
             FontSize = 15,
+#endif
             Margin = new Thickness(0, 8, 0, 2),
             VerticalContentAlignment = VerticalAlignment.Center,
         };

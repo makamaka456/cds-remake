@@ -98,7 +98,8 @@ public sealed class ListPickDialog : GameWindow
                            bool multi = false, IReadOnlyList<string>? rightTexts = null,
                            IReadOnlyList<bool>? usable = null, Func<int, ImageSource?>? preview = null,
                            double listWidth = ListWidth, double faceHeight = FaceHeight,
-                           double maxHeight = ListMaxHeight, Func<int, string>? describe = null)
+                           double maxHeight = ListMaxHeight, Func<int, string>? describe = null,
+                           string sideText = "")
     {
         _describe = describe;
         _faceH = faceHeight;
@@ -240,6 +241,27 @@ public sealed class ListPickDialog : GameWindow
         buttons.Children.Add(_decide);
         buttons.Children.Add(stop);
 
+        // 오른쪽 끝 단추(안드로이드 세이브 목록의 「삭제」) — 결정 · 중단과 떨어뜨려 잘못 누르지 않게 창 오른쪽 끝에 둔다.
+        // 고른 줄이 있어야 눌린다. 누르면 창을 닫고 Pick 이 SideCode(줄) 을 돌려준다.
+        FrameworkElement bottom = buttons;
+        if (sideText.Length > 0)
+        {
+            _side = new GameButton(sideText, () => { if (_sideReady) { _sideHit = true; Close(); } }, BandStyle.Button, ButtonWidth)
+            {
+                Height = UiSprites.BandHeight,
+                Margin = new Thickness(0, 5, 8, 5),
+                On = false,
+            };
+            var dock = new DockPanel();
+            var spacer = new Border { Width = ButtonWidth + 8 };
+            DockPanel.SetDock(_side, Dock.Right);
+            DockPanel.SetDock(spacer, Dock.Left);
+            dock.Children.Add(_side);
+            dock.Children.Add(spacer);
+            dock.Children.Add(buttons);
+            bottom = dock;
+        }
+
         var title = GameUi.TitleBar(caption, Cancel);
         GameUi.EnableDrag(this, title);
 
@@ -317,7 +339,7 @@ public sealed class ListPickDialog : GameWindow
                     Left -= (e.NewSize.Width - e.PreviousSize.Width) / 2;
             };
         }
-        stack.Children.Add(buttons);
+        stack.Children.Add(bottom);
 
         // 창은 <b>두 겹</b>이다 — 바깥 검은 줄 하나와 그 안의 배경 판이다.
         // <code>
@@ -531,7 +553,17 @@ public sealed class ListPickDialog : GameWindow
 
         _decide.On = true;
         _decideReady = true;
+        if (_side != null) _side.On = _sideReady = true;
     }
+
+    private GameButton? _side;
+    private bool _sideReady, _sideHit;
+
+    /// <summary><see cref="Pick"/> 이 오른쪽 끝 단추로 닫혔을 때 돌려주는 값 — 줄 번호를 <see cref="SideRow"/> 로 되찾는다.</summary>
+    public static int SideCode(int row) => -2 - row;
+
+    /// <summary><see cref="Pick"/> 이 돌려준 값이 오른쪽 끝 단추 것이면 그 줄 번호, 아니면 -1.</summary>
+    public static int SideRow(int code) => code <= -2 ? -2 - code : -1;
 
     /// <summary>줄 하나를 고른 모양 또는 쉬는 모양으로 칠한다.</summary>
     private void Paint(int i, bool on)
@@ -677,7 +709,8 @@ public sealed class ListPickDialog : GameWindow
                            int preselect = -1,
                            double faceHeight = FaceHeight,
                            double maxHeight = ListMaxHeight,
-                           Func<int, string>? describe = null)
+                           Func<int, string>? describe = null,
+                           string sideText = "")
     {
         if (items.Count == 0)
         {
@@ -688,12 +721,12 @@ public sealed class ListPickDialog : GameWindow
         var dlg = new ListPickDialog(items, choosing: true, caption, header, faces, subtitles, marks,
                                      rightTexts: rightTexts, usable: usable, preview: preview,
                                      listWidth: listWidth, faceHeight: faceHeight, maxHeight: maxHeight,
-                                     describe: describe) { Owner = owner };
+                                     describe: describe, sideText: sideText) { Owner = owner };
         if (preselect >= 0 && preselect < items.Count
             && (usable == null || preselect >= usable.Count || usable[preselect]))
             dlg.Select(preselect);
         dlg.ShowDialog();
-        return dlg._picked;
+        return dlg._sideHit && dlg._picked >= 0 ? SideCode(dlg._picked) : dlg._picked;
     }
 
     /// <summary>
