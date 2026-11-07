@@ -128,6 +128,14 @@ public sealed class Player
     public string GameId { get; set; } = Guid.NewGuid().ToString("N");
 
     /// <summary>
+    /// 이 판을 시작한 커스텀 팩 이름(<c>CustomPacks</c>) — 팩 없이 시작했으면 빈 글. 다른 팩으로 불러오면 묻는다. 원본에는 없다.
+    /// </summary>
+    public string Pack { get; set; } = "";
+
+    /// <summary>시작한 커스텀 팩의 지문(<c>CustomPacks.Fingerprint</c>) — 같은 이름이라도 알맹이가 바뀌었는지 가린다.</summary>
+    public string PackPrint { get; set; } = "";
+
+    /// <summary>
     /// 하드코어 판인지 — 게임 오버가 되면 이 판의 세이브를 모두 지운다(<c>GameSave.DeleteRun</c>). 원본에는 없다.
     /// NEW GAME 에서 모드 「하드코어 모드」를 켰을 때만 고를 수 있다.
     /// </summary>
@@ -2660,7 +2668,9 @@ public sealed class Player
         _met.Clear();
         if (met != null) foreach (var name in met) _met.Add(name);
         _items.Clear();
-        if (items != null) foreach (int id in items) Take(id);
+        // 칸 한도로 거르지 않는다 — 작위 혜택(자작부터 소지품 칸 +)은 작위를 되돌린 뒤에야 서므로, Take 로 넣으면
+        // 열여섯 칸 뒤가 불러올 때마다 버려졌다(버그 리포트 #9). 세이브에 적힌 것이 곧 지닌 것이다.
+        if (items != null) foreach (int id in items) if (id >= 0) _items.Add(id);
         _found.Clear();
         if (discoveries != null) foreach (int id in discoveries) if (!RemovedDiscoveries.Contains(id)) _found.Add(id);
         _announced.Clear();
@@ -3046,16 +3056,28 @@ public sealed class Player
     /// 준다(<c>0x004759ED</c>). <see cref="NeverSpoils"/>(210)는 「안 썩음」 표시라 안 준다 — 수명이 7달이
     /// 아닌 어육·쇠고기·포도주·말·노예만 썩는다. 0 이 되어도 짐은 그대로 남고 <b>팔 값만 0</b> 이다.
     /// 옛 세이브의 짐은 기한이 없어 안 썩는 것으로 연다.
+    ///
+    /// <b>산 값</b>(<see cref="Cost"/>)은 원본에 없다 — 교역소 팔기 창이 「매입」 · 수익을 산 값으로 세려고
+    /// 둔 것이다. 한 개 값(닢)이고, 같은 칸에 더 사면 갯수로 가중 평균한다. 덜어 내도(팔기 · 버리기 · 빼앗김)
+    /// 남은 것의 값은 그대로다. 모르면 <see cref="UnknownCost"/>(0) — 옛 세이브 짐, 빼앗은 것, 이벤트로 받은 것.
+    /// 모름을 0 으로 두는 것은 System.Text.Json 이 이 구조체의 빠진 칸을 매개변수 기본값이 아니라 0 으로 채우기 때문이다
+    /// (산 값은 늘 1 닢 이상이다).
     /// </remarks>
     public readonly record struct Cargo(int Kind, int Count, int Origin, int UnitWeight,
-                                        int Shelf = NeverSpoils)
+                                        int Shelf = NeverSpoils, int Cost = UnknownCost)
     {
         /// <summary>썩어서 팔 값이 없는지.</summary>
         public bool Spoiled => Shelf <= 0;
 
+        /// <summary>산 값(한 개)을 아는지.</summary>
+        public bool CostKnown => Cost > 0;
+
         /// <summary>화면에 내는 달수 — <c>(기한 + 29) / 30</c>, 0 이하면 0(<c>0x004B58F0</c>).</summary>
         public int Months => Shelf <= 0 ? 0 : (Shelf + 29) / 30;
     }
+
+    /// <summary>산 값을 모르는 짐의 <see cref="Cargo.Cost"/> — 옛 세이브에서 칸이 없으면 이 값으로 들어온다.</summary>
+    public const int UnknownCost = 0;
 
     /// <summary>「안 썩음」 기한 — 수명 7달 x 30(<c>0x004759F4</c> 의 <c>cmp 0xD2</c>).</summary>
     public const int NeverSpoils = 210;
@@ -3090,18 +3112,30 @@ public sealed class Player
     /// 교역품을 싣는다. 같은 종류 · 같은 원산지 · <b>같은 기한</b> 칸이 있으면 합치고, 없으면 빈 칸에 넣는다
     /// (게임 <c>0x004B5830</c> AddCargo — 짝 찾기 <c>0x004B5750</c> 이 기한까지 본다). 칸이 없으면 false.
     /// </summary>
-    public bool LoadCargo(int kind, int count, int origin, int unitWeight, int shelf = NeverSpoils)
+    /// <param name="cost">한 개 산 값(닢). 모르면 <see cref="UnknownCost"/>. 합칠 때는 갯수로 가중 평균하고,
+    /// 어느 한쪽이라도 모르면 모르는 채다.</param>
+    public bool LoadCargo(int kind, int count, int origin, int unitWeight, int shelf = NeverSpoils,
+                          int cost = UnknownCost)
     {
         if (kind < 0 || count <= 0) return false;
         int at = _cargo.FindIndex(c => c.Kind == kind && c.Origin == origin && c.Shelf == shelf);
         if (at >= 0)
         {
-            _cargo[at] = _cargo[at] with { Count = _cargo[at].Count + count };
+            var had = _cargo[at];
+            _cargo[at] = had with { Count = had.Count + count, Cost = MergedCost(had.Count, had.Cost, count, cost) };
             return true;
         }
         if (_cargo.Count >= CargoSlots) return false;
-        _cargo.Add(new Cargo(kind, count, origin, Math.Max(0, unitWeight), shelf));
+        _cargo.Add(new Cargo(kind, count, origin, Math.Max(0, unitWeight), shelf, Math.Max(UnknownCost, cost)));
         return true;
+    }
+
+    /// <summary>두 무더기를 합친 한 개 값 — 갯수 가중 평균(반올림). 한쪽이라도 모르면 모른다.</summary>
+    public static int MergedCost(int countA, int costA, int countB, int costB)
+    {
+        if (costA <= 0 || costB <= 0 || countA + countB <= 0) return UnknownCost;
+        long total = (long)countA * costA + (long)countB * costB, n = countA + countB;
+        return (int)((total + n / 2) / n);
     }
 
     /// <summary>그 칸에서 그만큼 덜어 낸다. 다 덜면 칸을 빼고 뒤를 당긴다.</summary>
@@ -3603,8 +3637,12 @@ public sealed class Player
     public static int NeedCrewOf(Ship ship) => ship.Crew;
 
     /// <summary>그 배에 태울 수 있는 끝(<c>0x0044C790</c> — 선체표 <c>+0x34</c> x 5 + 50 = 필요 x 5).</summary>
-    /// <remarks>개조로 는 필요승원(<see cref="Ship.Crew"/>)이 아니라 선체의 처음 필요승원(<see cref="Hull.Crew"/>)을 쓴다.</remarks>
-    public static int MaxCrewOf(Ship ship) => ship.Hull.Crew * 5;
+    /// <remarks>
+    /// 개조로 는 필요승원(<see cref="Ship.Crew"/>)이 아니라 선체의 처음 필요승원(<see cref="Hull.Crew"/>)을 쓴다.
+    /// 등록해 넣은 배가 최대 승원을 적었으면(<see cref="Hull.MaxCrew"/>, 버그 리포트 #18) 그 값이다 — 필요승원보다 작지는 않다.
+    /// </remarks>
+    public static int MaxCrewOf(Ship ship) =>
+        ship.Hull.MaxCrew > 0 ? Math.Max(ship.Hull.MaxCrew, ship.Hull.Crew) : ship.Hull.Crew * 5;
 
     /// <summary>
     /// 선원을 배마다 고르게 나눈다(<c>0x004744F0</c>) — 한 명씩, 최대에 안 찬 배 가운데

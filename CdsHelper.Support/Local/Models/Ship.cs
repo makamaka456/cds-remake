@@ -26,8 +26,9 @@ public sealed class Ship
     /// </summary>
     /// <remarks>
     /// <b>이 수는 원본 것이 아니다.</b> 원본은 선체 표(<c>0x004FC1E0</c>)에 값마다 상한을
-    /// 따로 든다 — 붙박이 선체 다섯은 그 값을 <see cref="Hull.HpTop"/> 벌로 옮겨 두었고,
-    /// 이 배수는 <b>등록해 넣은 배</b>처럼 상한을 모르는 선체에만 쓰인다.
+    /// 따로 든다 — 원본 선체 여덟은 그 값을 <see cref="Hull.HpTop"/> 벌로 옮겨 두었고, 등록해 넣은 배가
+    /// 한계를 안 적으면 가장 비슷한 원본 선체의 비율로 어림한다(<see cref="Hull.GuessTop"/>).
+    /// 이 배수는 이제 <b>필요승원</b> 상한과, 그 어림을 낼 선체 줄이 하나도 없을 때만 쓴다.
     /// </remarks>
     public const int RefitCeiling = 2;
 
@@ -579,8 +580,20 @@ public sealed class Ship
                 Sails: SailsOf(hull));
 
         /// <summary>그 선체가 처음 이는 돛 셋(선체표 <c>+0x3C</c>).</summary>
-        public static int[] SailsOf(Hull hull) =>
-            hull.Id is >= 0 and < 8 ? Hull.Table[hull.Id].Sails : [Lateen, NoSail, NoSail];
+        /// <remarks>
+        /// 등록해 넣은 배는 고른 원본 선체(<see cref="Hull.Look"/>)의 표 돛을 따르되, 돛대 수를 적었으면(<see cref="Hull.StartMasts"/>)
+        /// 그만큼만 세운다 — 표에 없는 자리는 삼각돛이다. 마스트 상한(<see cref="Hull.MaxMasts"/>)은 넘지 않는다(#16-2).
+        /// </remarks>
+        public static int[] SailsOf(Hull hull)
+        {
+            if (hull.Id is >= 0 and < 8) return Hull.Table[hull.Id].Sails;
+            int[] look = hull.Look is >= 0 and < 8 ? Hull.Table[hull.Look].Sails : [Lateen, NoSail, NoSail];
+            int count = hull.StartMasts > 0 ? hull.StartMasts : look.Count(v => v != NoSail);
+            count = Math.Clamp(count, 1, Math.Clamp(hull.MaxMasts, 1, MastSlots));
+            var sails = new int[MastSlots];
+            for (int i = 0; i < count; i++) sails[i] = look[i] != NoSail ? look[i] : Lateen;
+            return sails;
+        }
     }
 
     /// <summary>지금 값을 통째로.</summary>

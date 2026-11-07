@@ -505,7 +505,7 @@ public sealed class CityPicView : Window, ITownScreen, IGateStage
         uint[]? relayer = null;
         int best = mine;
         if (_game.World?.People is { } people)
-            foreach (int slot in (int[])[0, 3])   // 부관 · 통역
+            foreach (int slot in Engine.Town.KeeperTongue.RelaySlots)   // 부관 · 통역(모드면 아무 자리나)
             {
                 string mate = _player.MateAt(slot);
                 if (mate.Length == 0 || people.FirstOrDefault(r => r.Name == mate) is not { } row) continue;
@@ -1622,8 +1622,14 @@ public sealed class CityPicView : Window, ITownScreen, IGateStage
         // 「%s%s 크면」의 조사는 은/는이다(0x004147F7 의 0x004281B0(이름, 1)).
         TalkDialog.Say(this, face, "",
                        string.Format(talk.Wife, child.Name, GameUi.Josa(child.Name, "은", "는")));
-        TalkDialog.Say(this, _game.Faces?.TryGetBgra(Home.FaceOf(child, age), child.Daughter),
-                       child.Name, talk.Child);
+        // 네 살까지는 아기 대본(「아~, 아~.」)인데, 원본 얼굴 표(0x00560D10)의 첫 칸은 딸이 139 · 140 이라
+        // 열 살 넘어 보이는 소녀 그림이 떴다(버그 리포트 #23 — 원본 0x004149F0 → 0x00469540 도 같은 얼굴이다).
+        // 소개 때 쓰는 아기 그림(EVSTILL 8, 0x0045FFE6)을 걸어 나이에 맞춘다 — 원본과 다르게 했다.
+        if (age < Home.BabyTo)
+            DiscoveryDialog.Show(this, _game.EventStills, Home.BabyStill, talk.Child, title: child.Name);
+        else
+            TalkDialog.Say(this, _game.Faces?.TryGetBgra(Home.FaceOf(child, age), child.Daughter),
+                           child.Name, talk.Child);
     }
 
     /// <summary>
@@ -2306,7 +2312,17 @@ public sealed class CityPicView : Window, ITownScreen, IGateStage
     /// 술 줄에 적을 이름. 그 고장 말을 둘 이상 알아야 진짜 이름이 나온다 —
     /// 모르면 "붉은 술" 처럼 겉모습으로 부른다(<c>0x0042FB20</c>).
     /// </summary>
-    private string DrinkNameOf(DrinkTable.Drink drink) => DrinkTable.NameFor(drink, CityTongue);
+    /// <remarks>
+    /// 원본은 제독과 주인이 함께 하는 말의 수준만 본다(<c>0x00478050</c>). 우리는 주인 말을 부관 · 통역이 옮겨 주므로(<see cref="Engine.Town.KeeperTongue"/>)
+    /// 옮겨 주는 사람이 그 말을 알면 술 이름도 진짜로 옮긴다 — 「붉은 술은 4닢입니다」라고 통역하던 것을 고쳤다(버그 리포트 #13).
+    /// </remarks>
+    private string DrinkNameOf(DrinkTable.Drink drink) => DrinkTable.NameFor(drink, DrinkTongue);
+
+    /// <summary>술 이름을 알아듣는 수준 — 이 건물 주인 말을 제독 또는 옮겨 주는 부하가 아는 만큼. 건물 밖이면 도시 말 수준.</summary>
+    private int DrinkTongue =>
+        Engine.Town.KeeperTongue.Here is { } here && here() is var hear
+            ? Math.Max(hear.Level, hear.Relayer != null ? hear.RelayerLevel : 0)
+            : CityTongue;
 
     /// <summary>이 도시 말을 얼마나 아는지. 나라를 모르면 0 이다.</summary>
     private int CityTongue
@@ -2578,7 +2594,9 @@ public sealed class CityPicView : Window, ITownScreen, IGateStage
         if (!Engine.Town.Exile.Trusted(king == null ? -1 : _player.ClosenessOf(king.Name)))
         {
             _game.Sfx?.Play(SoundBank.BandNoticePart);
-            const string NotTrusted = "제독, 아직 국왕 폐하의 신임이 두텁지 않습니다. 망명을 청하려면 친밀도를 더 쌓으셔야 합니다";
+            // 친밀도가 더 필요하다는 것을 그 왕궁 주인 이름으로 알린다 — 수는 적지 않는다(버그 리포트 #8, 사용자 요청).
+            string lord = king == null ? "국왕 폐하" : $"{king.Name} {_game.Sponsors?.FindByName(king.Name)?.Honorific ?? "각하"}";
+            string NotTrusted = $"제독, 아직 {lord}의 신임이 두텁지 않습니다. 망명을 청하려면 친밀도가 더 필요합니다";
             if (_player.MateAt(0).Length > 0 && _game.AideFace is { } aide)
                 TalkDialog.Say(owner, aide, "", NotTrusted);
             else

@@ -99,6 +99,18 @@ public sealed class Game
         if (Directory == directory) return;
 
         Directory = directory;
+        ForgetTables();
+        Bgm.SetGameDirectory(directory);
+    }
+
+    /// <summary>
+    /// 열어 둔 표를 다 잊는다 — 다음에 쓸 때 새로 연다. 게임 폴더가 갈리거나 타이틀에서 커스텀 팩을 바꿨을 때
+    /// (<see cref="Local.Helpers.CustomPacks.Use"/>) 부른다.
+    /// </summary>
+    public void ForgetTables()
+    {
+        _cities = null;
+        _roster = null;
         _cityPics = null; _cityPicsTried = false;
         _buildings = null; _buildingsTried = false;
         _books = null; _booksTried = false;
@@ -128,8 +140,6 @@ public sealed class Game
         _fighters = null; _fightersTried = false;
         _book = null; _bookTried = false;
         _barmaids = null; _barmaidsTried = false;
-
-        Bgm.SetGameDirectory(directory);
     }
 
     /// <summary>효과음. 한 벌만 두고 나눠 쓴다(<see cref="SoundBank.Shared"/> 가 들고 있다).</summary>
@@ -463,6 +473,8 @@ public sealed class Game
                 Debug.WriteLine($"[Game] 발견물 표 없음: {DiscoveryTable.LastError}");
                 return null;
             }
+            // 모드 「괴물 다시 만나기」가 매듭지은 괴물 사건을 되살릴지 가리는 물음 — 대본에 괴물 해전(0D 0D)이 있는지.
+            DiscoveryLog.FightsMonster = id => Disev.DisevRunner.FightsMonster(this, id);
             return _discoveries = new DiscoveryLog(table, Hints, Voyagers);
         }
     }

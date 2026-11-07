@@ -367,6 +367,9 @@ public sealed class GameSettingsData
     /// <summary>보고를 마치고 나설 때 부하 재계약을 안 물을지(부하 해고를 켰을 때만). 켜 두고 시작한다.</summary>
     public bool SkipRecontract { get; set; } = true;
 
+    /// <summary>부관 · 통역이 아니어도 그 말을 가장 잘하는 부하가 통역할지. 원본에 없어 꺼 두고 시작한다.</summary>
+    public bool AnySeatInterprets { get; set; }
+
     /// <summary>보고 때 무기 · 방어구 증거품을 가질지 후원자가 물을지. 원본에 없어 꺼 두고 시작한다.</summary>
     public bool PatronGivesArms { get; set; }
 
@@ -448,6 +451,9 @@ public sealed class GameSettingsData
     /// <summary>놓친 바다 괴물을 그 자리에서 다시 만날 수 있게 할지. 원본에 없어 꺼 두고 시작한다.</summary>
     public bool MonsterRetry { get; set; }
 
+    /// <summary>입항한 도시의 성문으로 나서도 앞바다에 배를 그리고 물가 승선을 받을지. 원본에 없어 꺼 두고 시작한다.</summary>
+    public bool PortShipAshore { get; set; }
+
     /// <summary>발견물 동영상을 새로 만든 것(asset/movie)으로 틀지. 켜 두고 시작한다.</summary>
     public bool NewDiscoveryMovies { get; set; } = true;
 
@@ -513,6 +519,12 @@ public sealed class GameSettingsData
 
     /// <summary>등록한 곡 갈아 끼우기를 쓸지 — 모드 창에서 켜고 끈다.</summary>
     public bool CustomBgmEnabled { get; set; }
+
+    /// <summary>게임 타이틀에서 고른 커스텀 팩 이름(<c>%APPDATA%\CdsHelper\packs\이름</c>). 비면 팩 없이 돈다.</summary>
+    public string CustomPack { get; set; } = "";
+
+    /// <summary>개발도구(Editor)에서 고른 커스텀 팩 이름 — 편집 창들이 이 팩에 적는다. 비면 기본 표 자리에 적는다.</summary>
+    public string EditorPack { get; set; } = "";
 }
 
 /// <summary>
@@ -989,6 +1001,20 @@ public static class GameSettings
     /// <summary>항해 글쇠를 바꾼다. 빈 글이면 그 일에는 글쇠를 안 쓴다.</summary>
     public static void SetSailKey(string id, string key) => Set(d => (d.SailKeys ??= [])[id] = key);
 
+    /// <summary>게임 타이틀에서 고른 커스텀 팩 이름. 비면 팩 없이 돈다(<see cref="Local.Helpers.CustomPacks"/>).</summary>
+    public static string CustomPack
+    {
+        get => Get(d => d.CustomPack ?? "");
+        set => Set(d => d.CustomPack = value ?? "");
+    }
+
+    /// <summary>개발도구에서 고른 커스텀 팩 이름. 비면 편집 창들이 기본 표 자리에 적는다.</summary>
+    public static string EditorPack
+    {
+        get => Get(d => d.EditorPack ?? "");
+        set => Set(d => d.EditorPack = value ?? "");
+    }
+
     /// <summary>편리한 보관함 — 자택 「보관」 창에서 줄을 누르면 곧바로 반대쪽으로 옮긴다. 모드 창에서 켜고 끈다.</summary>
     public static bool QuickStorage
     {
@@ -1405,6 +1431,15 @@ public static class GameSettings
     }
 
     /// <summary>
+    /// 아무 자리나 통역 — 원본은 부관(자리 0) · 통역(자리 3)만 말을 옮기고 말로 막힌 곳을 열어 준다. 켜면 항해사 · 측량사도 센다.
+    /// </summary>
+    public static bool AnySeatInterprets
+    {
+        get => Get(d => d.AnySeatInterprets);
+        set => Set(d => d.AnySeatInterprets = value);
+    }
+
+    /// <summary>
     /// 후원자에게 무기 · 방어구 받기 — 보고한 발견물의 증거품이 무기 · 방어구면 후원자가 가지겠냐고 묻는다. 가지면 남은 사례를
     /// 친밀도만큼 깎는다(<see cref="Engine.Town.Palace.ArmsCut"/>). 원본은 서적만 돌려준다. 기본은 끔.
     /// </summary>
@@ -1703,6 +1738,16 @@ public static class GameSettings
     {
         get => Get(d => d.MonsterRetry);
         set => Set(d => d.MonsterRetry = value);
+    }
+
+    /// <summary>
+    /// 입항한 도시의 성문으로 나서도 도시 앞바다에 배를 그리고, 그 배 곁 물가에서 승선할 수 있게 할지 — 모드 창에서 켜고 끈다.
+    /// 원본은 성문으로 나서면 배가 안 보이고 그 도시로 돌아가야 배에 오른다(<see cref="UI.Rendering.WorldMapHost.MooredInPort"/>).
+    /// </summary>
+    public static bool PortShipAshore
+    {
+        get => Get(d => d.PortShipAshore);
+        set => Set(d => d.PortShipAshore = value);
     }
 
     /// <summary>

@@ -40,14 +40,30 @@ public static class ShipRegistry
         public int Speed { get; set; } = 50;
 
         /// <summary>
-        /// 추진력 한계 — 돛을 더 달아 올릴 수 있는 끝(<see cref="Hull.SpeedCeiling"/>). 0 이면 추진력의 <see cref="Ship.RefitCeiling"/> 배다.
-        /// 붙박이 다섯은 선체표(<c>exe-tables/hulls.json</c>)의 한계를 쓴다 — 편집기에서 고치면 그 표에 적는다.
+        /// 추진력 한계 — 돛을 더 달아 올릴 수 있는 끝(<see cref="Hull.SpeedCeiling"/>). 0 이면 가장 비슷한 원본 선체의 비율로 어림한다
+        /// (<see cref="Hull.GuessTop"/>). 붙박이 다섯은 선체표(<c>exe-tables/hulls.json</c>)의 한계를 쓴다 — 편집기에서 고치면 그 표에 적는다.
         /// </summary>
+        /// <remarks>
+        /// 내구 · 용량 · 중량 · 대포 한계(<see cref="HpTop"/> · <see cref="CapacityTop"/> · <see cref="TonnageTop"/> · <see cref="GunsTop"/>)도 같다.
+        /// 그 넷은 버그 리포트 #15 때 더했다 — 그 전에 적은 배는 칸이 없어 0 으로 읽히고 어림값을 쓴다.
+        /// </remarks>
         public int SpeedTop { get; set; }
         public int Capacity { get; set; } = 200;
         public int Tonnage { get; set; } = 1750;
         public int Crew { get; set; } = 20;
         public int Guns { get; set; } = 6;
+
+        /// <summary>내구 한계 — 보강으로 갈 수 있는 끝(<see cref="Hull.HpCeiling"/>). 0 이면 어림한다.</summary>
+        public int HpTop { get; set; }
+
+        /// <summary>적재용량 한계 — 용량증가로 갈 수 있는 끝(<see cref="Hull.CapacityCeiling"/>). 0 이면 어림한다.</summary>
+        public int CapacityTop { get; set; }
+
+        /// <summary>적재중량 한계 — 부력증가로 갈 수 있는 끝(<see cref="Hull.TonnageCeiling"/>). 0 이면 어림한다.</summary>
+        public int TonnageTop { get; set; }
+
+        /// <summary>대포(포탑) 한계 — 포탑을 달 수 있는 끝(<see cref="Hull.GunsCeiling"/>). 0 이면 어림한다.</summary>
+        public int GunsTop { get; set; }
         public int Price { get; set; } = 300;
         public int MaxMasts { get; set; } = Hull.MastLimit;
         public bool CanChangeSail { get; set; } = true;
@@ -71,6 +87,19 @@ public static class ShipRegistry
 
         /// <summary>파는 조선소의 도시 번호(<see cref="Hull.Cities"/>). null 이면 모든 조선소, 비어 있으면 어디서도 안 판다.</summary>
         public int[]? Cities { get; set; }
+
+        /// <summary>
+        /// 그림 · 영상을 빌려 쓸 원본 선체의 id(선체표 <c>Key</c>, 「galleon」) — 조선소에서 돛대를 달 때 그림과 살 때 동영상이 그 선체 것이다
+        /// (<see cref="Hull.Look"/>). 비어 있으면 가장 비슷한 원본 선체(<see cref="LookOf"/>)다. 기능 요청 #16-2 때 더했다.
+        /// </summary>
+        /// <remarks><see cref="Movie"/> 를 적은 배(바사)는 동영상만은 그것을 튼다.</remarks>
+        public string? Look { get; set; }
+
+        /// <summary>산 직후 세운 돛대 수(<see cref="Hull.StartMasts"/>). 0 이면 고른 원본 선체의 선체표 돛 수다(#16-2).</summary>
+        public int StartMasts { get; set; }
+
+        /// <summary>최대 승원(<see cref="Hull.MaxCrew"/>). 0 이면 원본처럼 필요승원 x 5 다(버그 리포트 #18).</summary>
+        public int MaxCrew { get; set; }
 
         /// <summary>붙박이를 덧씌우는 줄인지.</summary>
         [System.Text.Json.Serialization.JsonIgnore]
@@ -217,7 +246,11 @@ public static class ShipRegistry
             Hp = edit.Hp, Speed = edit.Speed, Capacity = edit.Capacity, Tonnage = edit.Tonnage, Crew = edit.Crew,
             GunsMin = edit.Guns, Price = edit.Price, MaxMasts = Math.Clamp(edit.MaxMasts, 1, Hull.MastLimit),
             CanChangeSail = edit.CanChangeSail,
-            SpeedTop = edit.SpeedTop > 0 ? Math.Max(edit.SpeedTop, edit.Speed) : rows[at].SpeedTop,
+            SpeedTop = Top(edit.SpeedTop, edit.Speed, rows[at].SpeedTop),
+            HpTop = Top(edit.HpTop, edit.Hp, rows[at].HpTop),
+            CapacityTop = Top(edit.CapacityTop, edit.Capacity, rows[at].CapacityTop),
+            TonnageTop = Top(edit.TonnageTop, edit.Tonnage, rows[at].TonnageTop),
+            GunsTop = Top(edit.GunsTop, edit.Guns, rows[at].GunsTop),
         };
         HullTable.Save(rows);
         var saved = Load();
@@ -225,6 +258,9 @@ public static class ShipRegistry
         if (saved.RemoveAll(d => d.Builtin == key || d.Builtin == edit.Builtin) > 0) Save(saved);
         Hull.Reload();
     }
+
+    /// <summary>적은 한계 — 0 이면 <paramref name="fallback"/>, 처음값보다 작으면 처음값.</summary>
+    private static int Top(int given, int value, int fallback) => given > 0 ? Math.Max(given, value) : fallback;
 
     /// <summary>덧씌우는 줄이 가리키는 붙박이 선체 — id 로, 없으면 이름으로(id 를 적기 전 줄).</summary>
     public static Hull? BuiltinOf(Design design) =>
@@ -243,6 +279,11 @@ public static class ShipRegistry
         Price = edit.Price,
         MaxMasts = Math.Clamp(edit.MaxMasts, 1, Hull.MastLimit),
         CanChangeSail = edit.CanChangeSail,
+        HpTop = Top(edit.HpTop, edit.Hp, built.HpTop),
+        SpeedTop = Top(edit.SpeedTop, edit.Speed, built.SpeedTop),
+        CapacityTop = Top(edit.CapacityTop, edit.Capacity, built.CapacityTop),
+        TonnageTop = Top(edit.TonnageTop, edit.Tonnage, built.TonnageTop),
+        GunsTop = Top(edit.GunsTop, edit.Guns, built.GunsTop),
     };
 
     /// <summary>붙박이 선체를 고칠 줄을 짓는다 — 지금 값을 그대로 담는다.</summary>
@@ -254,6 +295,10 @@ public static class ShipRegistry
         Hp = built.Hp,
         Speed = built.Speed,
         SpeedTop = built.SpeedTop,
+        HpTop = built.HpTop,
+        CapacityTop = built.CapacityTop,
+        TonnageTop = built.TonnageTop,
+        GunsTop = built.GunsTop,
         Capacity = built.Capacity,
         Tonnage = built.Tonnage,
         Crew = built.Crew,
@@ -323,11 +368,28 @@ public static class ShipRegistry
         Skin: -1,
         MaxMasts: Math.Clamp(design.MaxMasts, 1, Hull.MastLimit),
         CanChangeSail: design.CanChangeSail,
-        SpeedTop: design.SpeedTop > 0 ? Math.Max(design.SpeedTop, design.Speed) : 0,
+        // 0 이면 Hull 이 가장 비슷한 원본 선체의 비율로 어림한다(Hull.GuessTop) — 예전 「처음값 x 2」는 끝없이 오르는 것처럼 보였다(#15).
+        HpTop: Top(design.HpTop, design.Hp, 0),
+        SpeedTop: Top(design.SpeedTop, design.Speed, 0),
+        CapacityTop: Top(design.CapacityTop, design.Capacity, 0),
+        TonnageTop: Top(design.TonnageTop, design.Tonnage, 0),
+        GunsTop: Top(design.GunsTop, design.Guns, 0),
         SpriteFolder: folder,
         Movie: design.Movie,
         Cities: design.Cities,
-        Key: design.Id);
+        Key: design.Id,
+        Look: LookOf(design),
+        StartMasts: design.StartMasts > 0 ? Math.Clamp(design.StartMasts, 1, Math.Clamp(design.MaxMasts, 1, Hull.MastLimit)) : 0,
+        MaxCrew: Math.Max(0, design.MaxCrew));
+
+    /// <summary>
+    /// 등록 배가 그림 · 영상을 빌려 쓸 원본 선체 번호 — 적은 id(<see cref="Design.Look"/>)가 있으면 그것, 없으면(예전 배)
+    /// 내구 · 추진 · 용량 · 중량이 가장 비슷한 원본 선체(<see cref="Hull.NearestRow"/>), 그것도 없으면 카라벨.
+    /// </summary>
+    public static int LookOf(Design design) =>
+        Hull.Rows.FirstOrDefault(r => !string.IsNullOrEmpty(design.Look) && r.Key == design.Look)?.Id
+        ?? Hull.NearestRow(design.Hp, design.Speed, design.Capacity, design.Tonnage)?.Id
+        ?? Hull.Caravel;
 
 #if !ANDROID   // 그림을 굽고 읽는 쪽은 WPF 다 — 안드로이드판은 제 것으로 읽는다(CostaDelSol.Android).
     /// <summary>

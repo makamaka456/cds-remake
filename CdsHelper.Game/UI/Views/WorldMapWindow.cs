@@ -527,11 +527,11 @@ public sealed class WorldMapWindow : Window
             // 햄버거 왼쪽 도시락 — 모드로 켜는 보조 창(여급 수첩 · 인물 이동 · 애드온)만 따로 둔다. 다 꺼 두면 단추째 숨는다.
             [
                 // 낯을 튼 여급과 그 궁합. 궁합은 초상화 번호 하나로 갈리는데 화면에서는 볼 길이 없다.
-                (BarmaidBookRow, () => BarmaidBookDialog.Show(this, _game)),
+                (BarmaidBookRow, MenuItem(() => BarmaidBookDialog.Show(this, _game))),
                 // 누가 어느 도시로 가고 있는지는 지도에 배만 떠 있어 알 길이 없다.
-                (PersonMoveRow, () => PersonMoveDialog.Show(this, _game)),
+                (PersonMoveRow, MenuItem(() => PersonMoveDialog.Show(this, _game))),
                 // 애드온을 하나씩 켜고 끈다 — 모드 「애드온」을 켜야 줄이 선다.
-                (AddOnsRow, () => AddOnListDialog.Show(this)),
+                (AddOnsRow, MenuItem(() => AddOnListDialog.Show(this))),
             ],
             out _refreshApps,
             // 햄버거 오른쪽 「네비게이션(R)」 — 목적지 도시를 골라 자동항해(도시 안이면 출항부터)를 건다.
@@ -540,22 +540,22 @@ public sealed class WorldMapWindow : Window
             // 설정은 게임 띠에 두었다가 햄버거로 옮겼다 — 게임 띠에 없는 칸이라
             // 섞여 있으면 원본과 달라 보인다(개발 창을 옮긴 것과 같은 까닭이다).
             // 지도 배율은 고르는 그 자리에서 지도에 먹인다.
-            ("설정", () => SettingsDialog.Show(this, _game.Bgm, s => _host.ApplyMapScale(s))),
-            ("단축키", () => { ShortcutDialog.Show(this); _refreshNav(); }),
+            ("설정", MenuItem(() => SettingsDialog.Show(this, _game.Bgm, s => _host.ApplyMapScale(s)))),
+            ("단축키", MenuItem(() => { ShortcutDialog.Show(this); _refreshNav(); })),
             // 업데이트한 뒤 한 번 뜨고 마는 글을 다시 본다 — 새 판 둘의 대목이다.
-            ("릴리즈 노트", ShowReleaseNotes),
+            ("릴리즈 노트", MenuItem(ShowReleaseNotes)),
             // 글을 써서 보내면 통계 대시보드의 「버그 리포트」 탭에 온다.
-            ("버그 리포트", ShowBugReport),
+            ("버그 리포트", MenuItem(ShowBugReport)),
             // 원본에 없던 발견물(돌묵상어 · 여우원숭이)의 글과 그림이 어디서 왔는지.
-            ("출처", () => NoticeDialog.Notes(this, ExtraCredits, "출처")),
+            ("출처", MenuItem(() => NoticeDialog.Notes(this, ExtraCredits, "출처"))),
             // 「하드코어 랭킹」 줄은 아직 안 낸다(PlayStats.RankingOpen) — 열 때 여기에 ("하드코어 랭킹", OpenHardcoreRanking) 을 넣는다.
             // 걷은 줄 둘 — 「게임데이터」는 도구 앱 「개발」 차림표로 옮겼고,
             // 「제독 정보」는 자택 차림표에서 여는 길이 있어 창만 남겼다.
             // 「발견물 지도」는 커맨드 「정보」로 옮겼다 — 게임 화면 안에서 여는 편이 찾기 쉽다.
             // 「도구 앱」은 개발 창으로 옮겼다 — 표를 손보는 길이라 개발 쪽이 맞다.
             // 원본에 없는 편의 기능(컨디션·미니맵·바람 화살표·기능·언어·출입 일수)은 모드 창에 모아 두었다.
-            ("모드", ShowModDialog),
-            ("개발", ShowDevDialog));
+            ("모드", MenuItem(ShowModDialog)),
+            ("개발", MenuItem(ShowDevDialog)));
         DockPanel.SetDock(titleBar, Dock.Top);
         shell.Children.Add(titleBar);
         shell.Children.Add(_screen);
@@ -1897,6 +1897,10 @@ public sealed class WorldMapWindow : Window
                 }
                 : null));
         items.Children.Add(TitleMenuItem("MINI GAME", MiniGames));
+        // 커스텀 팩 — 원본에 없는 줄이다. 개발도구로 만든 팩(%APPDATA%\CdsHelper\packs)이 있을 때만 낸다. 판을 시작하기 전,
+        // 여기서만 바꾼다 — 게임 중에 바꾸면 이미 읽은 표와 섞인다.
+        if (CustomPacks.Active != null || CustomPacks.Names().Count > 0)
+            items.Children.Add(TitleMenuItem($"커스텀 팩: {CustomPacks.Active ?? "없음"}", PickPack));
         items.Children.Add(TitleMenuItem("END GAME", Close));
         // 사운드테스트 줄은 <b>헬퍼의 「도구」로 옮겼다</b>(0x00571BE8 — 원본 타이틀에는 있다).
         // 게임을 시작하는 자리에 시험 줄이 섞여 있는 것이 거슬린다는 뜻이었다.
@@ -1953,6 +1957,32 @@ public sealed class WorldMapWindow : Window
         screen.Children.Add(middle);
 
         return screen;
+    }
+
+    /// <summary>
+    /// 타이틀 「커스텀 팩」 — 팩을 고르면 표 캐시를 비우고 다시 읽는다. 고른 팩은 <c>game-settings.json</c> 에 남는다.
+    /// </summary>
+    private void PickPack()
+    {
+        var names = CustomPacks.Names();
+        var rows = new List<string> { "없음" };
+        rows.AddRange(names.Select(n => n == CustomPacks.Active ? $"{n} (사용 중)" : n));
+        int at = ChoiceDialog.Ask(this, "커스텀 팩을 선택해 주십시오", rows);
+        if (at < 0) return;
+        string? pick = at == 0 ? null : names[at - 1];
+        if (pick == CustomPacks.Active) return;
+
+        var skipped = CustomPacks.Use(pick);
+        GameSettings.CustomPack = pick ?? "";
+        _game.ForgetTables();
+        _titleRoot = BuildTitleScreen();
+        _screen.Content = _titleRoot;
+
+        string head = pick == null
+            ? "커스텀 팩을 껐습니다."
+            : $"커스텀 팩 「{pick}」{GameUi.Josa(pick, "을", "를")} 켰습니다.\n팩을 켜고 시작한 하드코어 게임은 랭킹에 오르지 않습니다.";
+        NoticeDialog.Show(this, skipped.Count == 0 ? head
+            : head + "\n\n형식이 맞지 않아 기본 값으로 쓰는 표가 있습니다.\n" + string.Join("\n", skipped));
     }
 
     /// <summary>
@@ -2667,6 +2697,9 @@ public sealed class WorldMapWindow : Window
 
         // NEW GAME 차림표에서 「하드코어로 시작한다」를 골랐으면 하드코어 판이다 — 게임 오버가 되면 이 판의 세이브가 모두 지워진다.
         _game.Player.Hardcore = hard;
+        // 이 판을 시작한 커스텀 팩과 지문 — 다른 팩으로 불러오면 묻는다.
+        _game.Player.Pack = CustomPacks.Active ?? "";
+        _game.Player.PackPrint = CustomPacks.Fingerprint(CustomPacks.Active);
         // 시작할 때 켜 둔 모드부터 적는다(직업 다시 굴림처럼 시작할 때만 먹는 것도 여기서 잡힌다).
         HardcoreRules.Note(_game.Player);
         SyncHardTitle();
@@ -2806,7 +2839,8 @@ public sealed class WorldMapWindow : Window
     /// <returns>새로 만들어도 되면 true, 물러났으면 false.</returns>
     private bool BreakOff()
     {
-        var saved = GameSave.Load();
+        // 원본처럼 중단저장부터 본다(0x004787E5 — SAVEDATA.TMP 가 없으면 SAVEDATA.CDS).
+        var saved = GameSave.Load(GameSave.SuspendPath) ?? GameSave.Load();
         if (saved == null) return true;
 
         string name = !string.IsNullOrEmpty(saved.Name) ? saved.Name : "이름 없는 제독";
@@ -3233,12 +3267,8 @@ public sealed class WorldMapWindow : Window
         }, "버그 리포트");
     }
 
-    private void ShowReleaseNotes()
-    {
-        string notes = ReleaseNotes.Recent(ReleaseNotes.Read());
-        if (notes.Length == 0) NoticeDialog.Show(this, "릴리즈 노트를 찾지 못했습니다.", "릴리즈 노트");
-        else NoticeDialog.Notes(this, notes, "릴리즈 노트");
-    }
+    // 역대 판 목록 · 판별 보기 · 낱말 찾기(버그 리포트 #7) — 예전에는 최근 두 판만 알림창으로 띄웠다.
+    private void ShowReleaseNotes() => ReleaseNotesDialog.Show(this);
 
     private void OnMapKey(object sender, KeyEventArgs e)
     {
@@ -3433,6 +3463,29 @@ public sealed class WorldMapWindow : Window
         }
     }
 
+    /// <summary>
+    /// 왼쪽 위 메뉴(설정 · 릴리즈 노트 · 버그 리포트 · 모드 · 개발 따위)와 그 옆 도시락 단추가 띄운 창이 떠 있는 동안 배 · 말을 세운다.
+    /// </summary>
+    /// <remarks>
+    /// 원본은 창이 뜨면 항해 고리째로 선다. 이 메뉴는 원본에 없는 것이라 그동안 아무것도 안 세워, 버그 리포트를 쓰는
+    /// 사이에도 말이 걸어가 로제타석 자리를 밟았다(버그 리포트 #24 · #25). 대본은 그 창 위에서 돌았고 그림(00 0C — 아무
+    /// 글쇠에 닫힌다)과 「로제타석을 손에 넣었다！」 상자는 치던 글자에 곧바로 닫혀, 발견만 조용히 적혔다.
+    /// 멈춤을 걸어 두면 자리 판정 · 날 눈금 · 조우가 모두 쉰다(<see cref="CheckDiscovery"/> · <see cref="PassTime"/>).
+    /// </remarks>
+    private Action MenuItem(Action show) => () =>
+    {
+        // 도시 안(SeaBlocked)에서 열 수도 있어 멈춤은 연 때의 값으로 되돌린다 — 커맨드 창 것(HoldAfterCommand)처럼 풀어 버리지 않는다.
+        bool asking = _asking, paused = _host.Paused;
+        _asking = true;
+        _host.Paused = true;
+        try { show(); }
+        finally
+        {
+            _asking = asking;
+            _host.Paused = paused;
+        }
+    };
+
     /// <summary>창이 떠 있는 동안 배를 세운다 — 묻는 사이에 흘러가지 않게.</summary>
     private void Hold(Action show)
     {
@@ -3478,12 +3531,27 @@ public sealed class WorldMapWindow : Window
         // 달 · 날이 한 자리면 앞을 한 칸 띄워 줄끼리 「월 · 일」 자리를 맞춘다(요청) — 「1506년  1월  9일」.
         static string Day(GameSave.Data d) => d.Date == default ? "-" : Lang.T($"{d.Date.Year}년 {d.Date.Month,2}월 {d.Date.Day,2}일");
 
+        // 파일은 있는데 하나도 못 읽었으면 「없습니다」만 띄우지 않고 까닭을 함께 보인다 — 예전에는 못 읽은 칸이 말없이 빠져
+        // 「로딩이 아예 안 된다」(버그 리포트 #26)를 가를 길이 없었다.
+        if (slots.Count == 0)
+        {
+            var unreadable = GameSave.LoadErrorLines();
+            GameSave.LastLoadOutcome = unreadable.Count > 0 ? $"{caption}: 목록 비었음 — 못 읽은 것 {unreadable.Count}개" : $"{caption}: 목록 비었음";
+            if (unreadable.Count > 0)
+            {
+                NoticeDialog.Show(owner, $"{Lang.T(whenEmpty)}\n\n{Lang.T("세이브 파일을 읽지 못했습니다")} ({unreadable.Count})\n"
+                                         + string.Join("\n", unreadable.Take(5)));
+                return null;
+            }
+        }
+
         var rows = slots.Select(s =>
         {
             var d = s.Save;
             string name = !string.IsNullOrEmpty(d.Name) ? d.Name
                         : $"{d.Given} {d.Family}".Trim() is { Length: > 0 } full ? full : "이름 없는 제독";
             if (d.Hardcore == true) name += "(H)";   // 하드코어 주인공 — 게임 오버가 되면 이 세이브가 지워진다
+            if (GameSave.IsSuspendFile(s.File)) name += Lang.T("(중단)");   // 게임 중단으로 적은 것 — 열면 지워진다
             string city = string.IsNullOrEmpty(d.CityName) ? "바다" : d.CityName;
             return Row(name, city, Day(d), $"{d.SavedAt:yyyy-MM-dd HH:mm}", $"{d.Discoveries?.Count ?? 0,3}개");
         }).ToList();
@@ -3498,6 +3566,7 @@ public sealed class WorldMapWindow : Window
                 string who = !string.IsNullOrEmpty(d.Name) ? d.Name
                            : $"{d.Given} {d.Family}".Trim() is { Length: > 0 } whole ? whole : "이름 없는 제독";
                 if (d.Hardcore == true) who += "(H)";
+                if (GameSave.IsSuspendFile(s.File)) who += Lang.T("(중단)");
                 return new[]
                 {
                     who, string.IsNullOrEmpty(d.CityName) ? "바다" : d.CityName, Day(d),
@@ -3505,6 +3574,7 @@ public sealed class WorldMapWindow : Window
                 };
             }).ToList();
             int pick = SaveListDialog.Pick(owner, caption, ["캐릭터", "도시", "날짜", "저장한 시각", "발견물"], table);
+            if (pick < 0 || pick >= slots.Count) GameSave.LastLoadOutcome = $"{caption}: 고르지 않고 닫음({slots.Count}칸)";
             return pick >= 0 && pick < slots.Count ? slots[pick].File : null;
         }
 
@@ -3514,6 +3584,7 @@ public sealed class WorldMapWindow : Window
                                      listWidth: 740,
                                      // 맨 위(가장 새것)를 골라 둔다 — 결정만 누르면 곧바로 불러온다.
                                      preselect: 0);
+        if (slots.Count > 0 && (at < 0 || at >= slots.Count)) GameSave.LastLoadOutcome = $"{caption}: 고르지 않고 닫음({slots.Count}칸)";
         return at >= 0 && at < slots.Count ? slots[at].File : null;
     }
 
@@ -3543,11 +3614,23 @@ public sealed class WorldMapWindow : Window
         if (!fresh)
         {
             saved = GameSave.Load(path);
+            string file = System.IO.Path.GetFileName(string.IsNullOrEmpty(path) ? GameSave.Path : path);
             if (saved == null)
             {
-                NoticeDialog.Show(this, "적어 둔 기록이 없다.");
+                // 못 읽은 까닭이 있으면 함께 보인다 — 「기록이 없다」만으로는 파일이 없는지 깨졌는지 알 수 없다(버그 리포트 #26).
+                string? why = GameSave.LoadError(path);
+                GameSave.LastLoadOutcome = why == null ? $"기록 없음 {file}" : $"못 읽음 {file} — {why}";
+                NoticeDialog.Show(this, why == null ? "적어 둔 기록이 없다." : $"{Lang.T("적어 둔 기록을 읽지 못했다.")}\n{file}\n{why}");
                 return;
             }
+            // 다른 커스텀 팩(또는 팩 없이)으로 시작한 세이브면 묻는다 — 표 값이 달라 그대로 이어지지 않을 수 있다.
+            if (CustomPacks.MismatchQuestion(saved.Pack, saved.PackPrint) is { } question
+                && !ConfirmDialog.Ask(this, question, "커스텀 팩"))
+            {
+                GameSave.LastLoadOutcome = $"팩 물음에서 아니오 {file} (세이브 팩 [{saved.Pack}] · 지금 팩 [{CustomPacks.Active}])";
+                return;
+            }
+            GameSave.LastLoadOutcome = $"여는 중 {file}";
         }
 
         _screen.Content = _mapRoot;
@@ -3594,7 +3677,7 @@ public sealed class WorldMapWindow : Window
                                           + ex.Message, "오류", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
-                if (!up) { _status.Text = _host.Status; return; }
+                if (!up) { _status.Text = _host.Status; GameSave.LastLoadOutcome = $"지도 못 엶 — {_host.Status}"; return; }
                 _host.ShowFlowArrows = GameSettings.ShowFlowArrows;
                 _host.SeaEffect = GameSettings.SeaEffect;
                 _host.SeaBrightness = GameSettings.SeaBrightness;
@@ -3673,6 +3756,8 @@ public sealed class WorldMapWindow : Window
             _game.Player.SkipsCumulative = saved.SkipsCumulative ?? false;
             // 중단저장으로 적힌 판을 열었으면 「아직 저장 안 됨」이 선다(0x00478E2B).
             _game.Unsaved = saved.Suspended == true;
+            // 중단저장(SAVEDATA.TMP)은 열고 나면 지운다(0x00478E26) — 한 번만 이어 한다. 일반 세이브는 그대로 남는다.
+            if (GameSave.IsSuspendFile(path)) GameSave.DeleteSuspend();
             // 앞 판은 발견물 아이템을 발견할 때 소지품에 넣었다 — 아직 안 알린 것은 한 벌씩 걷어 낸다.
             if (saved.Version < GameSave.VirtualItemsFrom)
                 foreach (int item in GameInfo.VirtualItems(_game)) _game.Player.Drop(item);
@@ -3760,6 +3845,9 @@ public sealed class WorldMapWindow : Window
             // 판 표지. 이 칸 앞의 세이브는 새로 뽑는다 — 앞 칸들은 은퇴·삭제 때 이름으로 가린다.
             _game.Player.GameId = !string.IsNullOrEmpty(saved.GameId) ? saved.GameId : Guid.NewGuid().ToString("N");
             _game.Player.Hardcore = saved.Hardcore == true;
+            // 이 판을 시작한 커스텀 팩 — 다른 팩으로 불러와도 시작한 팩을 그대로 든다.
+            _game.Player.Pack = saved.Pack ?? "";
+            _game.Player.PackPrint = saved.PackPrint ?? "";
             // 하드코어 판이 켠 모드 — 봉인이 안 맞으면(세이브를 손으로 고쳤으면) 「변조」를 붙인다.
             _game.Player.HardcoreMarks.Clear();
             if (_game.Player.Hardcore)
@@ -3829,6 +3917,8 @@ public sealed class WorldMapWindow : Window
                       && _host.PlaceAshore(ax, ay, sx, sy, saved.MooredHeading ?? 0)))
                     _host.PlaceAtSea(sx, sy);
             }
+            // 뭍에서 적은 판이 함대를 도시 항구에 둔 채였으면(성문으로 나섰다) 대 둔 배를 안 그린다.
+            _host.MooredInPort = _host.IsOnLand && _game.Player.FleetCity >= 0;
             // 뱃머리도 적어 둔 쪽으로(제독 +0x328). 예전에는 앞 판이나 처음 값 그대로라 엉뚱한 쪽을 보고 섰다.
             if (saved.Heading is { } heading) _host.SetHeading(heading);
             // 쥐고 있던 바람도 적어 둔 그대로(0x00586168). 예전에는 열 때 방위를 새로 흔들어(rand(3) − 1,
@@ -3841,6 +3931,9 @@ public sealed class WorldMapWindow : Window
                     ? $"뭍에서 이어 간다 — {saved.Date:yyyy년 M월 d일}"
                     : $"바다에서 이어 간다 — {saved.Date:yyyy년 M월 d일}";
         }
+
+        if (saved != null)
+            GameSave.LastLoadOutcome = $"불러옴 {System.IO.Path.GetFileName(string.IsNullOrEmpty(path) ? GameSave.Path : path)}";
 
         // 뭍에서 연 판은 걷는 곡이다 — 상륙할 때(Land)와 같다. 예전에는 늘 바다 곡이 났다.
         _game.Bgm.Play(_host.IsOnLand ? BgmPlayer.LandTrack : SeaTrackHere());
@@ -4227,7 +4320,8 @@ public sealed class WorldMapWindow : Window
     /// 중단하겠습니다." <c>0x00568C80</c>). 적지 못했으면 나가지 않는다 — 나가 버리면
     /// 그 판이 그대로 사라진다.
     ///
-    /// 적는 자리는 도시에서 적는 것과 같다. 도시에 들어가 있지 않으므로
+    /// 적는 자리는 일반 세이브가 아니라 중단저장(<see cref="GameSave.SuspendPath"/>, 원본 <c>SAVEDATA.TMP</c>)이다 —
+    /// 바다에서는 정식 저장이 안 된다. 도시에 들어가 있지 않으므로
     /// <see cref="Player.CityId"/> 가 -1 로 남는데, 그 값이 곧 "바다에서 적었다" 는 표시다.
     /// </remarks>
     private void Suspend()
@@ -4746,6 +4840,12 @@ public sealed class WorldMapWindow : Window
     ///   → 항구 사람 · 감찰관 · 항구 사람 · 부관 네 마디, 계약 파기(0x00477050), 「%s와의 계약은 파기되었습니다!」
     /// </code>
     /// 원본 한국어판은 이 다섯 줄이 일본어(Shift-JIS) 그대로라 깨져 나온다. 뜻을 옮겨 한국어로 넣었다.
+    ///
+    /// <b>후원자가 앉는 건물이 역사 대본으로 사라졌을 때</b>도 같은 길로 깬다 — 원본에 없는 것이다(버그 리포트 #6).
+    /// 1507년 5월 HIST_EV 파트 31 이 제노바(28)를 프랑스(3)에 넘기면서 건물 비트 2(자노·프레고소의 총독부)를 끄는데,
+    /// 제노바 공화국(6)은 멸망(<c>22 00</c>)으로 적히지 않아 위 조건이 안 걸린다. 그러면 1523년 11월 파트 52 가 되돌릴 때까지
+    /// 보고할 곳도 없고, 딴 후원자를 설득하면 감찰관이 「보고하라」며 막아(<c>0x0044FC80</c>) 판이 묶였다.
+    /// 원본도 그렇게 묶이지만 막다른 길이라 소문 첫 마디만 「넘어갔다」로 바꿔 계약을 푼다.
     /// </remarks>
     private void CheckSponsorFallen(int city)
     {
@@ -4753,7 +4853,10 @@ public sealed class WorldMapWindow : Window
         if (player.Contract is not { } deal) return;
         if (_game.Sponsors?.FindByName(deal.Sponsor) is not { Nation: >= 0 } sponsor) return;
         _game.CatchUpMonths();
-        if (!player.IsNationFallen(sponsor.Nation)) return;
+        bool fell = player.IsNationFallen(sponsor.Nation);
+        bool seatGone = !fell && sponsor.City >= 0
+                        && !(_game.CityRows?.HasBuilding(sponsor.City, Local.Helpers.SponsorTable.SeatOf(sponsor)) ?? true);
+        if (!fell && !seatGone) return;
 
         int nation = _game.CityRows?.NationOf(city) ?? -1;
         if (Standoff.EntryOf(player, _game.Nations, nation) == 2) return;
@@ -4763,7 +4866,7 @@ public sealed class WorldMapWindow : Window
         if (language is >= 0 and < 14)
         {
             int best = player.TongueOf(Skill.Languages[language]);
-            foreach (int slot in (int[])[0, 3])
+            foreach (int slot in Engine.Town.KeeperTongue.RelaySlots)
             {
                 string mate = player.MateAt(slot);
                 if (mate.Length > 0 && _game.World?.People.FirstOrDefault(r => r.Name == mate) is { } row)
@@ -4779,7 +4882,16 @@ public sealed class WorldMapWindow : Window
 
         _asking = true;
         _host.Paused = true;
-        TalkDialog.Say(this, port, "", $"어이, 자네 들었나? {fallen}{GameUi.Josa(fallen, "이", "가")} 멸망했다는 소문이야.");
+        if (fell)
+            TalkDialog.Say(this, port, "", $"어이, 자네 들었나? {fallen}{GameUi.Josa(fallen, "이", "가")} 멸망했다는 소문이야.");
+        else
+        {
+            string seat = CityNames.Of(sponsor.City);
+            string taker = _game.Nations?.Find(_game.CityRows?.NationOf(sponsor.City) ?? -1)?.Name ?? "";
+            TalkDialog.Say(this, port, "", taker.Length > 0 && taker != fallen
+                ? $"어이, 자네 들었나? {seat}{GameUi.Josa(seat, "이", "가")} {taker} 손에 넘어갔다는 소문이야."
+                : $"어이, 자네 들었나? {seat}의 {deal.Sponsor}{GameUi.Josa(deal.Sponsor, "이", "가")} 자리에서 쫓겨났다는 소문이야.");
+        }
         TalkDialog.Say(this, inspector, "", "그, 그럴 수가, 말도 안 돼! 네놈 그 이야기를 누구한테서 들었나!?");
         TalkDialog.Say(this, port, "", "자네들과 같은 뱃사람이지. 거짓말이라고 생각하면 직접 확인해 보게!");
         TalkDialog.Say(this, MateFace(), "", "이럴 수가. 이래서는 계약은 없던 일이 되겠군요.");
@@ -4815,26 +4927,19 @@ public sealed class WorldMapWindow : Window
         if (!angry && !treaty) return true;
 
         // 조약 쪽은 무엇에 막혔는지를 먼저 이른다(0x0046A6C0) — <b>문지기가 얼굴을 걸고</b>
-        // 말하고, 마을(0x00552208)과 항구(0x00552240)의 글이 다르다.
+        // 말하고, 마을(0x00552208)과 항구(0x00552240)의 글이 다르다. 원본은 도시 그림이 펴진 뒤에(0x0046ABB0 이 도시 화면 위에서)
+        // 말하므로 HostileCityMenu 가 그림을 편 다음 부른다 — 예전에는 그림보다 먼저 지도 위에 떴다(버그 리포트 #19).
+        Action<Window>? treatyLine = null;
         if (treaty && !angry)
         {
             string theirs = _game.Nations?.Find(nation)?.Name ?? "";
             string mine = _game.Player.NationName;
             int culture = _game.CityRows?.CultureOf(city) ?? 0;
             var gate = _game.SpeakerFace(Standoff.GateSpeaker(byLand), culture);
-            // 문지기 말이다 — 대사 창이 말 수준만큼 뭉개고 부관 · 통역이 옮긴다(HostileCityMenu.GateListener).
-            var was = Engine.Town.KeeperTongue.Here;
-            Engine.Town.KeeperTongue.Here = () => HostileCityMenu.GateListener(_game, city);
-            try
-            {
-                TalkDialog.Say(this, gate, "", byLand
-                    ? string.Format(Standoff.TreatyWord, Standoff.TreatyName, mine)
-                    : string.Format(Standoff.TreatyPortWord, theirs, Standoff.TreatyName, mine));
-            }
-            finally
-            {
-                Engine.Town.KeeperTongue.Here = was;
-            }
+            // 문지기 말이다 — 대사 창이 말 수준만큼 뭉개고 부관 · 통역이 옮긴다(HostileCityMenu.Run 이 GateListener 를 걸어 둔 채 부른다).
+            treatyLine = owner => TalkDialog.Say(owner, gate, "", byLand
+                ? string.Format(Standoff.TreatyWord, Standoff.TreatyName, mine)
+                : string.Format(Standoff.TreatyPortWord, theirs, Standoff.TreatyName, mine));
         }
 
         // 도시 그림이 펴지는 동안은 이미 도시에 닿은 것이다 — 지도에 남색 막을 씌운다.
@@ -4846,7 +4951,7 @@ public sealed class WorldMapWindow : Window
         EndWeather();
 
         var end = HostileCityMenu.Run(this, _game, city, name, byLand, MapAreaOnScreen(),
-                                      byTreaty: treaty && !angry);
+                                      byTreaty: treaty && !angry, opening: treatyLine);
 
         // 성문 앞에서는 막이 씌워지고 그 도시 곡이 돌았다. 못 들어가고 물러서면 되돌린다 —
         // 들어갔으면 ShowCityPicture 가 막도 곡도 제 것으로 다시 건다.
@@ -6968,7 +7073,7 @@ public sealed class WorldMapWindow : Window
         if (tongue < 0 || tongue >= Skill.Languages.Length) return true;   // 나라를 모르면 막지 않는다
 
         if (_game.Player.TongueOf(Skill.Languages[tongue]) > 0) return true;
-        foreach (int slot in (int[])[0, 3])
+        foreach (int slot in Engine.Town.KeeperTongue.RelaySlots)
             if (MateRow(slot) is { } row && tongue < row.Languages.Length && row.Languages[tongue] > 0)
                 return true;
         return false;
@@ -7802,8 +7907,9 @@ public sealed class WorldMapWindow : Window
             // 발견 판정 0x004AAD20 이 첫 줄에서 그것을 보고 막으므로 그 자리 사건은 다시 안 뜬다.
             if (!over) DiscoveryLog.Settle(_game.Player, id, scripted);
             // 괴물을 놓쳐 매듭을 안 지었으면(모드 「괴물 다시 만나기」) 그 자리를 벗어날 때까지는 다시 안 띄운다 —
-            // 안 그러면 다음 걸음에 곧바로 또 만난다.
-            if (!over && DisevRunner.LastMissedMonster && !_game.Player.IsSettled(id)) _heldDiscovery = id;
+            // 안 그러면 다음 걸음에 곧바로 또 만난다. 예전에 매듭진 괴물을 모드로 다시 만난 것(DiscoveryLog.Rematch)은
+            // 이미 매듭이 서 있으므로 매듭 여부로 거르지 않는다 — 모드가 꺼져 매듭지었으면 어차피 다시 안 뜬다.
+            if (!over && DisevRunner.LastMissedMonster) _heldDiscovery = id;
         }
         finally
         {
@@ -8083,6 +8189,8 @@ public sealed class WorldMapWindow : Window
             // 이미 뭍에 서 있으면(말로 걸어 들어온 마을이면) Land() 는 거짓을 낸다 — 그때도 걷는
             // 것이다. 예전에는 그 거짓을 그대로 받아 성문으로 나섰는데 출항 곡이 돌았다.
             bool walking = dialog.Explored && (_host.IsOnLand || _host.Land());
+            // 입항한 도시의 성문으로 나섰으면 함대는 항구에 있다 — 바다에 배를 안 그리고 물가 승선도 막는다.
+            if (walking) _host.MooredInPort = _game.Player.FleetCity >= 0;
             _game.Bgm.Play(walking ? BgmPlayer.LandTrack : SeaTrackHere());
             // 나오면 닻을 내린 채 선다(0x0048EB32) — 클릭으로 닻을 올려야 간다. 뭍에 오른 뒤에 해야
             // Land() 가 지운 것을 도로 세운다.
@@ -8226,6 +8334,54 @@ public sealed class WorldMapWindow : Window
         _host.ShowShip = true;
         if (sail) _host.SteerTo(heading);
         _game.Bgm.Play(SeaTrackHere());
+        return "";
+    }
+
+    /// <summary>
+    /// 화면 밖 시험의 육지 시작(<c>CDS_START=land:&lt;도시&gt;:&lt;선체&gt;:&lt;x&gt;:&lt;y&gt;</c>) — 바로 시작과 같이 바다로 든 뒤,
+    /// 배는 그 도시 앞바다에 대 두고 말은 그 칸(가까운 육지)에 세운다. 발견물 자리 사건을 화면 밖에서 밟아 볼 때 쓴다.
+    /// </summary>
+    /// <param name="walk">참이면 그 뱃머리 쪽으로 걸어간다.</param>
+    internal string StartAshoreForTest(int city, string hullKey, double x, double y, int heading, bool walk)
+    {
+        string error = StartAtSeaForTest(city, hullKey, heading, false);
+        if (error.Length > 0) return error;
+        var (mooredX, mooredY) = _host.ShipCell is { } at ? (at.CellX + 0.5, at.CellY + 0.5) : (x, y);
+        if (!_host.PlaceAshore(x, y, mooredX, mooredY, heading)) return $"({x}, {y}) 언저리에 육지가 없다";
+        _lastChecked = null;
+        _host.SetHeading(heading);
+        if (walk) _host.SteerTo(heading);
+        return "";
+    }
+
+    /// <summary>화면 밖 시험(<c>CDS_DIALOG=bugreport</c>) — 왼쪽 위 메뉴로 연 것처럼 버그 리포트 창을 띄운다.</summary>
+    internal void OpenBugReportForTest() => MenuItem(ShowBugReport)();
+
+    /// <summary>화면 밖 시험(<c>CDS_TITLE</c>) — 타이틀에서 글쇠 하나를 누른 것처럼 한다(위아래 · 엔터). 타이틀이 아니면 false.</summary>
+    internal bool TitleKeyForTest(Key key) =>
+        ReferenceEquals(_screen.Content, _titleRoot) && _titleFocus.HandleKey(key);
+
+    /// <summary>화면 밖 시험 — 지금 화면이 타이틀인지 지도인지와 제독 · 도시 · 날짜를 한 줄로.</summary>
+    internal string ScreenStateForTest() =>
+        (ReferenceEquals(_screen.Content, _titleRoot) ? "타이틀" : ReferenceEquals(_screen.Content, _mapRoot) ? "지도" : "그 밖")
+        + $" · 제독 {_game.Player.Name} · 도시 {_game.Player.CityId} · {_game.Player.Date:yyyy-MM-dd} · 멈춤 {_host.Paused} · 묻는 중 {_asking}";
+
+    /// <summary>
+    /// 화면 밖 시험(<c>CDS_DIALOG=trade</c>) — 그 도시 교역소 매매 창을 짐 몇 가지를 실은 채 띄운다(도시 화면은 안 거친다).
+    /// </summary>
+    /// <returns>띄웠으면 빈 글, 아니면 까닭. 창은 닫힐 때까지 돌아오지 않는다.</returns>
+    internal string OpenTradeForTest(int city)
+    {
+        if (_game.Trade is not { } trade || _game.Goods is not { } goods) return "교역소 표 · 교역품 표를 못 읽었다";
+        var post = new Engine.Market.TradePost(trade, goods, _game.Rates, _game.CityRows, _game.Nations, _game.Discoveries?.Table);
+        string name = _game.CityTable.Find(city)?.Name ?? $"도시 {city}";
+        _game.Player.EnterCity(city, name);
+        _game.Player.SetGold(100_000);
+        // 멀리서 실어 온 짐 — 원산지 이름이 길어 셋째 줄이 넘치는 것을 본다.
+        // 산 값 — 첫째는 한 번, 둘째는 두 번 사서 가중 평균(40개 100닢 + 20개 130닢 → 110닢), 셋째는 모름(옛 세이브 꼴).
+        foreach (var (kind, origin, n, cost) in new[] { (0, 30, 40, 123), (5, 70, 40, 100), (5, 70, 20, 130), (12, 100, 40, Player.UnknownCost) })
+            if (goods.Find(kind) is { } g) _game.Player.LoadCargo(kind, n, origin, g.Weight, post.FreshShelfOf(kind), cost);
+        TradePostDialog.Show(this, _game, post, city, name, _game.CityRows?.CultureOf(city) ?? 0);
         return "";
     }
 

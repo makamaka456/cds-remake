@@ -23,7 +23,19 @@ CREATE TABLE IF NOT EXISTS tally (
   PRIMARY KEY (kind, key, version, install)
 ) WITHOUT ROWID;
 
--- 대시보드 집계를 묵혀 두는 곳 — 버전(전체는 빈 글)마다 한 줄, 한 시간이 지나면 새로 센다.
+-- 같은 셈을 받은 날(UTC)마다도 — 대시보드의 하루 · 주 · 달 거르기가 센다(migrate-period.sql). 35일 지난 줄은 지운다.
+CREATE TABLE IF NOT EXISTS tally_daily (
+  day     TEXT NOT NULL,          -- 받은 날(UTC, yyyy-MM-dd)
+  kind    TEXT NOT NULL,
+  key     TEXT NOT NULL,
+  version TEXT NOT NULL,
+  install TEXT NOT NULL,
+  name    TEXT NOT NULL,
+  n       INTEGER NOT NULL,
+  PRIMARY KEY (day, kind, key, version, install)
+) WITHOUT ROWID;
+
+-- 대시보드 집계를 묵혀 두는 곳 — 열쇠는 버전(전체 기간, 전체 버전은 빈 글) 또는 「기간:버전」(하루 · 주 · 달)마다 한 줄, 한 시간이 지나면 새로 센다.
 CREATE TABLE IF NOT EXISTS snapshots (
   version TEXT PRIMARY KEY,
   made_at TEXT NOT NULL,
@@ -102,9 +114,12 @@ CREATE TABLE IF NOT EXISTS bug_reports (
   text       TEXT NOT NULL,               -- 사용자가 쓴 글(8000자까지)
   context    TEXT NOT NULL,               -- 게임이 붙인 것(JSON: 버전 · OS · 화면 · 지금 자리 · 모드 · 오류 기록 끝)
   status     TEXT NOT NULL DEFAULT 'new', -- new · seen · fixed · wontfix
-  note       TEXT                         -- 고친 사람의 메모
+  note       TEXT,                        -- 고친 사람의 메모(관리자끼리만)
+  reply      TEXT                         -- 보낸 사람에게 보이는 답(게임의 「내 리포트」, migrate-reply.sql)
 );
 
 CREATE INDEX IF NOT EXISTS bug_reports_status ON bug_reports (status, id);
 -- 한 시간에 받는 수를 셀 때 표를 다 훑지 않게 한다.
 CREATE INDEX IF NOT EXISTS bug_reports_created ON bug_reports (created_at, install);
+-- 설치 하나가 보낸 리포트(「내 리포트」)를 고를 때.
+CREATE INDEX IF NOT EXISTS bug_reports_install ON bug_reports (install, id);

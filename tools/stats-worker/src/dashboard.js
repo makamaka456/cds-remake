@@ -1,19 +1,12 @@
-// 대시보드 — /dashboard 가 이 HTML 을 그대로 내고, 페이지가 /v1/dashboard 에서 집계를 받아 그린다.
+// 대시보드 — 화면은 <cds-dashboard> 부품 하나다. /embed.js 가 그 부품을 정의하고, /dashboard 는 그 부품을 얹은 페이지다.
+// 창세기전3 통계 대시보드(war-of-genesis-stats)도 /embed.js 를 불러 같은 부품을 페이지 안에 넣는다 — 화면 코드는 여기 하나뿐이다.
+// 부품은 그림자 뿌리(shadow DOM) 안에 그려 바깥 페이지의 id · 스타일과 안 섞인다. 집계는 부품의 api 속성(없으면 /embed.js 를 낸 Worker)에서 받는다.
 // 바깥 라이브러리 없이 표와 막대만 쓴다.
 
-export const DASHBOARD_HTML = `<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>코스타 델 솔 — 게임 통계</title>
-<style>
-  :root { --bg: #0d1424; --panel: #16203a; --line: #2b3a63; --text: #e8ecf7; --dim: #93a0c2; --accent: #6ea8ff; --gold: #ffe070; --bar: #3b6fd6; --good: #5fd08a; --bad: #ff7a7a; }
-  @media (prefers-color-scheme: light) { :root { --bg: #f4f6fb; --panel: #ffffff; --line: #d5dbea; --text: #1b2338; --dim: #5d6885; --accent: #2a5fd0; --gold: #a06a00; --bar: #8fb2f2; --good: #1d8a4c; --bad: #c23636; } }
+const CSS = `  :host { --bg: #0d1424; --panel: #16203a; --line: #2b3a63; --text: #e8ecf7; --dim: #93a0c2; --accent: #6ea8ff; --gold: #ffe070; --bar: #3b6fd6; --good: #5fd08a; --bad: #ff7a7a; }
+  @media (prefers-color-scheme: light) { :host { --bg: #f4f6fb; --panel: #ffffff; --line: #d5dbea; --text: #1b2338; --dim: #5d6885; --accent: #2a5fd0; --gold: #a06a00; --bar: #8fb2f2; --good: #1d8a4c; --bad: #c23636; } }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "Segoe UI", "Malgun Gothic", sans-serif; }
-  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
+  :host { display: block; color: var(--text); font: 14px/1.5 "Segoe UI", "Malgun Gothic", sans-serif; }
   h2 { font-size: 15px; margin: 0 0 10px; color: var(--gold); }
   h2 small { color: var(--dim); font-weight: 400; font-size: 13px; }
   .sub { color: var(--dim); margin-bottom: 16px; }
@@ -52,25 +45,26 @@ export const DASHBOARD_HTML = `<!doctype html>
   .bug { border-top: 1px solid var(--line); padding: 10px 0; }
   .bug .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .bug .text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
+  .bug .reply { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; padding: 4px 8px; border-left: 3px solid var(--accent, #6aa0ff); }
   .bug pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; color: var(--dim); max-height: 300px; overflow: auto; }
   .tag { border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; font-size: 12px; }
   .tag.new { color: var(--gold); border-color: var(--gold); } .tag.fixed { color: var(--good); border-color: var(--good); }
-</style>
-</head>
-<body>
-<main>
-  <h1>코스타 델 솔 — 게임 통계</h1>
-  <div class="sub">익명으로 수집한 게임 셈입니다. 모드 옵션은 설치마다 마지막 값이라 버전으로 거르지 않습니다.</div>
+`;
+
+const BODY = `<div class="cds-main">
+  <div class="sub">익명으로 수집한 게임 셈입니다. 모드 옵션은 설치마다 마지막 값이라 버전으로 거르지 않습니다.
+    기간은 받은 날(UTC) 기준입니다 — Day 는 어제부터, Week 는 7일 전부터, Month 는 30일 전부터입니다. 셈(발견 · 고용 · 전투 따위)의 기간 거르기는 2026-11-05 부터 쌓였습니다. 날짜별 탭은 기간으로 거르지 않습니다.</div>
   <div class="filters">
+    <label>기간 <select id="period"><option value="day">Day</option><option value="week" selected>Week</option><option value="month">Month</option><option value="all">전체</option></select></label>
     <label>버전 <select id="version"><option value="">전체</option></select></label>
     <span class="dim" id="made"></span>
     <span id="error"></span>
   </div>
   <div class="tiles" id="tiles"></div>
   <div class="tabs pagetabs" id="pagetabs">
-    <button data-tab="mods">모드 옵션</button><button data-tab="disc">발견물</button><button data-tab="mates">부하</button>
+    <button data-tab="bugs">버그 리포트</button><button data-tab="mods">모드 옵션</button><button data-tab="disc">발견물</button><button data-tab="mates">부하</button>
     <button data-tab="nation">나라 · 기함 · 투자</button><button data-tab="heroes">주인공</button><button data-tab="voyage">항해</button>
-    <button data-tab="play">네비 · 전투 · 사건</button><button data-tab="errors">오류</button><button data-tab="days">날짜별</button><button data-tab="bugs">버그 리포트</button>
+    <button data-tab="play">네비 · 전투 · 사건</button><button data-tab="errors">오류</button><button data-tab="days">날짜별</button>
   </div>
   <section data-tab="mods"><h2>모드 옵션 <small>설치별 마지막 값</small></h2><div class="tabs" id="modtabs"></div><div class="scroll"><table id="mods"></table></div></section>
   <section data-tab="disc"><h2>발견물 순위</h2><div class="scroll"><table id="discoveries"></table><div class="pager" id="discoveries_pg"></div></div></section>
@@ -89,15 +83,21 @@ export const DASHBOARD_HTML = `<!doctype html>
   <section data-tab="play"><h2>전투</h2><table id="battles"></table></section>
   <section data-tab="play"><h2>사건 <small>바다 · 육지에서 하루를 넘길 때 — 밑수(넘긴 날)와 견줘 본다</small></h2><table id="events"></table></section>
   <section data-tab="errors"><h2>오류</h2><div class="scroll"><table id="errors"></table><div class="pager" id="errors_pg"></div></div></section>
-  <section data-tab="days"><h2>날짜별 · 버전별</h2><table id="days"></table><div class="pager" id="days_pg"></div></section>
+  <section data-tab="days"><h2>날짜별</h2>
+    <div class="filters"><label>묶음 <select id="dayUnit"><option value="day">하루</option><option value="week">주(월요일 시작)</option><option value="month">달</option><option value="dayVersion">하루 · 버전</option></select></label>
+      <label>기간 <input type="date" id="dayFrom"> ~ <input type="date" id="dayTo"></label> <button id="dayClear">전체</button> <span class="dim" id="daySum"></span></div>
+    <div class="sub">날짜는 UTC 기준입니다(한국 시각 오전 9시에 날이 바뀝니다).</div>
+    <table id="days"></table><div class="pager" id="days_pg"></div></section>
   <section data-tab="bugs"><h2>버그 리포트</h2>
     <div class="sub">게임의 「버그 리포트」로 받은 글입니다. 오류 기록이 들어 있어 관리자 키(BUG_ADMIN_KEY)를 넣어야 보입니다 — 키는 이 브라우저에만 남습니다.</div>
     <div class="filters"><label>상태 <select id="bugstatus"><option value="new">새로 온 것</option><option value="all">전체</option><option value="seen">봤음</option><option value="fixed">고침</option><option value="wontfix">안 고침</option></select></label>
       <button id="bugkey">관리자 키</button><button id="bugreload">새로 고침</button><span id="bugerr" class="bad"></span></div>
     <div id="bugs" class="dim">관리자 키를 넣으면 보입니다.</div></section>
-</main>
-<script>
-const $ = (id) => document.getElementById(id);
+</div>`;
+
+// 부품을 그리고 움직이는 코드 — 브라우저에서 돈다. root 는 그림자 뿌리, api 는 Worker 주소(끝에 / 없이).
+const APP = String.raw`function cdsDashboard(root, api) {
+const $ = (id) => root.getElementById(id);
 const n = (v) => Number(v || 0).toLocaleString('ko-KR');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sum = (rows, k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
@@ -154,7 +154,7 @@ const modName = (name) => '<span title="' + esc(name) + '">' + esc(MOD_NAMES[nam
 const SEA = [['Won', '승리'], ['Defeated', '패배'], ['Escaped', '퇴각'], ['Surrendered', '항복']];
 
 let data = null;
-const state = { version: '' }, sorts = { discoveries: 'n', hires: 'n', dismisses: 'n', voyages: 'n', errors: 'n' };
+const state = { version: '', period: 'week' }, sorts = { discoveries: 'n', hires: 'n', dismisses: 'n', voyages: 'n', errors: 'n' };
 let modTab = 'all';
 
 const COLS = [['n', '횟수'], ['installs', '설치']];
@@ -183,14 +183,15 @@ function paged(id, rows) {
 
 // 화면 탭 — 섹션을 탭으로 나눠 하나씩 보인다. 고른 탭은 이 브라우저에 남는다.
 function pickTab(tab) {
-  document.querySelectorAll('main > [data-tab]').forEach((el) => el.hidden = el.dataset.tab !== tab);
-  document.querySelectorAll('#pagetabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
-  try { localStorage.setItem('cdsDashTab', tab); } catch (e) { }
+  root.querySelectorAll('.cds-main > [data-tab]').forEach((el) => el.hidden = el.dataset.tab !== tab);
+  root.querySelectorAll('#pagetabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  try { localStorage.setItem('cdsDashTab2', tab); } catch (e) { }
 }
-document.querySelectorAll('#pagetabs button').forEach((b) => b.onclick = () => pickTab(b.dataset.tab));
+root.querySelectorAll('#pagetabs button').forEach((b) => b.onclick = () => pickTab(b.dataset.tab));
 let savedTab = null;
-try { savedTab = localStorage.getItem('cdsDashTab'); } catch (e) { }
-pickTab(document.querySelector('#pagetabs button[data-tab="' + savedTab + '"]') ? savedTab : 'mods');
+// 기본 탭을 버그 리포트로 바꿀 때 열쇠를 갈았다 — 예전에 고른 탭은 안 읽는다.
+try { savedTab = localStorage.getItem('cdsDashTab2'); } catch (e) { }
+pickTab(root.querySelector('#pagetabs button[data-tab="' + savedTab + '"]') ? savedTab : 'bugs');
 
 // 순위 표 — 횟수 · 설치 머리를 눌러 줄 세운다.
 function rankTable(id, label, rows, nameOf) {
@@ -333,14 +334,40 @@ function render() {
   renderEvents();
   rankTable('errors', '오류 갈래 @ 난 자리', data.errors, (r) => { const [type, at] = r.key.split('@'); return esc(type) + (at ? ' <span class="dim">@ ' + esc(at) + '</span>' : ''); });
 
-  $('days').innerHTML = '<tr><th class="name">날짜</th><th class="name">버전</th><th>설치</th><th>덩이</th></tr>'
-    + (data.days.length ? paged('days', data.days).rows.map((d) => '<tr><td class="name">' + esc(d.day) + '</td><td class="name">' + esc(d.version) + '</td><td>' + n(d.installs) + '</td><td>' + n(d.batches) + '</td></tr>').join('') : EMPTY(4));
+  renderDays();
+}
+
+// 날짜별 탭 — 묶음(하루 · 주 · 달 · 하루×버전)과 기간(시작 · 끝 날짜, 그 기간에 걸친 줄만).
+const dayView = { unit: 'day', from: '', to: '' };
+function renderDays() {
+  if (!data) return;
+  const { unit, from, to } = dayView;
+  // 줄이 덮는 날 [시작, 끝] — 주는 7일, 달은 그 달 끝까지.
+  const span = (key) => {
+    if (unit === 'week') { const e = new Date(key + 'T00:00:00Z'); e.setUTCDate(e.getUTCDate() + 6); return [key, e.toISOString().slice(0, 10)]; }
+    if (unit === 'month') return [key + '-01', key + '-31'];
+    return [key, key];
+  };
+  const inRange = (key) => { const [a, b] = span(key); return (!from || b >= from) && (!to || a <= to); };
+  let rows, head;
+  if (unit === 'dayVersion') {
+    rows = data.days.filter((d) => inRange(d.day));
+    head = '<tr><th class="name">날짜</th><th class="name">버전</th><th>설치</th><th>덩이</th></tr>';
+    $('days').innerHTML = head + (rows.length ? paged('days', rows).rows.map((d) => '<tr><td class="name">' + esc(d.day) + '</td><td class="name">' + esc(d.version) + '</td><td>' + n(d.installs) + '</td><td>' + n(d.batches) + '</td></tr>').join('') : EMPTY(4));
+  } else {
+    rows = ((data.periods || {})[unit] || []).filter((d) => inRange(d.key));
+    const max = Math.max(1, ...rows.map((r) => r.batches));
+    head = '<tr><th class="name">' + { day: '날짜', week: '주(월요일)', month: '달' }[unit] + '</th><th>설치</th><th>덩이</th><th></th></tr>';
+    $('days').innerHTML = head + (rows.length ? paged('days', rows).rows.map((d) => '<tr><td class="name">' + esc(d.key) + '</td><td>' + n(d.installs) + '</td><td>' + n(d.batches) + '</td>'
+      + '<td class="bar"><i style="width:' + (100 * d.batches / max).toFixed(1) + '%"></i></td></tr>').join('') : EMPTY(4));
+  }
+  $('daySum').textContent = from || to ? '이 기간 덩이 ' + n(rows.reduce((s, r) => s + r.batches, 0)) : '';
 }
 
 async function load() {
   $('error').textContent = '';
   try {
-    const res = await fetch('/v1/dashboard?' + new URLSearchParams({ version: state.version }));
+    const res = await fetch(api + '/v1/dashboard?' + new URLSearchParams({ period: state.period, version: state.version }));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     data = await res.json();
     const sel = $('version'), keep = state.version;
@@ -359,11 +386,13 @@ function bugCard(b) {
   const when = new Date(b.created_at).toLocaleString('ko-KR');
   const where = [c.where, c.city].filter(Boolean).join(' ');
   const buttons = Object.keys(STATUS_NAME).filter((s) => s !== b.status)
-    .map((s) => '<button data-id="' + b.id + '" data-s="' + s + '">' + STATUS_NAME[s] + '</button>').join(' ');
+    .map((s) => '<button data-id="' + b.id + '" data-s="' + s + '">' + STATUS_NAME[s] + '</button>').join(' ')
+    + ' <button data-reply="' + b.id + '">답 달기</button>';
   return '<div class="bug"><div class="head"><b>#' + b.id + '</b><span class="tag ' + esc(b.status) + '">' + esc(STATUS_NAME[b.status] || b.status) + '</span>'
     + '<span class="dim">' + esc(when) + (b.version ? ' · v' + esc(b.version) : '') + (where ? ' · ' + esc(where) : '') + (c.crashLog ? ' · 오류 기록 있음' : '') + '</span><span style="flex:1"></span>' + buttons + '</div>'
     + '<div class="text">' + esc(b.text) + '</div>'
     + (b.note ? '<div class="dim">메모: ' + esc(b.note) + '</div>' : '')
+    + (b.reply ? '<div class="reply">답(보낸 분에게 보임): ' + esc(b.reply) + '</div>' : '')
     + '<details><summary class="dim">같이 온 것</summary><pre>' + esc(JSON.stringify(c, null, 2)) + '</pre></details></div>';
 }
 async function loadBugs() {
@@ -371,21 +400,32 @@ async function loadBugs() {
   $('bugerr').textContent = '';
   if (!key) { $('bugs').innerHTML = '<span class="dim">관리자 키를 넣으면 보입니다.</span>'; return; }
   try {
-    const res = await fetch('/v1/bugs?status=' + bugState.status + '&order=desc&limit=200', { headers: { Authorization: 'Bearer ' + key } });
+    const res = await fetch(api + '/v1/bugs?status=' + bugState.status + '&order=desc&limit=200', { headers: { Authorization: 'Bearer ' + key } });
     if (res.status === 401) throw new Error('키가 맞지 않습니다');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const bugs = (await res.json()).bugs || [];
     $('bugs').innerHTML = bugs.length ? bugs.map(bugCard).join('') : '<span class="dim">없습니다.</span>';
     $('bugs').querySelectorAll('button[data-id]').forEach((b) => b.onclick = () => markBug(Number(b.dataset.id), b.dataset.s));
+    $('bugs').querySelectorAll('button[data-reply]').forEach((b) => b.onclick = () => replyBug(bugs.find((x) => x.id === Number(b.dataset.reply))));
   } catch (e) { $('bugerr').textContent = '불러오지 못했습니다: ' + e.message; }
 }
 async function markBug(id, status) {
   const asks = status === 'fixed' || status === 'wontfix';
   const note = asks ? prompt('메모(선택 — 고친 커밋 · 버전 따위)', '') : null;
   if (asks && note === null) return;
-  const res = await fetch('/v1/bugs/' + id + '/status', { method: 'POST', headers: { Authorization: 'Bearer ' + bugKey(), 'content-type': 'application/json' },
+  const res = await fetch(api + '/v1/bugs/' + id + '/status', { method: 'POST', headers: { Authorization: 'Bearer ' + bugKey(), 'content-type': 'application/json' },
     body: JSON.stringify(note ? { status, note } : { status }) });
   if (!res.ok) { $('bugerr').textContent = '바꾸지 못했습니다: HTTP ' + res.status; return; }
+  loadBugs();
+}
+// 답 — 보낸 분이 게임의 「내 리포트」에서 본다. 상태는 그대로 두고, 비우면 답을 지운다.
+async function replyBug(b) {
+  if (!b) return;
+  const reply = prompt('보낸 분에게 보일 답(비우면 지웁니다)', b.reply || '');
+  if (reply === null) return;
+  const res = await fetch(api + '/v1/bugs/' + b.id + '/status', { method: 'POST', headers: { Authorization: 'Bearer ' + bugKey(), 'content-type': 'application/json' },
+    body: JSON.stringify({ status: b.status, reply }) });
+  if (!res.ok) { $('bugerr').textContent = '답을 달지 못했습니다: HTTP ' + res.status; return; }
   loadBugs();
 }
 $('bugkey').onclick = () => {
@@ -398,8 +438,52 @@ $('bugreload').onclick = loadBugs;
 $('bugstatus').onchange = (e) => { bugState.status = e.target.value; loadBugs(); };
 loadBugs();
 
+$('dayUnit').onchange = (e) => { dayView.unit = e.target.value; pages.days = 0; renderDays(); };
+$('dayFrom').onchange = (e) => { dayView.from = e.target.value; pages.days = 0; renderDays(); };
+$('dayTo').onchange = (e) => { dayView.to = e.target.value; pages.days = 0; renderDays(); };
+$('dayClear').onclick = () => { dayView.from = dayView.to = ''; $('dayFrom').value = $('dayTo').value = ''; pages.days = 0; renderDays(); };
 $('version').onchange = (e) => { state.version = e.target.value; for (const k in pages) pages[k] = 0; load(); };
+$('period').onchange = (e) => { state.period = e.target.value; for (const k in pages) pages[k] = 0; load(); };
 load();
-</script>
+}
+`;
+
+export const EMBED_JS = `(() => {
+const CSS = ${JSON.stringify(CSS)};
+const BODY = ${JSON.stringify(BODY)};
+const ORIGIN = new URL(document.currentScript.src, location.href).origin;
+${APP}
+class CdsDashboard extends HTMLElement {
+  connectedCallback() {
+    if (this.shadowRoot) return;
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = '<style>' + CSS + '</style>' + BODY;
+    cdsDashboard(root, (this.getAttribute('api') || ORIGIN).replace(/[/]$/, ''));
+  }
+}
+if (!customElements.get('cds-dashboard')) customElements.define('cds-dashboard', CdsDashboard);
+})();
+`;
+
+export const DASHBOARD_HTML = `<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>코스타 델 솔 — 게임 통계</title>
+<style>
+  :root { --bg: #0d1424; --text: #e8ecf7; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f4f6fb; --text: #1b2338; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "Segoe UI", "Malgun Gothic", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>코스타 델 솔 — 게임 통계</h1>
+  <cds-dashboard></cds-dashboard>
+</main>
+<script src="/embed.js"></script>
 </body>
 </html>`;

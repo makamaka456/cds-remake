@@ -449,6 +449,11 @@ public sealed class ModDialog : GameWindow
             "원본에 없는 것입니다 — 스핑크스 퀴즈에서 고르는 창의 정답 줄에 「← 답」을 붙입니다."
             + " 셈 문제의 답은 늘 다리 넷 달린 괴물의 수입니다."));
 
+        // 아무 자리나 통역 — 부관 · 통역 말고 항해사 · 측량사도 말을 옮긴다.
+        rows.Children.Add(Toggle("아무 자리나 통역", GameSettings.AnySeatInterprets, on => GameSettings.AnySeatInterprets = on,
+            "원본에 없는 것입니다 — 원본은 부관과 통역만 말을 옮겨 줍니다. 켜면 항해사 · 측량사까지 부하 가운데 그 말을 가장 잘하는 사람이"
+            + " 통역해 주고, 교역소 흥정 · 후원자 · 항구 소문 · 해상 교섭처럼 말이 통해야 하는 곳도 그 사람 실력으로 봅니다."));
+
         // 추가 발견물 — 원본 274개 뒤에 더해 넣은 것(돌묵상어 따위)과 그 힌트.
         discovery.Children.Add(Toggle("추가 발견물", GameSettings.ExtraDiscoveries,
             on => GameSettings.ExtraDiscoveries = on,
@@ -552,7 +557,7 @@ public sealed class ModDialog : GameWindow
         // 망명 — 리스본 · 세비야 · 런던 왕궁에서 그 나라로 국적과 자택을 옮긴다. 파워업키트가 켠다.
         character.Children.Add(Toggle("망명", GameSettings.Exile, on => GameSettings.Exile = on,
             "원본에 없는 것입니다 — 리스본 · 세비야 · 런던 왕궁과 제노바 총독부에 「망명」 줄이 생겨, 그 나라(포르투갈 · 에스파니아 · 잉글랜드 · 제노바)로 국적을 옮기고 자택도 그 도시로 옮깁니다."
-            + " 명성 60000 이상과 그 왕궁 국왕과의 친밀도 100이 필요하고, 망명하면 금화 1000000닢과 명성 50000이 깎입니다."
+            + " 명성 60000 이상과 그 왕궁 국왕과의 친밀도 75 이상이 필요하고, 망명하면 금화 1000000닢과 명성 50000이 깎입니다."
             + " 후원자와 계약 중이거나 의뢰를 수행하는 중에는 망명할 수 없습니다."));
 
         // 대화만 되던 인물 고용 — 고용 상태 1(대화만) 인물도 술집에서 고용한다.
@@ -639,6 +644,12 @@ public sealed class ModDialog : GameWindow
             on => GameSettings.MonsterRetry = on,
             "원본에 없는 것입니다 — 바다에서 만난 괴물(크라켄 · 시서펜트 · 식인상어 · 맨터)을 놓쳐도 그 자리를 벗어났다가"
             + " 다시 가면 또 만납니다. 원본은 한 번 놓치면 다시 나오지 않습니다."));
+
+        // 성문으로 나서도 배 보이기 — 원본은 입항한 도시의 성문으로 나서면 바다에 배가 없고 물가 승선도 안 된다.
+        general.Children.Add(Toggle("성문으로 나서도 배 보이기", GameSettings.PortShipAshore,
+            on => GameSettings.PortShipAshore = on,
+            "원본에 없는 것입니다 — 입항한 도시의 성문으로 나서도 도시 앞바다에 배가 보이고, 그 배 곁 물가에서 승선할 수 있습니다."
+            + " 원본은 성문으로 나서면 배가 안 보이고, 그 도시로 돌아가야 배에 오릅니다."));
 
 
         // 직업 누르면 다시 굴림 — 원본은 직업을 바꿔도 안 굴린다(0x0045D8DA).

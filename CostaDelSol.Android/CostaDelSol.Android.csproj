@@ -93,6 +93,7 @@
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GameFont.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GameFont.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GamePalette.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GamePalette.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\FrameArt.cs" Link="Shared\CdsHelper.Game\UI\Views\FrameArt.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\SponsorEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\SponsorEdits.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\CitySpriteDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CitySpriteDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\MonsterMotionDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MonsterMotionDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\PassiveEditDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\PassiveEditDialog.cs" />

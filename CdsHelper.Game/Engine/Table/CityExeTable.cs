@@ -40,7 +40,7 @@ namespace CdsHelper.Game.Local.Helpers;
 /// </remarks>
 public sealed class CityExeTable
 {
-    /// <summary>적어 둘 파일 이름(<c>%APPDATA%\CdsHelper\exe-tables\도시표-게임.json</c>).</summary>
+    /// <summary>적어 둘 파일 이름(<c>exe-tables\cities-exe.json</c>).</summary>
     private const string CacheName = "도시표-게임";
 
     /// <summary>알맹이 모양 판. 지역 무리를 더하며 5 로, 들어서면 발견되는 발견물을 더하며 10 으로 올렸다.</summary>
@@ -224,7 +224,10 @@ public sealed class CityExeTable
     /// </summary>
     public int ScaleOf(int cityId) =>
         Live?.CityScales.TryGetValue(cityId, out int grown) == true ? grown
-        : cityId >= 0 && cityId < _scales.Length ? _scales[cityId] : 0;
+        : StartScaleOf(cityId);
+
+    /// <summary>표에 적힌 처음 규모 — 게임 중에 자란 것(역사 대본 · 모드 「도시 투자 성장」)은 안 든다.</summary>
+    public int StartScaleOf(int cityId) => cityId >= 0 && cityId < _scales.Length ? _scales[cityId] : 0;
 
     /// <summary>
     /// 게임 중에 바뀐 값을 든 주인공 — 역사 대본이 바꾼 나라(<see cref="Player.HistoryNations"/>)와

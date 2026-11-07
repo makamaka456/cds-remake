@@ -103,6 +103,35 @@ public static class GameSave
     public static string Path => UserDataFolder.Combine("SAVEDATA.CDS");
 
     /// <summary>
+    /// <b>중단저장</b> 자리 — 원본의 <c>SAVEDATA.TMP</c>(<c>0x00537644</c>, 포인터 <c>0x0056877C</c>)다.
+    /// </summary>
+    /// <remarks>
+    /// 원본의 「게임 중단」(<c>0x004791D0</c> — 바다 「기능」 <c>0x0048B771</c> · 남의 나라 여관 <c>0x004A27E4</c>)은
+    /// 이 파일만 지우고 다시 적는다. <c>SAVEDATA.CDS</c> 는 건드리지 않는다. 로드(<c>0x00478A60</c>)는 이 파일을 <b>먼저</b> 찾고,
+    /// 있으면 그것을 연 뒤 <b>지우고</b> 「아직 저장 안 됨」을 세운다(<c>0x00478E17</c>~<c>0x00478E2B</c>) — 한 번만 이어 할 수 있다.
+    /// 여느 저장(끝 <c>0x00479101</c>~)은 이 파일과 <c>SAVEDATA.CDS</c> 를 함께 지운 뒤 <c>SAVEDATA.CDS</c> 를 적는다.
+    /// 예전에는 중단도 <see cref="Path"/> 와 손으로 적은 칸에 적어 일반 세이브를 덮었다(버그 리포트 #21).
+    /// </remarks>
+    public static string SuspendPath => UserDataFolder.Combine("SAVEDATA.TMP");
+
+    /// <summary>열려는 파일이 중단저장 자리인지.</summary>
+    public static bool IsSuspendFile(string? file) =>
+        !string.IsNullOrEmpty(file)
+        && string.Equals(System.IO.Path.GetFullPath(file), System.IO.Path.GetFullPath(SuspendPath),
+                         StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>중단저장을 지운다 — 이어 하기로 연 뒤(원본 <c>0x00478E26</c>)다. 지웠거나 없으면 true.</summary>
+    public static bool DeleteSuspend()
+    {
+        try
+        {
+            if (File.Exists(SuspendPath)) File.Delete(SuspendPath);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+    }
+
+    /// <summary>
     /// 예전 <b>자동저장</b> 파일 자리 — 한 칸을 덮어쓰던 때의 것이다.
     /// </summary>
     /// <remarks>
@@ -165,11 +194,14 @@ public static class GameSave
         var slots = Slots(ManualFiles());
         if (Load() is { } latest && !slots.Any(s => s.Save.SavedAt == latest.SavedAt))
             slots = [.. slots.Append(new AutoSlot(Path, latest)).OrderByDescending(s => s.Save.SavedAt)];
+        // 중단저장도 한 줄로 낸다 — 원본 로드는 이것부터 연다(0x00478ABD). 열고 나면 지워진다.
+        if (Load(SuspendPath) is { } suspended)
+            slots = [.. slots.Append(new AutoSlot(SuspendPath, suspended)).OrderByDescending(s => s.Save.SavedAt)];
         return slots;
     }
 
-    /// <summary>손으로 적은 세이브가 하나라도 있는지 — 파일만 보고 열지는 않는다.</summary>
-    public static bool HasManualSave() => File.Exists(Path) || ManualFiles().Count > 0;
+    /// <summary>손으로 적은 세이브(중단저장 포함)가 하나라도 있는지 — 파일만 보고 열지는 않는다.</summary>
+    public static bool HasManualSave() => File.Exists(Path) || File.Exists(SuspendPath) || ManualFiles().Count > 0;
 
     /// <summary><see cref="ManualSlots"/> 개를 넘는 오래된 칸을 지운다. <see cref="Path"/> 는 안 건드린다.</summary>
     private static void PruneManualSaves()
@@ -256,7 +288,8 @@ public static class GameSave
 
         int gone = 0;
         // 손으로 적은 지난 칸(ManualDirectory)도 같이 걷는다 — 남기면 LOAD GAME 목록에서 은퇴한 제독이 되살아난다.
-        foreach (var slot in AutoSaves().Concat(Slots(ManualFiles())))
+        // 중단저장(SAVEDATA.TMP)도 그 판 것이면 지운다 — 원본도 은퇴 · 삭제에서 함께 지운다(0x0045F909).
+        foreach (var slot in AutoSaves().Concat(Slots(ManualFiles())).Concat(Slots(File.Exists(SuspendPath) ? [SuspendPath] : [])))
         {
             if (!Same(slot.Save)) continue;
             try { File.Delete(slot.File); gone++; }
@@ -409,7 +442,8 @@ public static class GameSave
         List<string>? HardcoreMarks = null, string? HardcoreSeal = null,
         Dictionary<int, long>? GrowthFunds = null, Dictionary<int, int>? GoodsRates = null,
         int? StoreExpansions = null, int? StoreQuestCleared = null, bool? StoreQuestTaken = null,
-        List<string>? DevMarks = null, string? DevSeal = null)
+        List<string>? DevMarks = null, string? DevSeal = null,
+        string? Pack = null, string? PackPrint = null)
     {
         /// <summary>읽을 때 봉인을 대 본 결과 — 맞으면 참, 안 맞거나 없으면 거짓, 따지지 않는 앞 판이면 null. 파일에는 안 적는다.</summary>
         [JsonIgnore] public bool? SealOk { get; init; }
@@ -429,7 +463,8 @@ public static class GameSave
     /// <summary>지금 상태를 적는다. 실패하면 까닭을 돌려준다(성공이면 빈 문자열).</summary>
     /// <param name="suspended">
     /// 중단저장인지 — 원본은 중단이면 <c>SAVEDATA.TMP</c> 로 적고, 그것을 불러온 판에 「아직 저장 안 됨」
-    /// 비트(<c>0x005A4D18 &amp; 0x80</c>)를 세운다(<c>0x00478E2B</c>). 우리는 파일이 하나라 이 칸으로 든다.
+    /// 비트(<c>0x005A4D18 &amp; 0x80</c>)를 세운다(<c>0x00478E2B</c>). 우리도 <see cref="SuspendPath"/> 에 적고,
+    /// 불러올 때 이 칸을 보고 그 비트를 세운다.
     /// </param>
     /// <param name="path">
     /// 적을 자리. 안 주면 <see cref="Path"/> 다 — <b>자동저장</b>만 <see cref="AutoPath"/> 를 준다.
@@ -610,17 +645,22 @@ public static class GameSave
                             // 교역품별 시세(모드). 이 칸 앞의 세이브는 모든 교역품이 100 이다.
                             GoodsRates: player.GoodsRates.Count > 0 ? player.GoodsRates.ToDictionary(e => e.Key, e => e.Value) : null,
                             // 개발 기능으로 고친 기록. 봉인은 글을 다 짓고 붙인다(Sealed).
-                            DevMarks: player.DevMarks.Count > 0 ? HardcoreRules.Sorted(player.DevMarks) : null);
+                            DevMarks: player.DevMarks.Count > 0 ? HardcoreRules.Sorted(player.DevMarks) : null,
+                            // 이 판을 시작한 커스텀 팩과 그 지문. 팩 없이 시작했거나 이 칸 앞의 세이브는 비어 있다.
+                            Pack: player.Pack.Length > 0 ? player.Pack : null,
+                            PackPrint: player.PackPrint.Length > 0 ? player.PackPrint : null);
         try
         {
-            string file = string.IsNullOrEmpty(path) ? Path : path;
+            // 중단은 제 자리(SAVEDATA.TMP)에만 적는다 — 일반 세이브와 손으로 적은 칸은 그대로 둔다(0x00479447~0x0047946F).
+            bool manual = string.IsNullOrEmpty(path) && !suspended;
+            string file = !string.IsNullOrEmpty(path) ? path : suspended ? SuspendPath : Path;
             var dir = System.IO.Path.GetDirectoryName(file);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             string json = Sealed(data);
 
             // 「가장 새 것」 자리를 덮기 전에, 그 자리에 있던 것이 지난 칸에 없으면 한 칸으로 옮겨 둔다 —
             // 칸이 생기기 전에 적은 세이브나, 딴 캐릭터를 남겨 둔 채 새 캐릭터가 처음 적을 때 앞의 것이 사라지지 않게.
-            if (string.IsNullOrEmpty(path) && Load() is { } before
+            if (manual && Load() is { } before
                 && !Slots(ManualFiles()).Any(s => s.Save.SavedAt == before.SavedAt))
             {
                 try
@@ -636,8 +676,14 @@ public static class GameSave
 
             // 손으로 적은 것이면 지난 칸으로도 한 벌 남긴다 — 다섯 칸을 넘으면 가장 오래된 것이 빠진다.
             // 칸을 못 남겨도 저장 자체는 된 것이라 까닭을 올리지 않는다.
-            if (string.IsNullOrEmpty(path))
+            if (manual)
             {
+                // 여느 저장은 중단저장을 지운다(0x00479119) — 남기면 지난 중단 자리로 되돌아갈 수 있다.
+                // 우리는 딴 캐릭터를 남겨 둘 수 있으므로 <b>같은 판</b>의 중단저장만 지운다.
+                if (Load(SuspendPath) is { } stale
+                    && (string.IsNullOrEmpty(stale.GameId) || string.IsNullOrEmpty(player.GameId)
+                        || stale.GameId == player.GameId))
+                    DeleteSuspend();
                 try
                 {
                     Directory.CreateDirectory(ManualDirectory);
@@ -721,17 +767,86 @@ public static class GameSave
 
     public static Data? Load(string? path = null)
     {
+        string file = string.IsNullOrEmpty(path) ? Path : path;
         try
         {
-            string file = string.IsNullOrEmpty(path) ? Path : path;
             if (!File.Exists(file)) return null;
             string text = File.ReadAllText(file);
-            if (JsonSerializer.Deserialize<Data>(text) is not { } data) return null;
+            if (JsonSerializer.Deserialize<Data>(text) is not { } data)
+            {
+                NoteLoadError(file, null, "빈 파일(null)");
+                return null;
+            }
+            LoadErrors.TryRemove(System.IO.Path.GetFileName(file), out _);
             return data with { SealOk = data.Version < DevSealFrom ? null : SealMatches(text, data.DevSeal) };
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception ex)
         {
+            // 어떤 까닭이든 세이브 하나를 못 읽었다고 게임이 서면 안 된다 — 다만 <b>조용히 삼키지 않는다</b>. 예전에는
+            // IO · JSON 오류만 null 로 넘겨 목록에서 그 칸이 말없이 빠졌고, 「로딩이 아예 안 된다」(버그 리포트 #26)에
+            // 남은 것이 없었다. 까닭을 적어 두어 목록 · 불러오기 알림과 버그 리포트 컨텍스트(Census)에 싣는다.
+            // JSON 오류 글은 길다 — 어느 칸 · 몇째 줄에서 깨졌는지만 남긴다(알림 창 한 줄에 들게).
+            NoteLoadError(file, ex, ex is JsonException json
+                ? $"JsonException {json.Path} (줄 {(json.LineNumber is { } line ? line + 1 : 0)})"
+                : $"{ex.GetType().Name}: {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// 못 읽은 세이브 — 파일 이름 → 까닭. 다시 읽혀 성공하면 빠진다. 경로는 안 적는다(버그 리포트로 나간다).
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> LoadErrors =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>통계에 한 번씩만 올린 것(파일 · 오류 갈래) — 목록을 열 때마다 같은 오류를 또 보내지 않는다.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> ReportedLoadErrors = new();
+
+    private static void NoteLoadError(string file, Exception? ex, string why)
+    {
+        string name = System.IO.Path.GetFileName(file);
+        if (why.Length > 240) why = why[..240] + "…";
+        LoadErrors[name] = why;
+        if (ex != null && ReportedLoadErrors.TryAdd($"{name}|{ex.GetType().Name}", 0))
+        {
+            try { Local.Helpers.PlayStats.Error(ex); } catch { /* 통계를 못 올려도 불러오기는 그대로다 */ }
+        }
+    }
+
+    /// <summary>그 파일을 못 읽은 까닭. 읽혔거나 아직 안 열어 봤으면 null.</summary>
+    public static string? LoadError(string? file) =>
+        LoadErrors.TryGetValue(System.IO.Path.GetFileName(string.IsNullOrEmpty(file) ? Path : file), out var why) ? why : null;
+
+    /// <summary>지금까지 못 읽은 세이브들(「파일: 까닭」). 없으면 빈 목록.</summary>
+    public static List<string> LoadErrorLines() => [.. LoadErrors.Select(e => $"{e.Key}: {e.Value}").Order()];
+
+    /// <summary>
+    /// 마지막 불러오기가 어떻게 끝났는지 — 「불러옴」 · 「목록 비었음」 · 「팩 물음에서 아니오」 따위. 버그 리포트 컨텍스트에 싣는다.
+    /// </summary>
+    public static string LastLoadOutcome { get; set; } = "";
+
+    /// <summary>
+    /// 세이브 자리의 한 줄 요약 — 칸마다 파일 수와 읽힌 수, 중단저장 · 가장 새 세이브가 있는지, 못 읽은 까닭.
+    /// 버그 리포트 컨텍스트에 싣는다(파일 이름만, 경로 없이). 「로딩이 아예 안 된다」를 다음에는 가를 수 있게 한다(버그 리포트 #26).
+    /// </summary>
+    public static string Census()
+    {
+        static (int Files, int Read) Count(IReadOnlyCollection<string> files) =>
+            (files.Count, files.Count(f => Load(f) != null));
+        try
+        {
+            var manual = Count(ManualFiles());
+            var autoFiles = new List<string>();
+            if (Directory.Exists(AutoDirectory)) autoFiles.AddRange(Directory.GetFiles(AutoDirectory, "*.CDS"));
+            if (File.Exists(AutoPath)) autoFiles.Add(AutoPath);
+            var auto = Count(autoFiles);
+            string Main(string file) => !File.Exists(file) ? "없음" : Load(file) != null ? "읽힘" : "못 읽음";
+            string line = $"SAVEDATA.CDS {Main(Path)} · save {manual.Read}/{manual.Files} · autosave {auto.Read}/{auto.Files}"
+                        + $" · SAVEDATA.TMP {Main(SuspendPath)}";
+            var errors = LoadErrorLines();
+            if (errors.Count > 0) line += " · 못 읽은 것 " + string.Join(" | ", errors.Take(3));
+            return line;
+        }
+        catch (Exception ex) { return $"세이브 자리를 못 셌다 — {ex.GetType().Name}: {ex.Message}"; }
     }
 }
