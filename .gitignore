@@ -86,3 +86,5 @@ CostaDelSol.Android/Assets/bgm/
 
 # 안드로이드 시험기(devtools/sim)가 실행 폴더에 찍는 화면
 /*.png
+# 시험기 검수 결과 글(qa-*.txt)
+/qa-*.txt
