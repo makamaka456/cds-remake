@@ -4,7 +4,9 @@ namespace Sim
     /// <summary>WPF 창 시험 손 — 차례로 할 일(누르기 · 찍기)을 쌓아 두면 모달이 쉴 때마다 하나씩 한다.</summary>
     public static class Drive
     {
-        public static readonly Queue<(string Name, Action<Window> Run)> Steps = new();
+        public static readonly Queue<(string Name, Action<Window> Run, string? For)> Steps = new();
+        // 맨 앞 단계가 이 창 것인지 — For 를 준 단계는 그 이름의 창에만 걸린다(딴 창은 여느 때처럼 찍고 닫는다).
+        private static bool StepFits(Window w) => Steps.Count > 0 && (Steps.Peek().For is not { } kind || kind == w.GetType().Name);
         public static string Dir = Environment.GetEnvironmentVariable("SHOTS") ?? ".";
         private static readonly Dictionary<string, int> Seen = [];
         private static Window? _last;
@@ -39,14 +41,14 @@ namespace Sim
                     throw new Exception($"띄운 창이 없다(떠 있는 것: {string.Join(",", WpfHost.Shown.Select(x => x.GetType().Name))})");
                 }
                 _empty = 0;
-                if (Steps.Count == 0 && Buttons.TryGetValue(w.GetType().Name, out var queue) && queue.Count > 0)
+                if (!StepFits(w) && Buttons.TryGetValue(w.GetType().Name, out var queue) && queue.Count > 0)
                 {
                     string text = queue.Dequeue();
-                    Shot(w, $"{w.GetType().Name}-{text}");
+                    Shot(w, $"{w.GetType().Name}-{text.Replace('/', '_')}");
                     if (!Press(w, text)) Key(w, System.Windows.Input.Key.Escape);
                     return;
                 }
-                if (Steps.Count == 0)
+                if (!StepFits(w))
                 {
                     // 대본이 없으면 찍고 ESC(안 받으면 오른쪽 딸깍)로 닫는다 — 안드로이드 「뒤로」와 같다.
                     string kind = w.GetType().Name;
@@ -95,12 +97,12 @@ namespace Sim
                     WpfHost.LayerOf(w)!.Cancel();
                     return;
                 }
-                var (name, run) = Steps.Dequeue();
+                var (name, run, _) = Steps.Dequeue();
                 Log.W($"  [손] {name}");
                 run(w);
             };
         }
-        public static void Add(string name, Action<Window> run) => Steps.Enqueue((name, run));
+        public static void Add(string name, Action<Window> run, string? forWindow = null) => Steps.Enqueue((name, run, forWindow));
         public static void Shot(Window w, string name)
         {
             if (WpfHost.LayerOf(w) is not { } layer) return;
@@ -160,6 +162,10 @@ namespace Sim
                 if (b.Text == text) { ClickCenter(w, r); Log.W($"  [단추] {text}"); return true; }
             foreach (var (b, r) in Find<System.Windows.Controls.Button>(w))
                 if (b.Content?.ToString() == text) { ClickCenter(w, r); Log.W($"  [단추] {text}"); return true; }
+            // 「@Down」처럼 적으면 그 글쇠를 누른다(줄을 골라야 「결정」이 켜지는 창 따위).
+            // 「@80/60」은 창 안 그 자리를 손가락으로 누른다(줄을 눌러 고르는 창).
+            if (text.StartsWith("@") && text.Split('/') is [var xs, var ys] && double.TryParse(xs[1..], out double px) && double.TryParse(ys, out double py)) { Click(w, px, py); Log.W($"  [누름] {px},{py}"); return true; }
+            if (text.StartsWith("@") && Enum.TryParse<System.Windows.Input.Key>(text[1..], out var key)) { Key(w, key); Log.W($"  [글쇠] {key}"); return true; }
             Log.W($"  [단추 없음] {text}: " + string.Join(",", Find<CdsHelper.Game.UI.Views.GameButton>(w).Select(b => b.E.Text)));
             return false;
         }

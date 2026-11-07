@@ -128,7 +128,7 @@ Drive.Add("힌트 책 읽기", w =>
             return;
         }
     Log.W("  힌트 책 없음");
-});
+}, "LibraryDialog");   // 도서관 책장 창에만 — 저택 들머리의 딴 창이 가로채지 않게
 Drive.Add("책 찍기", w => { Drive.Shot(w, "book"); Drive.Key(w, System.Windows.Input.Key.Escape); });
 foreach (var step in plan.Split(';', StringSplitOptions.RemoveEmptyEntries))
 {
