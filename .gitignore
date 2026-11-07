@@ -83,3 +83,6 @@ asset/bgm/
 # 안드로이드 APK 에 넣는 원본 자료 — 빌드 때 map-assets 릴리즈에서 받는다
 CostaDelSol.Android/Assets/game/
 CostaDelSol.Android/Assets/bgm/
+
+# 안드로이드 시험기(devtools/sim)가 실행 폴더에 찍는 화면
+/*.png
