@@ -431,6 +431,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "gallery")
     Try("여급", map.ShowBarmaidBook);
     Try("이동", map.ShowPersonMove);
     Try("묘책", () => RuseEditDialog.Show(map));
+    Try("릴리즈노트", map.ShowReleaseNotes);
     return;
 }
 if (Environment.GetEnvironmentVariable("MODE") == "sea")

@@ -285,6 +285,9 @@ public sealed partial class WorldMapWindow
     /// <summary>차림표 「출처」 — 더해 넣은 발견물의 글 · 그림 출처(PC 판 햄버거 「출처」와 같은 창).</summary>
     public void ShowCredits() => NoticeDialog.Notes(this, ExtraCredits, "출처");
 
+    /// <summary>릴리즈 노트 — 역대 판 목록 · 판별 보기 · 낱말 찾기(PC 판 ShowReleaseNotes 와 같다). 노트는 APK 의 release-notes.md.</summary>
+    public void ShowReleaseNotes() => ReleaseNotesDialog.Show(this);
+
     /// <summary>하드코어에서 단축키 · 커맨드로 저장하려 할 때(PC 판 문구 그대로).</summary>
     public const string HardcoreNoQuickSave = "하드코어 모드에서는 단축키로 저장할 수 없습니다. 여관에서 저장해 주세요.";
 

@@ -1256,6 +1256,10 @@ namespace System.Windows.Controls
 
         public ScrollViewer() { ClipToBounds = true; }
 
+        /// <summary>붙임 속성 — 목록(ListBox)의 안쪽 스크롤 칸은 이미 옆으로 안 구르므로 값만 받는다.</summary>
+        public static void SetHorizontalScrollBarVisibility(DependencyObject element, ScrollBarVisibility value) { }
+        public static void SetVerticalScrollBarVisibility(DependencyObject element, ScrollBarVisibility value) { }
+
         /// <summary>
         /// 안의 것 사이 빈 곳을 눌러도 이 칸이 손을 받는다 — 안 그러면 그림 · 글 사이 빈칸에서 손가락으로 끌 때 굴지 않았다
         /// (초상화 도감, 도시 · 문화권 · 왕국의 인물 칸에서 「될 때도 안 될 때도」).
@@ -1628,6 +1632,7 @@ namespace System.Windows.Documents
         public System.Windows.Media.Brush? Foreground { get; set; }
         public double? FontSize { get; set; }
         public FontWeight? FontWeight { get; set; }
+        public System.Windows.Media.Brush? Background { get; set; }
     }
 
     public abstract class Inline : TextElement

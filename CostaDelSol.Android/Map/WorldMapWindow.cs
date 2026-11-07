@@ -1594,7 +1594,7 @@ public sealed partial class WorldMapWindow : Window
     /// 글쇠에 닫힌다)과 「로제타석을 손에 넣었다！」 상자는 치던 글자에 곧바로 닫혀, 발견만 조용히 적혔다.
     /// 멈춤을 걸어 두면 자리 판정 · 날 눈금 · 조우가 모두 쉰다(<see cref="CheckDiscovery"/> · <see cref="PassTime"/>).
     /// </remarks>
-    private Action MenuItem(Action show) => () =>
+    internal Action MenuItem(Action show) => () =>   // 안드로이드: 차림표(MainActivity)가 부른다
     {
         // 도시 안(SeaBlocked)에서 열 수도 있어 멈춤은 연 때의 값으로 되돌린다 — 커맨드 창 것(HoldAfterCommand)처럼 풀어 버리지 않는다.
         bool asking = _asking, paused = _host.Paused;

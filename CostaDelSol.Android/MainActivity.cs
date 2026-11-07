@@ -769,16 +769,18 @@ public sealed class MainActivity : Activity
         // PC 판 햄버거와 같은 줄 — 원본에 없는 줄(여급 수첩 · 인물 이동 · 발견물 지도)은 모드 창에서 켜야 뜬다.
         var rows = new List<(string Text, Action Run, bool Dim)>
         {
-            ("설정", () => GameThread.Post(_map.ShowSettingsDialog), false),
+            ("설정", () => GameThread.Post(_map.MenuItem(_map.ShowSettingsDialog)), false),
             ("화면 · 소리", ShowSettings, false),
         };
-        if (GameSettings.ShowBarmaidBookMenu) rows.Add(("여급 수첩", () => GameThread.Post(_map.ShowBarmaidBook), !_map.Started));
-        if (GameSettings.ShowPersonMoveMenu) rows.Add(("인물 이동", () => GameThread.Post(_map.ShowPersonMove), !_map.Started));
+        if (GameSettings.ShowBarmaidBookMenu) rows.Add(("여급 수첩", () => GameThread.Post(_map.MenuItem(_map.ShowBarmaidBook)), !_map.Started));
+        if (GameSettings.ShowPersonMoveMenu) rows.Add(("인물 이동", () => GameThread.Post(_map.MenuItem(_map.ShowPersonMove)), !_map.Started));
         rows.Add(("발견물 지도", () => GameThread.Post(() => _map.Key(GameKey.D)), !_map.OnMap));
-        rows.Add(("모드", () => GameThread.Post(_map.ShowModDialog), false));
-        rows.Add(("개발", () => GameThread.Post(_map.ShowDevDialog), !_map.Started));
+        rows.Add(("모드", () => GameThread.Post(_map.MenuItem(_map.ShowModDialog)), false));
+        rows.Add(("개발", () => GameThread.Post(_map.MenuItem(_map.ShowDevDialog)), !_map.Started));
         rows.Add(("도구", ShowToolMenu, false));
-        rows.Add(("출처", () => GameThread.Post(_map.ShowCredits), false));   // 더해 넣은 발견물 글 · 그림의 출처(CC BY-SA)
+        // 역대 판 노트(원본 리메이크의 릴리즈노트.md) — 판 목록 · 낱말 찾기.
+        rows.Add(("릴리즈 노트", () => GameThread.Post(_map.MenuItem(_map.ShowReleaseNotes)), false));
+        rows.Add(("출처", () => GameThread.Post(_map.MenuItem(_map.ShowCredits)), false));   // 더해 넣은 발견물 글 · 그림의 출처(CC BY-SA)
         rows.Add(("돌아간다", Resume, false));
         _panel.Show("차림표", [.. rows.Select(r => r.Text)], at =>
         {
@@ -797,7 +799,7 @@ public sealed class MainActivity : Activity
         {
             if (at < 0 || at >= tools.Length) { ShowAppMenu(); return; }
             Resume();
-            GameThread.Post(() => _map.OpenTool(at));
+            GameThread.Post(_map.MenuItem(() => _map.OpenTool(at)));
         }, cancelIndex: rows.Length - 1, tag: "menu");
     }
 

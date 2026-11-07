@@ -12,6 +12,7 @@ for n in OCEAN CITYCG DISCOVER DSTILL MPCG WAVES ITEM MALE FEMALE LANDDATA EVSTI
 done
 curl -fsSL --retry 4 -o "$G/TRAMP.PX" "$base/TRAMP.PX"
 cp "$R"/CdsHelper/*.json "$G/"                     # 표(발견물·이야기·인물…)
+cp "$R/릴리즈노트.md" "$G/release-notes.md"         # 릴리즈 노트 창(APK 에는 Assets/root/release-notes.md)
 ln -sfn "$R/asset" "$G/asset"
 # 표는 복사본 — 시험 중 표를 고쳐 적어도(도시 성장 따위) 저장소가 바뀌지 않게
 rm -rf "$G/exe-tables"; cp -r "$R/exe-tables" "$G/exe-tables"

@@ -93,6 +93,7 @@
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GameFont.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GameFont.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GamePalette.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GamePalette.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\FrameArt.cs" Link="Shared\CdsHelper.Game\UI\Views\FrameArt.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\ReleaseNotesDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ReleaseNotesDialog.cs" />
         <Compile Include="..\CdsHelper.Game\Engine\Table\SponsorEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\SponsorEdits.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\CitySpriteDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CitySpriteDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\MonsterMotionDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\MonsterMotionDialog.cs" />
@@ -456,6 +457,8 @@
         <AndroidAsset Include="..\asset\ship-g2\*.png" Link="Assets\ship-g2\%(Filename)%(Extension)" />
         <AndroidAsset Include="..\asset\ship-g3\*.png" Link="Assets\ship-g3\%(Filename)%(Extension)" />
         <AndroidAsset Include="..\CdsHelper\cities.json" Link="Assets\cities.json" />
+        <!-- 릴리즈 노트 창이 실행 폴더(GameRoot) 옆의 release-notes.md 를 읽는다 — PC 판처럼 ASCII 이름으로 깐다. -->
+        <AndroidAsset Include="..\릴리즈노트.md" Link="Assets\root\release-notes.md" />
         <!-- PC 판이 실행 파일 옆에서 읽는 자료(후원자 · 힌트 · 아이템 · 책 · 발견물 · 인물표 · 사건 · 이야기 대본) — 앱 폴더로 꺼낸다 -->
         <AndroidAsset Include="..\CdsHelper\*.json" Link="Assets\root\%(Filename)%(Extension)" />
         <!-- 원본 화면 조각 — 메뉴 띠와 타이틀 바탕 -->
