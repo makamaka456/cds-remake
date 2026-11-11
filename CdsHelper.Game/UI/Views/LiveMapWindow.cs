@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -260,7 +260,12 @@ public sealed class LiveMapWindow : Window
         }
         _viewport.MouseLeftButtonDown += (_, e) =>
         {
+#if ANDROID
+            // 안드로이드: 손가락 끌기는 늘 옮기기다 — 「범위 그리기」를 눌러 둔 때만 범위를 잡는다(손가락 벌리기 · 옮기기와 안 섞이게).
+            if (!Picking || !_drawArmed) { BeginPan(e); return; }
+#else
             if (!Picking) { BeginPan(e); return; }
+#endif
             Keyboard.Focus(_viewport);
             _pickFrom = CellUnder(e.GetPosition(_viewport));
             _viewport.CaptureMouse();
@@ -287,13 +292,20 @@ public sealed class LiveMapWindow : Window
         _viewport.MouseLeave += (_, _) => _hover.Text = Lang.T("지도 위에 마우스를 올리면 그 칸을 알려 줍니다");
         _viewport.MouseLeftButtonUp += (_, e) =>
         {
+#if ANDROID
+            if (!Picking || _dragging) { EndPan(); return; }
+#else
             if (!Picking) { EndPan(); return; }
+#endif
             if (_pickFrom is not { } from) return;
             _pickFrom = null;
             _viewport.ReleaseMouseCapture();
             DrawPick(from, CellUnder(e.GetPosition(_viewport)));
             // 육지인지는 고른 칸 가운데 육지가 바다보다 많은지로 먼저 정한다 — 단추로 바꿀 수 있다.
             if (_picked is { } a) SetPickLand(MostlyLand(a));
+#if ANDROID
+            SetDrawArmed(false);   // 하나 그렸으면 다시 옮기기로 — 맞춰 보고 다시 그리려면 단추를 또 누른다
+#endif
             e.Handled = true;
         };
         _viewport.MouseRightButtonUp += (_, e) => { if (Picking) { EndPan(); e.Handled = true; } };
@@ -333,6 +345,10 @@ public sealed class LiveMapWindow : Window
             _areasButton = Button("", () => { _areaLayer.Visibility = _areaLayer.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible; RefreshButtons(); }, 150);
             bar.Children.Add(_areasButton);
             if (src.Ship() != null) bar.Children.Add(Button("내 위치로", ToShip, 100));
+#if ANDROID
+            _drawButton = Button("", () => SetDrawArmed(!_drawArmed), 130);
+            bar.Children.Add(_drawButton);
+#endif
             _landButton = Button("", () => SetPickLand(!_pickLand), 110);
             bar.Children.Add(_landButton);
             bar.Children.Add(Button("이 자리로", ConfirmPick, 100));
@@ -468,6 +484,20 @@ public sealed class LiveMapWindow : Window
         _status.Text = PickNote();
     }
 
+#if ANDROID
+    /// <summary>안드로이드: 「범위 그리기」를 눌러 둔 동안만 손가락 끌기가 범위를 잡는다.</summary>
+    private bool _drawArmed;
+    private Border? _drawButton;
+
+    private void SetDrawArmed(bool on)
+    {
+        _drawArmed = on;
+        _viewport.Cursor = on ? Cursors.Cross : Cursors.SizeAll;
+        RefreshButtons();
+        Apply();   // 아래 도움말 줄을 지금 상태로
+    }
+#endif
+
     private void SetPickLand(bool land)
     {
         _pickLand = land;
@@ -523,6 +553,9 @@ public sealed class LiveMapWindow : Window
         if (_areasButton != null)
             SetText(_areasButton, Lang.T("다른 발견물") + " " + Lang.T(_areaLayer.Visibility == Visibility.Visible ? "끄기" : "켜기"));
         if (_landButton != null) SetText(_landButton, Lang.T("자리") + ": " + Lang.T(_pickLand ? "육지" : "바다"));
+#if ANDROID
+        if (_drawButton != null) SetText(_drawButton, Lang.T(_drawArmed ? "▶ 범위 그리기" : "범위 그리기"));
+#endif
     }
 
     private void SetFollow(bool on)
@@ -807,7 +840,13 @@ public sealed class LiveMapWindow : Window
 
         if (Picking)
         {
+#if ANDROID
+            _hint.Text = $"{Lang.T("배율")} x{Z:0.##}   ·   " + Lang.T(_drawArmed
+                ? "끌어서 범위 잡기 · 손가락 벌리기 키우기·줄이기 · 파란 네모 다른 발견물"
+                : "끌어 옮기기 · 손가락 벌리기 키우기·줄이기 · 「범위 그리기」를 누르고 끌면 범위 · 파란 네모 다른 발견물");
+#else
             _hint.Text = $"{Lang.T("배율")} x{Z:0.##}   ·   " + Lang.T("휠 키우기·줄이기 · 왼쪽 단추로 끌어 범위 잡기 · 오른쪽 단추로 끌어 옮기기 · 파란 네모 다른 발견물");
+#endif
             return;
         }
         string where = _shipAt is { } me ? $"   ·   {Lang.T("내 위치")} {LatLon(me.X, me.Y)}" : "";

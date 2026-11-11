@@ -37,6 +37,11 @@ public sealed class ChoicePanel : View
         void Key(GameKey key);
         /// <summary>창 왼쪽 위에서 잰 원본 점.</summary>
         void Touch(MotionEventActions action, float x, float y);
+        /// <summary>
+        /// 손가락 두 개 벌리기(1 보다 큼) · 오므리기(1 보다 작음) — 직전 거리에 견준 비. 자리는 두 손가락 가운데(창 왼쪽 위에서 잰 원본 점).
+        /// 0 은 새 벌리기의 시작이다.
+        /// </summary>
+        void Pinch(float factor, float x, float y) { }
         void Cancel();
         /// <summary>원본 판(640x480)에서의 자리. 없으면 한가운데.</summary>
         float? Left => null;
@@ -483,6 +488,12 @@ public sealed class ChoicePanel : View
 
     // ── 손가락 · 마우스 ──────────────────────────────────────────────────
 
+    private bool _pinching;
+    private float _pinchGap;
+
+    private static float Gap(MotionEvent e) =>
+        MathF.Sqrt(MathF.Pow(e.GetX(0) - e.GetX(1), 2) + MathF.Pow(e.GetY(0) - e.GetY(1), 2));
+
     public override bool OnTouchEvent(MotionEvent? e)
     {
         if (e == null || Top is not { } top) return false;
@@ -491,6 +502,30 @@ public sealed class ChoicePanel : View
         if (top.Custom is { } custom)
         {
             var (cx, cy) = Place(custom, area.Width() / s, GameArt.GameHeight);
+            var act = e.ActionMasked;
+            // 손가락 두 개 — 벌리기 · 오므리기를 창에 넘긴다(지도 창이 키우고 줄인다). 한 손가락으로 하던 끌기는 그 자리에서 끝낸다.
+            if (act == MotionEventActions.PointerDown && e.PointerCount == 2)
+            {
+                if (!_pinching) custom.Touch(MotionEventActions.Up, (e.GetX(0) - area.Left) / s - cx, (e.GetY(0) - area.Top) / s - cy);
+                _pinching = true;
+                _pinchGap = Gap(e);
+                custom.Pinch(0, 0, 0);   // 새 벌리기 — 쌓아 둔 나머지를 비운다
+                return true;
+            }
+            if (_pinching)
+            {
+                if (act == MotionEventActions.Move && e.PointerCount >= 2)
+                {
+                    float gap = Gap(e);
+                    if (_pinchGap > 1 && gap > 1)
+                        custom.Pinch(gap / _pinchGap, ((e.GetX(0) + e.GetX(1)) / 2 - area.Left) / s - cx,
+                                     ((e.GetY(0) + e.GetY(1)) / 2 - area.Top) / s - cy);
+                    _pinchGap = gap;
+                }
+                // 손가락을 다 뗄 때까지는 한 손가락 끌기로 넘기지 않는다.
+                if (act is MotionEventActions.Up or MotionEventActions.Cancel) _pinching = false;
+                return true;
+            }
             custom.Touch(e.Action, (e.GetX() - area.Left) / s - cx, (e.GetY() - area.Top) / s - cy);
             Invalidate();
             return true;

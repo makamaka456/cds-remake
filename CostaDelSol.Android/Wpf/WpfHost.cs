@@ -802,6 +802,21 @@ namespace System.Windows
             });
         }
 
+        /// <summary>
+        /// 손가락 두 개 벌리기 · 오므리기 — 바퀴 한 칸(120)으로 바꿔 넘긴다. 지도 창(발견물 지도 · 발견물 자리 고르기)은 바퀴로 키우고 줄인다.
+        /// 비가 한 번에 작게 오므로 쌓아 두었다가 1.35 배를 넘을 때마다 한 칸씩 보낸다.
+        /// </summary>
+        public void Pinch(float factor, float x, float y)
+        {
+            if (Target is var t && t != this) { t.Pinch(factor, x + _x - t._x, y + _y - t._y); return; }
+            if (factor <= 0) { _pinchAcc = 1; return; }   // 새 벌리기의 시작 — 지난 것의 나머지를 버린다
+            _pinchAcc *= factor;
+            const float Step = 1.35f;   // 지도 배율 한 칸(약 1.5배)과 비슷하게 — 1.15 는 너무 민감했다
+            while (_pinchAcc > Step) { _pinchAcc /= Step; Wheel(x / _fit, y / _fit, 120); }
+            while (_pinchAcc < 1 / Step) { _pinchAcc *= Step; Wheel(x / _fit, y / _fit, -120); }
+        }
+        private float _pinchAcc = 1;
+
         /// <summary>바퀴(굴리기) — 손가락 두 개 끌기 따위에서 부른다.</summary>
         public void Wheel(float x, float y, int delta) =>
             GameThread.Post(() => WpfHost.Pointer(_window, WpfHost.Touching.Wheel, new Point(x, y), delta));

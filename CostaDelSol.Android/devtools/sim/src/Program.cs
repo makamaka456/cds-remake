@@ -433,6 +433,33 @@ if (Environment.GetEnvironmentVariable("MODE") == "gallery")
     Try("묘책", () => RuseEditDialog.Show(map));
     Try("릴리즈노트", map.ShowReleaseNotes);
     Try("발견물추가", map.ShowUserDiscoveries);
+    if (only == "자리고르기") Drive.Steps.Clear();   // 도서관 책 단계(맨 앞)가 남아 있으면 이 단계까지 안 온다
+    if (only == "자리고르기") Drive.Add("범위 그리기 시험", w =>
+    {
+        // 안드로이드: 그냥 끌면 옮기기(범위 없음) → 「범위 그리기」 → 끌면 범위 → 다시 옮기기 상태 → Enter 로 확정.
+        var t = w.GetType(); const System.Reflection.BindingFlags F = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        object? Get(string n) => t.GetField(n, F)?.GetValue(w);
+        double vx0 = (double)Get("_vx")!;
+        Drive.Drag(w, 600, 400, 500, 350);
+        Log.W($"  그냥 끌기: 옮김 {(double)Get("_vx")! - vx0:0.#} · 범위 {Get("_picked")?.ToString() ?? "없음"}");
+        var draw = Drive.Find<System.Windows.Controls.TextBlock>(w).FirstOrDefault(b => b.E.Text.Contains("범위 그리기"));
+        Log.W($"  단추: {draw.E?.Text ?? "못 찾음"}");
+        if (draw.E != null) Drive.ClickCenter(w, draw.R);
+        Log.W($"  누른 뒤: 켜짐 {Get("_drawArmed")}");
+        double vx1 = (double)Get("_vx")!;
+        Drive.Drag(w, 500, 300, 560, 360);
+        Log.W($"  범위 끌기: 옮김 {(double)Get("_vx")! - vx1:0.#} · 범위 {Get("_picked")} · 켜짐 {Get("_drawArmed")}");
+        Drive.Shot(w, "picker-drawn");
+        // 손가락 벌리기(안드로이드 ChoicePanel → WpfLayer.Pinch → 바퀴) — 배율이 커지고, 오므리면 작아지는지.
+        var zoom = t.GetProperty("Z", F);
+        double z0 = (double)zoom!.GetValue(w)!;
+        var layer = System.Windows.WpfHost.LayerOf(w)!;
+        layer.Pinch(0, 0, 0); layer.Pinch(1.6f, 300, 200); GameThread.Drain();
+        double z1 = (double)zoom.GetValue(w)!;
+        layer.Pinch(0, 0, 0); layer.Pinch(1 / 1.6f, 300, 200); GameThread.Drain();
+        Log.W($"  손가락 벌리기: 배율 {z0:0.##} → {z1:0.##} → 오므리기 {(double)zoom.GetValue(w)!:0.##}");
+        Drive.Key(w, System.Windows.Input.Key.Enter);
+    });
     Try("자리고르기", () => { var m = typeof(WorldMapWindow).GetMethod("DiscoveryAreaMap", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(map, null) as DiscoveryAreaPicker.Map; Log.W($"  고른 자리: {DiscoveryAreaPicker.Pick(map, m!, null)}"); });
     return;
 }
