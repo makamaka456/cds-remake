@@ -433,6 +433,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "gallery")
     Try("묘책", () => RuseEditDialog.Show(map));
     Try("릴리즈노트", map.ShowReleaseNotes);
     Try("발견물추가", map.ShowUserDiscoveries);
+    Try("자리고르기", () => { var m = typeof(WorldMapWindow).GetMethod("DiscoveryAreaMap", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(map, null) as DiscoveryAreaPicker.Map; Log.W($"  고른 자리: {DiscoveryAreaPicker.Pick(map, m!, null)}"); });
     return;
 }
 if (Environment.GetEnvironmentVariable("MODE") == "savedel")
