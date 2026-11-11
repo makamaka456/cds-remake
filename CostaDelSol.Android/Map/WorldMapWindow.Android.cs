@@ -312,6 +312,53 @@ public sealed partial class WorldMapWindow
         }
     }
 
+    /// <summary>
+    /// 차림표 「발견물 추가」 — 사람이 지어 넣는 발견물(짓기 · 고치기 · 내보내기 · 불러오기). 원본 v1.1.89 에 개발 창 탭에서
+    /// 도시락 줄로 옮겼다. 모드 「추가 발견물」을 켜야 줄이 선다. 닫은 뒤 지도의 발견물 그림을 다시 맞춘다.
+    /// </summary>
+    public void ShowUserDiscoveries()
+    {
+        UserDiscoveryDialog.Show(this, DiscoveryAreaMap, _game);
+        HideCities();
+    }
+
+    // ── 원본 v1.1.90 ~ v1.2.1 에서 PC 판 갈래(생성자 · 발견물 지도 쪽)에 생긴 것 — 포크에서 지운 자리라 여기에 둔다 ──
+
+    /// <summary>왼쪽 위 메뉴 · 도시락으로 연 창이 몇 겹 떠 있는지(<see cref="MenuItem"/>).</summary>
+    private int _menuDepth;
+
+    /// <summary>바깥 메뉴 창을 열기 직전의 지도 상태(<see cref="MapState"/>) — PC 판은 버그 리포트가 싣는다.</summary>
+    private string _beforeMenu = "";
+
+    /// <summary>말 · 배가 왜 서 있는지 가를 지도 상태 한 줄.</summary>
+    private string MapState() =>
+        $"paused={_host.Paused} asking={_asking} inCity={_host.SeaBlocked} onLand={_host.IsOnLand} " +
+        $"command={CommandMenu.IsOpen} autoSail={_host.AutoSailing} cityView={_cityView != null}";
+
+    /// <summary>
+    /// 지도에 찍을 도시 — 지금 아는 도시만(자동항해 고르기와 같다). 도서관이 있으면 동그라미에 「도」.
+    /// 발견물 자리 고르기 지도가 쓴다(PC 판 KnownCityMarks 그대로).
+    /// </summary>
+    private List<(string Name, double X, double Y, bool Library)> KnownCityMarks() =>
+        Enumerable.Range(0, GameMapCoords.CityCount)
+            .Where(id => _game.CityVisible(id))
+            .Select(id => GameMapCoords.TryCityCell(id, out double cx, out double cy)
+                ? ((string, double, double, bool)?)(_game.CityName(id), cx, cy,
+                                                    _game.Buildings is { } bt
+                                                        ? bt.Find(id, "도서관") != null
+                                                        : _game.CityTable.Find(id)?.HasLibrary == true)
+                : null)
+            .OfType<(string Name, double X, double Y, bool Library)>()
+            .ToList();
+
+    /// <summary>가로로 이어진 칸 자리를 0~2500 으로 접는다.</summary>
+    private static double WrapCell(double x)
+    {
+        const double w = WorldMapRenderer.UnfoldedW;
+        x %= w;
+        return x < 0 ? x + w : x;
+    }
+
     /// <summary>릴리즈 노트 — 역대 판 목록 · 판별 보기 · 낱말 찾기(PC 판 ShowReleaseNotes 와 같다). 노트는 APK 의 release-notes.md.</summary>
     public void ShowReleaseNotes() => ReleaseNotesDialog.Show(this);
 
@@ -628,6 +675,9 @@ public sealed partial class WorldMapWindow
     public void ShowDevDialog() => DevDialog.Show(this, _game.Player, new DevDialog.Options
     {
         GiveItem = GiveItemToSave,
+        // 「특수템추가」 탭(원본 v1.1.94) — 지금 게임 주인공 소지품에 넣으므로 타이틀에서는 단추를 끈다.
+        Items = _game.Items,
+        GameLoaded = () => Started,
         CoordsOn = () => GameSettings.ShowCoordOverlay,
         SetCoords = on => GameSettings.ShowCoordOverlay = on,
         RuseTable = () => RuseEditDialog.Show(this),
@@ -640,11 +690,6 @@ public sealed partial class WorldMapWindow
         Discoveries = _game.Discoveries?.Table,
         DiscoveriesChanged = () => HideCities(),
         EventDone = id => _game.Player.IsSettled(id) && !Engine.Disev.DisevRunner.RecordsDiscovery(_game, id),
-        UserDiscoveries = () =>
-        {
-            UserDiscoveryDialog.Show(this, DiscoveryAreaMap, _game);
-            HideCities();
-        },
         HistoryEvents = () => _game.HistoryCatalog(),
         Barmaids = _game.Barmaids,
         CityName = _game.CityName,

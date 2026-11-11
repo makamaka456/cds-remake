@@ -111,6 +111,12 @@ namespace System.Windows.Media
 {
     public abstract class Drawing { }
 
+    /// <summary>여러 그림을 겹친 묶음 — 사용자 아이템 그림 자르기 칸(CropBox)의 체크 무늬가 쓴다. 안드로이드는 무늬를 안 그린다.</summary>
+    public sealed class DrawingGroup : Drawing
+    {
+        public List<Drawing> Children { get; } = [];
+    }
+
     public sealed class GeometryDrawing : Drawing
     {
         public GeometryDrawing() { }

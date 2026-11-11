@@ -163,6 +163,8 @@ namespace System.Windows
         public static double FullPrimaryScreenWidth => 640;
         public static double FullPrimaryScreenHeight => 480;
         public static double MinimumHorizontalDragDistance => 4;
+        /// <summary>세로 굴림대 폭 — 모드 창 찾기가 판을 그만큼 좁힌다.</summary>
+        public static double VerticalScrollBarWidth => 10;
         public static double MinimumVerticalDragDistance => 4;
     }
 

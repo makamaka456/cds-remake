@@ -376,6 +376,14 @@ namespace System.Windows.Media
         public double PixelsPerInchX => 96 * DpiScaleX;
     }
 
+    /// <summary>논리 나무 — WpfLite 는 따로 두지 않아 화면 나무(VisualChildren)로 답한다(모드 창 찾기 색인이 쓴다).</summary>
+    public static class LogicalTreeHelper
+    {
+        public static System.Collections.IEnumerable GetChildren(DependencyObject d) =>
+            (d as UIElement)?.VisualChildren.ToList() ?? (System.Collections.IEnumerable)Array.Empty<object>();
+        public static DependencyObject? GetParent(DependencyObject d) => (d as UIElement)?.VisualParent;
+    }
+
     public static class VisualTreeHelper
     {
         public static DpiScale GetDpi(Visual visual) => new(1, 1);

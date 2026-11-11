@@ -432,6 +432,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "gallery")
     Try("이동", map.ShowPersonMove);
     Try("묘책", () => RuseEditDialog.Show(map));
     Try("릴리즈노트", map.ShowReleaseNotes);
+    Try("발견물추가", map.ShowUserDiscoveries);
     return;
 }
 if (Environment.GetEnvironmentVariable("MODE") == "savedel")

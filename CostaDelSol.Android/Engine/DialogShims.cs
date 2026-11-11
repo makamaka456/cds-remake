@@ -150,7 +150,7 @@ namespace CdsHelper.Game.UI.Views
         /// null 이면 나가기 줄이 없다. <paramref name="under"/>(띄워 둔 글 아래에 서기)는 판 위에서 겹쳐 서므로 따로 안 잡는다.
         /// </summary>
         public static int Ask(Window owner, string title, IReadOnlyList<string> rows,
-                              string? cancel = "취소", int dim = -1, Window? under = null)
+                              string? cancel = "취소", int dim = -1, Window? under = null, int scrollRows = 0)
         {
             var all = cancel != null ? rows.Append(cancel).ToList() : rows.ToList();
             var dims = all.Select((_, i) => i == dim).ToArray();

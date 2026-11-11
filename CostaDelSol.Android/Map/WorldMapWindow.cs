@@ -372,16 +372,30 @@ public sealed partial class WorldMapWindow : Window
     /// <summary>자동항해가 스스로 멎었다 — 알리고, 목적지 도시 어귀에 닿아 멎은 것이면 들어간다.</summary>
     private void AutoSailEnded(string message)
     {
-        if (!_host.IsOnLand) PlayStats.Nav(message.StartsWith("도착", StringComparison.Ordinal) ? "end:arrived" : "end:stuck");
+        bool arrived = message.StartsWith("도착", StringComparison.Ordinal);
+        bool missed = message == WorldMapHost.MissedPortMessage;
+        if (!_host.IsOnLand) PlayStats.Nav(arrived ? "end:arrived" : missed ? "end:missed" : "end:stuck");
 
         // 내륙 도시는 배를 댄 데서 내려 걸어가야 한다 — 어귀가 아니라 입항 물음이 안 뜬다.
         int to = _sailTo;
-        bool afoot = to >= 0 && message.StartsWith("도착", StringComparison.Ordinal)
-                     && !(_game.CityRows?.HasBuilding(to, HarborCode) ?? true);
-        Say(afoot ? $"[{_game.CityName(to)}] 쪽 해안에 닿았습니다. 상륙해서 걸어가십시오" : message);
+        bool afoot = to >= 0 && arrived && !(_game.CityRows?.HasBuilding(to, HarborCode) ?? true);
+        string text = afoot ? $"[{_game.CityName(to)}] 쪽 해안에 닿았습니다. 상륙해서 걸어가십시오"
+                    : missed && to >= 0 ? $"[{_game.CityName(to)}] 항구에 들어서지 못해 자동항해를 멈췄습니다. 손으로 몰아 들어가십시오"
+                    : message;
+        Say(text);
 
         // 목적지 어귀에 닿아 멎었으면 입항 물음은 CheckPort 가 낸다 — 손으로 다가갔을 때와 같은 길이다.
         _sailTo = -1;
+
+        // 입항 물음이 안 뜨는 끝(못 들었다 · 막혔다 · 내륙 도시 해안)은 알림 창으로 세운다 — 띠 글만으로는 못 알아챈 채
+        // 닻을 내린 배 위로 날이 흘렀다(버그 리포트 #30). 창이 떠 있는 동안은 멈춤이다(Hold).
+        // 이 알림은 그리기 틱 안에서 오므로 한 박자 뒤에 띄운다.
+        if (afoot || !arrived)
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (!IsVisible || _host.SeaBlocked || _host.AutoSailing) return;
+                Hold(() => NoticeDialog.Show(this, text));
+            });
     }
 
     /// <summary>
@@ -1597,14 +1611,26 @@ public sealed partial class WorldMapWindow : Window
     internal Action MenuItem(Action show) => () =>   // 안드로이드: 차림표(MainActivity)가 부른다
     {
         // 도시 안(SeaBlocked)에서 열 수도 있어 멈춤은 연 때의 값으로 되돌린다 — 커맨드 창 것(HoldAfterCommand)처럼 풀어 버리지 않는다.
-        bool asking = _asking, paused = _host.Paused;
+        bool asking = _asking, paused = _host.Paused, blocked = _host.SeaBlocked;
+        // 버그 리포트에 실을 「메뉴를 열기 전」 상태 — 겹쳐 열면 바깥 것만 적는다(버그 리포트 창도 이 길로 열린다).
+        if (_menuDepth++ == 0) _beforeMenu = MapState();
         _asking = true;
         _host.Paused = true;
         try { show(); }
         finally
         {
-            _asking = asking;
-            _host.Paused = paused;
+            _menuDepth--;
+            // 여급 수첩 · 인물 이동 같은 창은 도시 화면을 막지 않아, 띄워 둔 채 출항할 수 있다. 그러면 출항이 멈춤을 풀었는데
+            // 창을 닫을 때 도시에서 연 값(멈춤)으로 되돌려 바다에서 배가 영영 섰다(버그 리포트 #36). 그동안 누가 멈춤을 풀었거나
+            // 도시 안팎이 바뀌었으면 지금 값을 그대로 둔다.
+            //
+            // 「묻는 중」도 같다 — 도시 안에서는 도시 창이 닫힐 때까지 참이라(CheckPort · EnterCity) 연 값이 참이다. 창을 띄운 채
+            // 성문으로 나선 뒤 닫으면 그 참이 되살아나, 뭍에서 도시 · 배에 다가가도 묻지 않고 날도 안 가다가 커맨드 창을 한 번
+            // 열면(닫힐 때 「묻는 중」이면 멈춤을 안 푼다) 말이 영영 섰다(버그 리포트 #44). 도시 안팎이 바뀌었으면 도시 창
+            // 쪽이 정한 지금 값을 둔다.
+            bool sameSide = _host.SeaBlocked == blocked;
+            if (sameSide) _asking = asking;
+            if (_host.Paused && sameSide) _host.Paused = paused;
         }
     };
 
@@ -2107,7 +2133,8 @@ public sealed partial class WorldMapWindow : Window
     /// </remarks>
 
     /// <summary>
-    /// 발견물 자리를 고를 세계 지도 — 네비게이션과 같은 항해지도 그림(다 밝힌 것)에 다른 발견물 자리를 얹는다.
+    /// 발견물 자리를 고를 세계 지도 — 도시락 「세계지도」와 같은 게임 지도 타일(<see cref="WorldMapHost.GameTiles"/>)을 바탕으로,
+    /// 양피지로는 네비게이션과 같은 항해지도 그림(다 밝힌 것)을 쓰고 다른 발견물 자리를 얹는다.
     /// </summary>
     private DiscoveryAreaPicker.Map? DiscoveryAreaMap()
     {
@@ -2119,7 +2146,13 @@ public sealed partial class WorldMapWindow : Window
         chart.Freeze();
         var others = (_game.Discoveries?.Table?.Discoveries ?? [])
             .Where(r => r.HasPlace).Select(r => (r.X1, r.Y1, r.X2, r.Y2, r.Name)).ToList();
-        return new DiscoveryAreaPicker.Map(chart, (x, y) => _host.IsLandCell(x, y), others);
+        return new DiscoveryAreaPicker.Map(chart, (x, y) => _host.IsLandCell(x, y), others)
+        {
+            Tiles = _host.GameTiles,
+            Cities = KnownCityMarks,
+            Ship = () => _started && _host.ShipCell is { } c ? (WrapCell(c.X), c.Y) : null,
+            MapVersion = () => _host.ShownMapVersion,
+        };
     }
 
     /// <summary>
@@ -3109,7 +3142,7 @@ public sealed partial class WorldMapWindow : Window
                             : !CityFounding.Hidden.Contains(city) || up.Contains(city);
             if (!standing || !_game.CityKnown(city)) gone.Add(city);
         }
-        _host.HideCities(gone, HiddenPlaces());
+        _host.HideCities(gone, HiddenPlaces(), UserLandmarks());
     }
 
     /// <summary>
@@ -3140,6 +3173,34 @@ public sealed partial class WorldMapWindow : Window
             if (target >= 0 && row.Hint == target) continue;
 
             yield return (row.X1, row.Y1, block);
+        }
+    }
+
+    /// <summary>
+    /// 지도에 그림을 얹을 사람 발견물(<see cref="UserDiscoveries"/>) — 원본에 없는 것이다.
+    /// </summary>
+    /// <remarks>
+    /// 사람 발견물은 WORLD.CDS 에 그림이 박혀 있지 않아 찾아도 지도에 아무것도 안 섰다. 원본 발견물 그림이 드러나는 셈
+    /// (<see cref="HiddenPlaces"/> 가 안 덮는 셋 — 내가 찾음 · 역사 항해자가 찾음 · 계약 목표)을 그대로 따라, 드러난 것에
+    /// 원본 발견물 그림 하나를 빌려 얹는다(<see cref="WorldMapHost.HideCities"/>). 원본에 지도 그림이 하나도 없는 갈래
+    /// (생물 · 교역품 · 보물)와 바다 발견물은 얹지 않는다(<see cref="WorldMapHost.LandmarkCategory"/>).
+    /// </remarks>
+    private IEnumerable<WorldMapHost.Landmark> UserLandmarks()
+    {
+        if (_game.Discoveries is not { } log) yield break;
+
+        var player = _game.Player;
+        int target = player.Contract is { } contract && _game.Hints?.Find(contract.Hint) is { } hint
+                   ? hint.Discovery : -1;
+
+        foreach (var row in log.Table.Discoveries)
+        {
+            if (row.Id < UserDiscoveries.NumberBase || !row.HasPlace || !row.OnLand) continue;
+            if (!WorldMapHost.LandmarkCategory(row.Category)) continue;
+            if (!log.Named(player, row.Id, player.Date) && !(target >= 0 && row.Hint == target)) continue;
+
+            yield return new(row.X1, row.Y1, row.X2, row.Y2, row.Category,
+                             player.HasFound(row.Id) || player.HasAnnounced(row.Id));
         }
     }
 
@@ -3271,14 +3332,20 @@ public sealed partial class WorldMapWindow : Window
         world.Advance(_game.Player.Date);
         TellVoyagerReports();
 
-        var now = (_game.Player.Date, world.Revision, _ticks);
+        // 부하를 들이거나 내보내면 바다에 뜬 배도 다시 짠다 — 그래서 부하 수도 도장에 넣는다.
+        var now = (_game.Player.Date, world.Revision * 8 + _game.Player.MateCount, _ticks);
         if (_folkStamp == now) return _folkList;
         _folkStamp = now;
 
         double dayPart = (double)_ticks / TerrainTable.TicksPerDay;
         _folkList.Clear();
         foreach (var (who, x, y, heading) in world.Afloat(dayPart))
+        {
+            // 제 부하는 내 배에 타 있다 — 표의 줄은 원본대로 계속 떠돌지만(0x00453430 은 소재 도시를 안 건드린다)
+            // 따로 배를 띄우지 않는다(버그 리포트 #42).
+            if (_game.Player.HasMate(who.Name)) continue;
             _folkList.Add((x, y, heading, who.Id, FolkSkin(world, who.Id)));
+        }
         ChasePirates(world);
         return _folkList;
     }
@@ -3336,7 +3403,8 @@ public sealed partial class WorldMapWindow : Window
         {
             var (x, y, heading) = _chasers[id];
             double far = Distance(x, y, ship.X, ship.Y);
-            if (far > ChaseLost || world.People.FirstOrDefault(r => r.Id == id) is not { Appear: not 0 })
+            if (far > ChaseLost || world.People.FirstOrDefault(r => r.Id == id) is not { Appear: not 0 } chaser
+                || _game.Player.HasMate(chaser.Name))
             {
                 _chasers.Remove(id);
                 _chaseRest[id] = today.AddDays(ChaseRestDays);   // 따돌렸다

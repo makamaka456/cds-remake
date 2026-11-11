@@ -43,6 +43,21 @@ public sealed class WorldMapHost : HwndHost
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyWindow(IntPtr hwnd);
 
+    [DllImport("shell32.dll")]
+    private static extern void DragAcceptFiles(IntPtr hwnd, bool accept);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint DragQueryFileW(IntPtr drop, uint index, System.Text.StringBuilder? file, uint size);
+
+    [DllImport("shell32.dll")]
+    private static extern void DragFinish(IntPtr drop);
+
+    /// <summary>
+    /// 지도 위에 파일을 끌어다 놓았을 때 — 지도는 WPF 가 아닌 자식 창이라 WPF 의 끌어 놓기(AllowDrop)가 닿지 않는다.
+    /// 그래서 자식 창이 <c>WM_DROPFILES</c> 를 받아 놓은 파일 경로들을 알린다(사용자 발견물 불러오기).
+    /// </summary>
+    public event Action<string[]>? FilesDropped;
+
     private readonly MapD3DRenderer _renderer = new();
     private readonly GameShipReader _ship = new();
 
@@ -887,6 +902,7 @@ public sealed class WorldMapHost : HwndHost
         if (_hwnd == IntPtr.Zero)
             throw new InvalidOperationException(
                 $"함대 창의 자식 창을 만들지 못했습니다 (Win32 {Marshal.GetLastWin32Error()})");
+        DragAcceptFiles(_hwnd, true);
         return new HandleRef(this, _hwnd);
     }
 
@@ -1058,8 +1074,24 @@ public sealed class WorldMapHost : HwndHost
     /// </summary>
     protected override IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        const int WmPaint = 0x000F;
+        const int WmPaint = 0x000F, WmDropFiles = 0x0233;
         if (msg == WmPaint) _dirty = true;
+        if (msg == WmDropFiles)
+        {
+            var files = new List<string>();
+            uint count = DragQueryFileW(wParam, 0xFFFFFFFF, null, 0);
+            for (uint i = 0; i < count; i++)
+            {
+                var path = new System.Text.StringBuilder((int)DragQueryFileW(wParam, i, null, 0) + 1);
+                DragQueryFileW(wParam, i, path, (uint)path.Capacity);
+                files.Add(path.ToString());
+            }
+            DragFinish(wParam);
+            handled = true;
+            // 고리 밖에서 알린다 — 받는 쪽이 확인 창을 띄워도 WndProc 안에서 막히지 않게.
+            if (files.Count > 0) Dispatcher.BeginInvoke(() => FilesDropped?.Invoke([.. files]));
+            return IntPtr.Zero;
+        }
         return base.WndProc(hwnd, msg, wParam, lParam, ref handled);
     }
 
@@ -1618,6 +1650,8 @@ public sealed class WorldMapHost : HwndHost
         _autoKind = kind;
         _autoExact = exact || city >= 0;
         _autoIndex = 0;
+        _approachFrom = -1;
+        _autoRecover = false;
         _anchored = false;
         _tickAccum = 0;
         _stuckX = _shipX;
@@ -1742,6 +1776,8 @@ public sealed class WorldMapHost : HwndHost
         _autoCity = -1;
         _autoExact = false;
         _autoIndex = 0;
+        _approachFrom = -1;
+        _autoRecover = false;
         _anchored = false;
         _tickAccum = 0;
         _stuckX = _shipX;
@@ -1810,6 +1846,15 @@ public sealed class WorldMapHost : HwndHost
                 : left <= AutoTurnEarly || (left <= turnEarly && (last || SeaClear(route[_autoIndex + 1])));
             if (passed)
             {
+                // 도시로 가는 길인데 마지막 마디(어귀 물칸)를 선을 따라 다 와도 어귀 네모에 아직 안 들었다 — 여기서 멎으면
+                // 입항 물음이 안 뜬 채 닻만 내려 날이 흘렀다(버그 리포트 #30). 마디는 선을 따라 남은 거리로만 넘기므로
+                // 어귀 칸이 네모 가장자리면 반 칸 · 도는 원만큼 앞에서, 옆으로 비껴 있으면 더 멀리서 넘겼다.
+                // 어귀 칸으로 곧장 몇 칸 더 다가서고, 그래도 못 들면 멈추고 알린다.
+                if (last && _autoCity >= 0 && !_onLand)
+                {
+                    ApproachPort(wx, wy);
+                    return;
+                }
                 _autoIndex++;
                 continue;
             }
@@ -1855,6 +1900,34 @@ public sealed class WorldMapHost : HwndHost
         }
         CompleteAutoSail(_onLand ? "도착했습니다" : "도착했습니다. 닻을 내렸습니다");
     }
+
+    /// <summary>
+    /// 마지막 마디를 지나고도 어귀에 못 든 배를 어귀 칸으로 곧장 몬다. <see cref="PortApproachTicks"/> 틱 안에 못 들면
+    /// 닻을 내리고 <see cref="MissedPortMessage"/> 로 끝낸다 — 도는 원이 큰 배가 어귀 칸 둘레를 맴도는 것도 여기서 멎는다.
+    /// </summary>
+    private void ApproachPort(double wx, double wy)
+    {
+        if (_approachFrom < 0) _approachFrom = Ticks;
+        else if (Ticks - _approachFrom > PortApproachTicks)
+        {
+            CompleteAutoSail(MissedPortMessage);
+            return;
+        }
+        _targetX = _shipX + WrapDx(wx - _shipX);
+        _targetY = wy;
+    }
+
+    /// <summary>어귀 칸으로 곧장 다가서는 데 주는 틱 수(0.1초 x 100 = 10초, 게임 날로 이틀 남짓).</summary>
+    private const int PortApproachTicks = 100;
+
+    /// <summary>어귀에 다가서기 시작한 틱(<see cref="Ticks"/>). 아직이면 −1.</summary>
+    private long _approachFrom = -1;
+
+    /// <summary>도시로 가는 자동항해가 어귀에 못 들고 멎었을 때 <see cref="AutoSailEnded"/> 가 넘기는 말.</summary>
+    public const string MissedPortMessage = "항구에 들어서지 못해 자동항해를 멈췄습니다. 닻을 내렸습니다";
+
+    /// <summary>오래 못 나아가 자동항해를 끊었을 때 <see cref="AutoSailEnded"/> 가 넘기는 말.</summary>
+    public const string StuckMessage = "길이 막혀 자동항해를 멈췄습니다";
 
     /// <summary>배에서 그 자리까지 곧게 물이 이어지는지 — 반 칸마다 짚어 본다.</summary>
     private bool SeaClear((double X, double Y) to)
@@ -1909,8 +1982,11 @@ public sealed class WorldMapHost : HwndHost
         _autoRoute = null;
         _autoIndex = 0;
         _stuckTicks = 0;
+        // 막힌 쪽으로 계속 밀지 않게 세운다 — 알림 창을 닫은 뒤 손으로 몰면(클릭) 다시 간다.
+        _anchored = true;
+        _tickAccum = 0;
         _dirty = true;
-        AutoSailEnded?.Invoke("길이 막혀 자동항해를 멈췄습니다");
+        AutoSailEnded?.Invoke(StuckMessage);
     }
 
     /// <summary>지난 프레임에 그린 항로 마디 수.</summary>
@@ -2396,6 +2472,10 @@ public sealed class WorldMapHost : HwndHost
                 _targetY = origin.Y + _mouse.Y * dpiY * _cellsPerPixel;
 
                 // 항해사와 나침반이 있으면 곧장 돌지 않고 바닷길의 첫 길목으로 돈다(0x0048EE2E).
+                // 커서가 항구 도시(뭍) 위면 그 도시의 어귀 물칸을 향한다 — 뭍 칸을 그대로 주면 길찾기가 커서에서 가장 가까운
+                // 물칸(북쪽부터 훑는다)으로 밀어, 항구 코앞에서 어귀 아닌 데로 돌아 들어갔다(버그 리포트 #30).
+                if (PathAssist && !_onLand && PortUnder(_targetX, _targetY) is { } mouth)
+                    (_targetX, _targetY) = mouth;
                 if (PathAssist && !_onLand && NextWaypoint(_targetX, _targetY) is { } step)
                 {
                     _targetX = step.X;
@@ -2848,6 +2928,8 @@ public sealed class WorldMapHost : HwndHost
                            Dictionary<(int X, int Y), byte> finds)
     {
         if (cx == shipX && cy == shipY) return NearShip;
+        // 사람 발견물에 빌려 얹은 그림 칸 — 원본 발견물처럼 찾았거나 발표된 것만 담겨 있다(HideCities).
+        if (_landmarkChart.Count > 0 && _landmarkChart.Contains((cx, cy))) return NearFind;
 
         int w = CellAt(RawAt(cx, cy).Offset);
         if ((w & PictureBit) != 0)
@@ -3342,19 +3424,42 @@ public sealed class WorldMapHost : HwndHost
         // 도시를 찾기 어려웠다(버그 리포트 #20). 원본 길잡이는 고른 값이라 해안 바로 옆으로 간다.
         var route = Engine.Sea.SeaPathfinder.FindRoute(_world, _terrain, (_shipX, _shipY), (toX, toY), offShore: false);
         // 도는 원이 큰 배(빠른 카락)는 원 안에 든 길목을 못 밟고 그 둘레를 맴돈다 — 그런 길목은 지난 것으로 친다.
+        // 길목은 이미 칸 한가운데다(SeaPathfinder.Simplify 의 Center). 예전에는 여기서 0.5 를 또 더해 길목마다 남동쪽
+        // 모서리를 바라봐, 가까운 길목일수록 뱃머리가 비뚤어지고 뭍 모서리 너머를 바라보기도 했다(버그 리포트 #30).
         if (route is { Count: > 1 })
         {
             double radius = TurnRadiusCells;
             int at = 1;
             while (at < route.Count - 1)
             {
-                double gx = WrapDx(route[at].X + 0.5 - _shipX), gy = route[at].Y + 0.5 - _shipY;
+                double gx = WrapDx(route[at].X - _shipX), gy = route[at].Y - _shipY;
                 if (gx * gx + gy * gy > radius * radius) break;
                 at++;
             }
-            _assistStep = (route[at].X + 0.5, route[at].Y + 0.5);
+            _assistStep = route[at];
         }
         return _assistStep;
+    }
+
+    /// <summary>
+    /// 그 자리가 뭍이고 어느 항구 도시의 어귀 네모(둘레 한 칸까지) 안이면 그 도시의 어귀 물칸(<see cref="PortCellOf"/>). 아니면 null.
+    /// </summary>
+    private (double X, double Y)? PortUnder(double x, double y)
+    {
+        if (_cities == null || !IsLand(x, y)) return null;
+        int fx = (int)Math.Floor(x), fy = (int)Math.Floor(y);
+        for (int id = 0; id < CityExeTable.Count; id++)
+        {
+            if (CityOpen is { } open && !open(id)) continue;
+            if (!_cities.TryCell(id, out int cx, out int cy, out int reach)) continue;
+            if (fy < cy - TownSlack - 1 || fy > cy + reach + 1) continue;
+            int dx = fx - cx;
+            if (dx > WorldMapRenderer.UnfoldedW / 2) dx -= WorldMapRenderer.UnfoldedW;
+            if (dx < -WorldMapRenderer.UnfoldedW / 2) dx += WorldMapRenderer.UnfoldedW;
+            if (dx < -TownSlack - 1 || dx > reach + 1) continue;
+            if (PortCellOf(id) is { } mouth) return (_shipX + WrapDx(mouth.X - _shipX), mouth.Y);
+        }
+        return null;
     }
 
     /// <summary>둘레 3x3 에서 가장 가까운 부류 2 칸. 없으면 null.</summary>
@@ -3655,7 +3760,8 @@ public sealed class WorldMapHost : HwndHost
     /// 예순 해에 스무 번뿐이라 값이 싸다.
     /// </remarks>
     public void HideCities(IEnumerable<int> hidden,
-                           IEnumerable<(int X, int Y, ushort[] Block)>? places = null)
+                           IEnumerable<(int X, int Y, ushort[] Block)>? places = null,
+                           IEnumerable<Landmark>? landmarks = null)
     {
         if (_cities is not { } cities) return;
 
@@ -3692,7 +3798,182 @@ public sealed class WorldMapHost : HwndHost
         }
         _placeCells = placeCells;
 
+        // 드러난 사람 발견물에는 원본 발견물 그림을 빌려 얹는다 — 그림만이다(지날 수 있는지는 원래 칸 그대로, _placeCells 에 안 넣는다).
+        var chartCells = new HashSet<(int X, int Y)>();
+        foreach (var mark in landmarks ?? [])
+        {
+            if (PlaceLandmark(mark, patch) is not { } laid) continue;
+            foreach (var (at, tile) in laid)
+            {
+                patch[at] = tile;
+                if (mark.Chart) chartCells.Add(at);
+            }
+        }
+        _landmarkChart = chartCells;
+
+        if (!SamePatch(_shownPatch, patch)) { _shownPatch = patch; ShownMapVersion++; }
         _renderer.Erase(patch);
+    }
+
+    /// <summary>
+    /// 사람이 지어 넣은 발견물(<see cref="UserDiscoveries"/>) 가운데 지도에 그림을 얹을 것 — 범위와 갈래,
+    /// 그리고 주변지도에도 설지(<paramref name="Chart"/>, 원본 발견물처럼 내가 찾았거나 발표된 것).
+    /// </summary>
+    public readonly record struct Landmark(int X1, int Y1, int X2, int Y2, int Category, bool Chart);
+
+    /// <summary>
+    /// 그림을 얹는 갈래 — 원본 발견물 가운데 지도 그림(발견물 표 <c>+0x54</c>)이 있는 44개의 갈래다.
+    /// <code>
+    ///   역사 26 · 지리 7 · 종교 7 · 민족 3 · 미신 1(무제국)        → 얹는다
+    ///   생물 0/43 · 교역품 0/13 · 보물 0/11                         → 원본에 그림이 하나도 없어 안 얹는다
+    /// </code>
+    /// </summary>
+    public static bool LandmarkCategory(int category) => category is 0 or 1 or 3 or 5 or 7;
+
+    /// <summary>주변지도에 발견물 색으로 칠할 사람 발견물 그림 칸.</summary>
+    private HashSet<(int X, int Y)> _landmarkChart = [];
+
+    /// <summary>그림을 빌려 올 원본 발견물 — 육지에 있고 지도 그림이 있는 것(자리 · 바탕 타일 2x2 · 갈래).</summary>
+    private List<(int X, int Y, ushort[] Erase, int Category)>? _landmarkDonors;
+
+    private List<(int X, int Y, ushort[] Erase, int Category)> LandmarkDonors()
+    {
+        if (_landmarkDonors is { Count: > 0 } had) return had;
+        var list = new List<(int X, int Y, ushort[] Erase, int Category)>();
+        if (_gameDir.Length > 0 && DiscoveryTable.Open(_gameDir) is { } table)
+            foreach (var row in table.Discoveries)
+            {
+                if (row.Id >= UserDiscoveries.NumberBase || !row.HasPlace || !row.OnLand) continue;
+                if (row.Erase is not { Length: DiscoveryTable.EraseWidth * DiscoveryTable.EraseWidth } erase
+                    || erase.All(v => v == DiscoveryTable.Keep)) continue;
+                list.Add((row.X1, row.Y1, erase, row.Category));
+            }
+        return _landmarkDonors = list;
+    }
+
+    /// <summary>
+    /// 사람 발견물 그림을 놓을 칸과 타일 — 범위 가운데 가까이에서 2x2 칸이 모두 육지이고 다른 그림(도시 · 발견물)이 없는 자리를 찾아,
+    /// 원본 발견물 그림 가운데 <b>바탕 타일이 그 자리 칸과 가장 많이 같은 것</b>(같으면 같은 갈래를 먼저)을 빌린다.
+    /// 그래야 풀밭에 사막 네모가 생기지 않는다. 놓을 데가 없으면 null.
+    /// </summary>
+    private List<((int X, int Y) At, ushort Tile)>? PlaceLandmark(Landmark mark, Dictionary<(int X, int Y), ushort> taken)
+    {
+        if (_world == null || _terrain == null) return null;
+        var donors = LandmarkDonors();
+        if (donors.Count == 0) return null;
+        const int w = DiscoveryTable.EraseWidth;
+
+        int xHi = Math.Max(mark.X1, mark.X2 - (w - 1)), yHi = Math.Max(mark.Y1, mark.Y2 - (w - 1));
+        double cx = (mark.X1 + mark.X2 + 1) / 2.0 - w / 2.0, cy = (mark.Y1 + mark.Y2 + 1) / 2.0 - w / 2.0;
+        const int Reach = 8;   // 넓은 범위도 가운데 둘레만 본다
+        var spots = new List<(int X, int Y, double D)>();
+        for (int y = Math.Max(mark.Y1, (int)cy - Reach); y <= Math.Min(yHi, (int)cy + Reach); y++)
+            for (int x = Math.Max(mark.X1, (int)cx - Reach); x <= Math.Min(xHi, (int)cx + Reach); x++)
+                spots.Add((x, y, (x - cx) * (x - cx) + (y - cy) * (y - cy)));
+
+        (int X, int Y, int Donor, double Score)? best = null;
+        var under = new int[w * w];
+        foreach (var (x, y, d) in spots.OrderBy(s => s.D))
+        {
+            bool fits = true;
+            for (int k = 0; k < under.Length && fits; k++)
+            {
+                int px = x + k % w, py = y + k / w;
+                if (py < 0 || py >= WorldMapRenderer.CellH || taken.ContainsKey((px, py))) { fits = false; break; }
+                under[k] = CellValue(px + 0.5, py + 0.5);
+                if ((under[k] & PictureBit) != 0 || IsSeaClass(under[k])) fits = false;
+            }
+            if (!fits) continue;
+
+            for (int i = 0; i < donors.Count; i++)
+            {
+                var erase = donors[i].Erase;
+                int picture = 0, same = 0;
+                for (int k = 0; k < erase.Length; k++)
+                {
+                    if (erase[k] == DiscoveryTable.Keep) continue;
+                    picture++;
+                    if ((erase[k] & OceanTiles.TileMask) == (under[k] & OceanTiles.TileMask)) same++;
+                }
+                if (picture == 0) continue;
+                // 바탕이 맞는 것이 먼저, 그다음 같은 갈래, 그다음 가운데에 가까운 자리.
+                double score = same * 100.0 / picture + (donors[i].Category == mark.Category ? 10 : 0) - Math.Sqrt(d) * 2;
+                if (best is not { } b || score > b.Score) best = (x, y, i, score);
+            }
+        }
+        if (best is not { } pick) return null;
+
+        var (dx, dy, from, _) = donors[pick.Donor];
+        var laid = new List<((int X, int Y) At, ushort Tile)>();
+        for (int k = 0; k < from.Length; k++)
+        {
+            if (from[k] == DiscoveryTable.Keep) continue;
+            int tile = CellValue(dx + k % w + 0.5, dy + k / w + 0.5) & OceanTiles.TileMask;
+            laid.Add(((pick.X + k % w, pick.Y + k / w), (ushort)tile));
+        }
+        return laid;
+    }
+
+    /// <summary>지도에 덮어 그린 칸(안 선 도시 · 못 찾은 발견물) — 세계지도 창(<see cref="GameTiles"/>)이 같은 그림을 그리려고 쓴다.</summary>
+    private IReadOnlyDictionary<(int X, int Y), ushort> _shownPatch = new Dictionary<(int X, int Y), ushort>();
+
+    /// <summary>덮어 그린 칸이 바뀔 때마다 오른다 — 세계지도 창이 바탕을 다시 지을 때를 안다.</summary>
+    public int ShownMapVersion { get; private set; }
+
+    private static bool SamePatch(IReadOnlyDictionary<(int X, int Y), ushort> a, IReadOnlyDictionary<(int X, int Y), ushort> b)
+    {
+        if (a.Count != b.Count) return false;
+        foreach (var (at, tile) in a)
+            if (!b.TryGetValue(at, out ushort had) || had != tile) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// 게임 지도 그림 한 조각을 BGRA 로 짓는다 — 칸 하나가 <paramref name="scale"/> x <paramref name="scale"/> 점이다(타일 16x16 을 줄인 평균색).
+    /// 지도를 못 읽었으면 null.
+    /// </summary>
+    /// <remarks>
+    /// 세계지도 창의 「게임 지도」 바탕이다. 화면 지도와 같은 타일(OCEAN.CDS)에 같은 덮개(<see cref="HideCities"/>)를 씌우므로
+    /// 안 선 도시 · 못 찾은 발견물은 여기서도 안 보인다. 가로는 이어져 있어 접고, 세로로 지도 밖인 줄은 비워 둔다(투명).
+    /// 고해상도 바다 · 도시 그림(셰이더)은 안 따른다 — 원본 타일 그대로다.
+    /// </remarks>
+    public uint[]? GameTiles(int x0, int y0, int cols, int rows, int scale)
+    {
+        var (world, ocean) = (_world, _ocean);
+        if (world == null || ocean == null || cols <= 0 || rows <= 0) return null;
+        scale = Math.Clamp(scale, 1, OceanTiles.TileW);
+        var avg = ocean.GetAverages(scale);
+        int per = scale * scale, w = cols * scale;
+        var px = new uint[w * rows * scale];
+
+        void Put(int c, int r, int tile)
+        {
+            int src = (tile & OceanTiles.TileMask) * per;
+            for (int qy = 0; qy < scale; qy++)
+            {
+                int row = (r * scale + qy) * w + c * scale;
+                for (int qx = 0; qx < scale; qx++)
+                    px[row + qx] = 0xFF000000u | (uint)avg[src + qy * scale + qx];
+            }
+        }
+
+        for (int r = 0; r < rows; r++)
+        {
+            int cy = y0 + r;
+            if (cy < 0 || cy >= WorldMapRenderer.CellH) continue;
+            for (int c = 0; c < cols; c++)
+                Put(c, r, CellAt(RawAt(x0 + c, cy).Offset));
+        }
+
+        // 덮개는 따로 덧칠한다 — 칸마다 사전을 뒤지면 온 지도(삼백만 칸)가 느리다.
+        foreach (var ((x, y), tile) in _shownPatch)
+        {
+            int r = y - y0;
+            if (r < 0 || r >= rows) continue;
+            int c = Wrap(x - x0);
+            if (c < cols) Put(c, r, tile);
+        }
+        return px;
     }
 
     /// <summary>

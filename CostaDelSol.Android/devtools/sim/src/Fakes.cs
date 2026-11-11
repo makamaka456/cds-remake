@@ -316,7 +316,7 @@ namespace CdsHelper.Game.UI.Views
             Log.W($"[고르기 {title}] {string.Join(" | ", rows)} → {(at >= 0 && at < rows.Count ? rows[at] : "취소")}"); Script.Tick();
             return at;
         }
-        public static int Ask(Window owner, string title, IReadOnlyList<string> rows, string? cancel = "취소", int dim = -1, Window? under = null)
+        public static int Ask(Window owner, string title, IReadOnlyList<string> rows, string? cancel = "취소", int dim = -1, Window? under = null, int scrollRows = 0)
         { int at = Pick(title, cancel != null ? [.. rows, cancel] : rows); return at >= rows.Count ? -1 : at; }
         public static int Pick(Window owner, string title, IReadOnlyList<string> rows) => Pick(title, rows);
         public static int Pick(Window owner, string title, IReadOnlyList<(string Text, bool On)> rows, Action<Window>? place = null, bool exitRow = true)

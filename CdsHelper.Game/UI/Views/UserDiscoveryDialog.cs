@@ -16,6 +16,9 @@ namespace CdsHelper.Game.UI.Views;
 ///
 /// 목록 맨 위의 「(예제) 돌묵상어」는 앱에 실린 돌묵상어를 칸 모양으로 옮긴 것이다 — 보기만 하고 적거나 내보내지 않는다.
 /// 비밀번호를 걸고 적으면 잠긴다 — 불러온 사람도 그 비밀번호로 「잠금 풀기」를 해야 고칠 수 있다(<see cref="UserDiscoveries.LockOf"/>).
+///
+/// 「아이템」 탭은 사람이 지어 넣는 아이템(<see cref="UserItems"/>)을 짓고 고친다 — 발견물과 따로 저장하고, 장면의 「[아이템] 이름」 줄로 준다.
+/// 그림은 끌고 굴려 120x120 자리를 고른다(<see cref="CropBox"/>, 초상화 넣기 창의 자르기). 발견물을 내보내면 장면이 주는 아이템이 파일에 함께 담긴다.
 /// </remarks>
 public sealed class UserDiscoveryDialog : GameWindow
 {
@@ -44,16 +47,28 @@ public sealed class UserDiscoveryDialog : GameWindow
     private readonly CheckBox _land = new() { Content = "육지", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     private readonly CheckBox _open = new() { Content = "처음부터 열림(힌트 없이도 발견)", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     private readonly TextBox _hintName = Box(), _hintGrade = Box(60), _hintCategory = Box(60), _hintFunds = Box(), _hintDeadline = Box(60);
-    private readonly TextBox _hintText = Area(60), _rumorText = Area(48), _book = Box(), _description = Area(60);
+    private readonly TextBox _hintText = Area(60), _book = Box(), _description = Area(60);
 
-    /// <summary>소문 도시 — 도시 이름으로 보이고 「도시 고르기…」로만 바꾼다. 번호는 <see cref="_rumorIds"/> 가 든다.</summary>
-    private readonly TextBox _rumorCities = new()
+    /// <summary>
+    /// 술집 소문 벌들 — 벌마다 「소문 도시」 · 「소문 글」 두 줄이다. 원본 소문 표처럼 도시마다 다른 글을 둘 수 있게
+    /// 「소문 더하기」로 늘리고 「소문 빼기」로 뺀다(<see cref="UserDiscoveries.Entry.Rumors"/>).
+    /// </summary>
+    private readonly StackPanel _rumorPanel = new();
+    private readonly List<RumorRow> _rumorRows = [];
+
+    /// <summary>소문 한 벌의 칸 — 도시는 이름으로 보이고 「도시 고르기…」로만 바꾼다. 번호는 <see cref="Ids"/> 가 든다.</summary>
+    private sealed class RumorRow(TextBlock number, TextBox cities, TextBox text, Button[] buttons, UIElement panel)
     {
-        Width = 320, Margin = new Thickness(0, 0, 8, 0), VerticalContentAlignment = VerticalAlignment.Center,
-        IsReadOnly = true, Background = Brushes.WhiteSmoke,
-    };
+        public List<int> Ids { get; set; } = [];
+        public TextBlock Number { get; } = number;
+        public TextBox Cities { get; } = cities;
+        public TextBox Text { get; } = text;
+        public Button[] Buttons { get; } = buttons;
+        public UIElement Panel { get; } = panel;
+    }
 
-    private List<int> _rumorIds = [];
+    /// <summary>칸을 고칠 수 있는지 — 나중에 더한 소문 줄도 이것을 따른다.</summary>
+    private bool _editable;
 
     /// <summary>자리 칸을 게임 위도 · 경도로 옮겨 보인다.</summary>
     private readonly TextBlock _where = new() { Margin = new Thickness(90, 0, 0, 6), Foreground = Brushes.DarkSlateBlue };
@@ -84,6 +99,27 @@ public sealed class UserDiscoveryDialog : GameWindow
     /// <summary>갈아 넣을 동영상 — null 이면 그대로, 빈 글이면 뺀다.</summary>
     private string? _newMovie;
     private readonly TextBlock _movie = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0), Width = 320 };
+
+    // ── 「아이템」 탭 ──
+    private readonly TabControl _tabs = new() { Margin = new Thickness(6, 10, 10, 4) };
+    private readonly ListBox _itemList = new() { Width = 170, Margin = new Thickness(0, 0, 10, 0) };
+    private readonly TextBox _itemName = Box(), _itemBuy = Box(90), _itemSell = Box(90), _itemEffect = Box(60), _itemAuthor = Box();
+    private readonly TextBox _itemDescription = Area(60);
+    private readonly ComboBox _itemCategory = new() { Width = 160 };
+
+    /// <summary>아이템 그림 — 120x120 을 두 배로 보이며 끌고 굴려 자리를 고른다. 남는 자리는 투명이다.</summary>
+    private readonly CropBox _itemPicture = new(UserItems.PictureWidth, UserItems.PictureHeight, 2, Brushes.Transparent);
+
+    /// <summary>아이템 칸이 비었을 때(고른 아이템이 없을 때) 끄는 것들.</summary>
+    private readonly List<UIElement> _itemParts = [];
+
+    /// <summary>「장면에 넣기」 — 발견물 장면을 고치는 단추라 예제 · 잠긴 발견물을 볼 때 함께 꺼진다(<see cref="Edit"/>).</summary>
+    private Button? _itemToScene;
+
+    private UserItems.Entry? _itemEditing;
+
+    /// <summary>「그림 빼기」를 눌렀는지 — 다음 「아이템 저장」에서 그림을 뺀다.</summary>
+    private bool _itemDropPicture;
 
     public UserDiscoveryDialog(Func<DiscoveryAreaPicker.Map?>? map, Engine.Game? game = null)
     {
@@ -117,8 +153,15 @@ public sealed class UserDiscoveryDialog : GameWindow
                           Label("자금"), _hintFunds, Label("기한(년)"), _hintDeadline),
                      Line("힌트 글", _hintText),
                      Line("힌트를 실을 책", _book, Edit("책 고르기…", PickBook)),
-                     Line("소문 도시", _rumorCities, Edit("도시 고르기…", PickCities)),
-                     Line("소문 글", _rumorText),
+                     _rumorPanel,
+                     Line("", Edit("소문 더하기", AddRumor)),
+                     new TextBlock
+                     {
+                         Margin = new Thickness(90, 0, 0, 8), Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap, Width = 720,
+                         HorizontalAlignment = HorizontalAlignment.Left,
+                         Text = "도시마다 다른 소문을 들려주려면 「소문 더하기」로 소문을 늘리고, 소문마다 도시(넷까지)와 글을 고르세요."
+                                + " 술집은 그 도시가 든 소문을 먼저 들려주고, 없으면 다른 소문의 도시를 「~에서 비슷한 소문을 들은 적이 있네」처럼 알려 줍니다.",
+                     },
                  })
         {
             _hintParts.Add(part);
@@ -181,9 +224,10 @@ public sealed class UserDiscoveryDialog : GameWindow
         var body = new DockPanel();
         DockPanel.SetDock(_list, Dock.Left);
         body.Children.Add(_list);
-        var tabs = new TabControl { Margin = new Thickness(6, 10, 10, 4) };
+        var tabs = _tabs;
         tabs.Items.Add(new TabItem { Header = "발견물", Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _form } });
         tabs.Items.Add(new TabItem { Header = "힌트", Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _hints } });
+        tabs.Items.Add(new TabItem { Header = "아이템", Content = ItemPage() });
         tabs.Items.Add(new TabItem { Header = "출처 · 공유", Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _share } });
         body.Children.Add(tabs);
 
@@ -196,9 +240,11 @@ public sealed class UserDiscoveryDialog : GameWindow
         Content = page;
 
         _list.SelectionChanged += (_, _) => { if (_list.SelectedItem is ListBoxItem { Tag: string uuid }) Show(uuid); };
+        _itemList.SelectionChanged += (_, _) => { if (_itemList.SelectedItem is ListBoxItem { Tag: string uuid }) ShowItem(uuid); };
         Loaded += (_, _) =>
         {
             Refresh(null);
+            RefreshItems(null);
             Tell(Local.Settings.GameSettings.ExtraDiscoveries ? "" : "모드 「추가 발견물」이 꺼져 있어 지은 발견물이 게임에 안 나옵니다.");
         };
     }
@@ -231,13 +277,15 @@ public sealed class UserDiscoveryDialog : GameWindow
     private IEnumerable<TextBox> Boxes =>
     [
         _name, _reward, _x1, _y1, _x2, _y2, _chance, _hintName, _hintGrade, _hintCategory, _hintFunds, _hintDeadline,
-        _hintText, _rumorText, _book, _description, _scene, _credit, _author,
+        _hintText, _book, _description, _scene, _credit, _author, .. _rumorRows.Select(r => r.Text),
     ];
 
     /// <summary>칸을 고칠 수 있게 하거나 읽기만 하게 둔다 — 읽기만 해도 글은 골라 베낄 수 있다.</summary>
     private void SetEditable(bool on)
     {
+        _editable = on;
         foreach (var box in Boxes) box.IsReadOnly = !on;
+        foreach (var button in _rumorRows.SelectMany(r => r.Buttons)) button.IsEnabled = on;
         _category.IsEnabled = _land.IsEnabled = _open.IsEnabled = _license.IsEnabled = _hasHint.IsEnabled = on;
         foreach (var button in _editors) button.IsEnabled = on;
         _save.IsEnabled = on;
@@ -339,8 +387,7 @@ public sealed class UserDiscoveryDialog : GameWindow
         _hintFunds.Text = $"{e.HintFunds}";
         _hintDeadline.Text = $"{e.HintDeadline}";
         _hintText.Text = e.HintText;
-        ShowCities([.. e.RumorCities ?? []]);
-        _rumorText.Text = e.RumorText;
+        ShowRumors(UserDiscoveries.RumorsOf(e));
         _book.Text = e.Book;
         _description.Text = e.Description;
         _scene.Text = string.Join("\n", (e.Lines ?? []).Select(SceneText));
@@ -364,9 +411,32 @@ public sealed class UserDiscoveryDialog : GameWindow
         catch (Exception ex) when (ex is System.IO.IOException or NotSupportedException) { return null; }
     }
 
-    /// <summary>아이템 번호의 이름. 표가 없거나 모르면 null.</summary>
-    private string? ItemName(string id) =>
-        int.TryParse(id.Trim(), out int n) && _game?.Items?.Find(n) is { Name.Length: > 0 } item ? item.Name : null;
+    /// <summary>
+    /// 장면 「[아이템]」 줄의 글(번호나 UUID)을 보일 이름으로. 사람이 지은 아이템은 이름이 다른 아이템과 겹치면 UUID 를 뒤에 붙인다 —
+    /// 그래야 다시 읽을 때(<see cref="ParseScene"/>) 그 아이템으로 돌아온다. 모르면 null.
+    /// </summary>
+    private string? ItemName(string text)
+    {
+        string s = text.Trim();
+        if (UserItems.IsReference(s))
+            return UserItems.ByUuid(s) is { } mine ? (UniqueItemName(mine.Entry.Name, s) ? mine.Entry.Name : $"{mine.Entry.Name} {s}") : null;
+        return int.TryParse(s, out int n) && _game?.Items?.Find(n) is { Name.Length: > 0 } item ? item.Name : null;
+    }
+
+    /// <summary>그 이름이 앱에 실린 아이템과도, (그 UUID 말고) 다른 지은 아이템과도 안 겹치는지.</summary>
+    private bool UniqueItemName(string name, string? uuid) =>
+        (_game?.Items?.Find(name) is not { } built || built.Id >= UserItems.NumberBase)
+        && !UserItems.All.Any(l => l.Entry.Uuid != uuid && l.Entry.Name == name);
+
+    /// <summary>장면 「[아이템]」 줄에 적어 둘 글 — 앱에 실린 아이템은 번호, 지은 아이템은 UUID(다른 PC 로 옮겨도 그 아이템을 찾게).</summary>
+    private string ItemRef(string what)
+    {
+        var uuid = System.Text.RegularExpressions.Regex.Match(what, @"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+        if (uuid.Success) return uuid.Value;
+        if (int.TryParse(what, out int n)) return UserItems.ById(n) is { } numbered ? numbered.Entry.Uuid : what;
+        if (_game?.Items?.Find(what) is { } built && built.Id < UserItems.NumberBase) return $"{built.Id}";
+        return UserItems.All.FirstOrDefault(l => l.Entry.Name == what) is { } mine ? mine.Entry.Uuid : what;
+    }
 
     private string SceneText(UserDiscoveries.SceneLine line) => line.Kind switch
     {
@@ -397,9 +467,8 @@ public sealed class UserDiscoveryDialog : GameWindow
             else if (s.StartsWith("[육상전]")) lines.Add(new("land", null, s[5..].Trim()));
             else if (s.StartsWith("[아이템]"))
             {
-                // 이름으로 적었으면 번호로 바꿔 든다. 못 찾으면 적은 그대로 두고 「저장」에서 알린다.
-                string what = s[5..].Trim();
-                lines.Add(new("item", null, !int.TryParse(what, out _) && _game?.Items?.Find(what) is { } found ? $"{found.Id}" : what));
+                // 이름으로 적었으면 번호(지은 아이템은 UUID)로 바꿔 든다. 못 찾으면 적은 그대로 두고 「저장」에서 알린다.
+                lines.Add(new("item", null, ItemRef(s[5..].Trim())));
             }
             else if (s == "[게임 오버]") lines.Add(new("gameover"));
             else if (s.IndexOf(':') is var at and > 0 and <= 12 && !s[..at].Contains(' '))
@@ -425,22 +494,31 @@ public sealed class UserDiscoveryDialog : GameWindow
             || N(_hintGrade, "힌트 등급") is not { } grade || N(_hintCategory, "힌트 갈래") is not { } hintCategory
             || N(_hintFunds, "힌트 자금") is not { } funds || N(_hintDeadline, "힌트 기한") is not { } deadline)
             return null;
-        var cities = _rumorIds;
-        if (cities.Count > 3) { Tell("소문 도시는 셋까지입니다."); return null; }
+        var rumors = new List<UserDiscoveries.RumorEntry>();
+        for (int i = 0; i < _rumorRows.Count; i++)
+        {
+            var row = _rumorRows[i];
+            string text = row.Text.Text.Trim();
+            if (text.Length == 0 && row.Ids.Count == 0) continue;   // 빈 벌은 버린다
+            if (row.Ids.Count > RumorTable.CitySlots) { Tell($"소문 {i + 1}: 도시는 넷까지입니다."); return null; }
+            if (row.Ids.Count == 0) { Tell($"소문 {i + 1}: 들려줄 도시를 골라 주세요 — 「도시 고르기…」."); return null; }
+            if (text.Length == 0) { Tell($"소문 {i + 1}: 소문 글이 비었습니다."); return null; }
+            rumors.Add(new([.. row.Ids], text));
+        }
 
-        return e with
+        return UserDiscoveries.Normalized(e with
         {
             Name = _name.Text.Trim(), Category = Math.Max(0, _category.SelectedIndex), Reward = Math.Max(0, reward),
             OnLand = _land.IsChecked == true, OpenAtStart = _open.IsChecked == true,
             X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Chance = Math.Max(1, chance),
             HintName = _hintName.Text.Trim(), HintGrade = Math.Clamp(grade, 1, 3), HintCategory = Math.Max(0, hintCategory),
             HintFunds = Math.Max(0, funds), HintDeadline = Math.Max(1, deadline), HintText = _hintText.Text.Trim(),
-            RumorCities = [.. cities], RumorText = _rumorText.Text.Trim(), Book = _book.Text.Trim(),
+            Rumors = rumors, Book = _book.Text.Trim(),
             Description = _description.Text.Trim(), Lines = ParseScene(_scene.Text),
             Credit = _credit.Text.Trim(), Author = _author.Text.Trim(),
             License = _license.Text.Trim() is { Length: > 0 } license ? license : UserDiscoveries.DefaultLicense,
             HasHint = _hasHint.IsChecked == true,
-        };
+        });
     }
 
     /// <summary>지난번에 적은 만든 이 — 같은 사람이 여럿 짓는 일이 많다.</summary>
@@ -550,7 +628,7 @@ public sealed class UserDiscoveryDialog : GameWindow
                 Tell($"「[육상전] {line.Text}」 — 그런 인물이 없습니다. 인물 이름이나 번호를 적어 주세요.");
                 return;
             }
-            if (line.Kind == "item" && !int.TryParse(line.Text.Trim(), out _))
+            if (line.Kind == "item" && !int.TryParse(line.Text.Trim(), out _) && !UserItems.IsReference(line.Text))
             {
                 Tell($"「[아이템] {line.Text}」 — 그런 아이템이 없습니다. 「아이템 넣기…」로 골라 주세요.");
                 return;
@@ -564,6 +642,8 @@ public sealed class UserDiscoveryDialog : GameWindow
         Refresh(e.Uuid);
         if (UserDiscoveries.All.FirstOrDefault(l => l.Entry.Uuid == e.Uuid) is { } l && UserDiscoveries.Compile(l, out string error) == null)
             Tell($"적었지만 장면을 굽지 못했습니다 — {error}");
+        else if (UserDiscoveries.ItemRefs(e).Count(u => UserItems.ByUuid(u) == null) is var missing and > 0)
+            Tell($"「{e.Name}」 을 적었습니다 — 장면이 주는 아이템 {missing}개가 이 PC 에 없어 그 줄은 건너뜁니다.");
         else Tell($"「{e.Name}」 을 적었습니다.");
     }
 
@@ -653,9 +733,12 @@ public sealed class UserDiscoveryDialog : GameWindow
             Title = "발견물 불러오기", Filter = "발견물 (*.cdsdiscovery)|*.cdsdiscovery|모든 파일 (*.*)|*.*",
         };
         if (pick.ShowDialog(this) != true) return;
-        var (entry, message) = UserDiscoveries.Import(pick.FileName, (had, got) => ConfirmDialog.Ask(this,
-            $"같은 발견물 「{had.Name}」 이 이미 있습니다. 불러온 「{got.Name}」 으로 덮어쓸까요?", "발견물 불러오기"));
+        var (entry, message) = UserDiscoveries.Import(pick.FileName,
+            (had, got) => ConfirmDialog.Ask(this, $"같은 발견물 「{had.Name}」 이 이미 있습니다. 불러온 「{got.Name}」 으로 덮어쓸까요?", "발견물 불러오기"),
+            // 같은 UUID 의 아이템인데 알맹이가 다를 때만 묻는다 — 덮어도 안 덮어도 아이템 번호는 그대로다.
+            (had, got) => ConfirmDialog.Ask(this, $"같은 아이템 「{had.Name}」 이 이미 있습니다. 불러온 「{got.Name}」 으로 덮어쓸까요?", "아이템 불러오기"));
         Refresh(entry?.Uuid ?? _editing?.Uuid);
+        RefreshItems(_itemEditing?.Uuid);
         Tell(message);
     }
 
@@ -683,7 +766,13 @@ public sealed class UserDiscoveryDialog : GameWindow
     {
         if (_game == null) { Tell("아이템 표를 읽지 못했습니다 — 게임 안에서 개발 창을 열어 주세요."); return; }
         if (ItemPickerDialog.Pick(this, _game) is not { } item) return;
-        string line = $"[아이템] {item.Name}";
+        InsertItemLine(UserItems.ById(item.Id) is { } mine ? ItemName(mine.Entry.Uuid) ?? item.Name : item.Name);
+    }
+
+    /// <summary>「[아이템] 이름」 줄을 장면의 커서 자리 줄 뒤에 넣는다.</summary>
+    private void InsertItemLine(string name)
+    {
+        string line = $"[아이템] {name}";
         int at = _scene.CaretIndex, end = _scene.Text.IndexOf('\n', Math.Min(at, _scene.Text.Length));
         if (end < 0) _scene.Text = _scene.Text.TrimEnd('\n') + (_scene.Text.Length > 0 ? "\n" : "") + line;
         else _scene.Text = _scene.Text.Insert(end + 1, line + "\n");
@@ -715,13 +804,81 @@ public sealed class UserDiscoveryDialog : GameWindow
         Tell($"장면에 「{line}」 을 넣었습니다 — 그 아래에 이겼을 때의 줄을, 「[놓쳤을 때]」 아래에 졌을 때의 줄을 적고 「저장」을 눌러 주세요.");
     }
 
-    /// <summary>문화권 탭으로 도시를 늘어놓는 창을 띄워 소문 도시를 셋까지 고른다.</summary>
-    private void PickCities()
+    /// <summary>문화권 탭으로 도시를 늘어놓는 창을 띄워 그 소문의 도시를 넷까지 고른다.</summary>
+    private void PickCities(RumorRow row)
     {
         if (_game == null) { Tell("도시 표를 읽지 못했습니다 — 게임 안에서 개발 창을 열어 주세요."); return; }
-        if (CityPickerDialog.Pick(this, _game, _rumorIds) is not { } picked) return;
-        ShowCities(picked);
-        Tell($"소문 도시: {_rumorCities.Text} — 「저장」을 눌러야 적힙니다.");
+        if (CityPickerDialog.Pick(this, _game, row.Ids) is not { } picked) return;
+        ShowCities(row, picked);
+        Tell($"소문 {_rumorRows.IndexOf(row) + 1} 도시: {row.Cities.Text} — 「저장」을 눌러야 적힙니다.");
+    }
+
+    /// <summary>소문 벌들로 칸을 다시 짓는다. 하나도 없으면 빈 벌 하나를 둔다 — 적을 자리가 보이게.</summary>
+    private void ShowRumors(IReadOnlyList<UserDiscoveries.RumorEntry> rumors)
+    {
+        _rumorRows.Clear();
+        _rumorPanel.Children.Clear();
+        foreach (var rumor in rumors) AddRumorRow(rumor);
+        if (_rumorRows.Count == 0) AddRumorRow(new([], ""));
+        Renumber();
+    }
+
+    /// <summary>소문 한 벌의 칸을 끝에 붙인다.</summary>
+    private RumorRow AddRumorRow(UserDiscoveries.RumorEntry rumor)
+    {
+        RumorRow? row = null;
+        var number = new TextBlock
+        {
+            Width = 28, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.Bold, Foreground = Brushes.DarkSlateBlue,
+        };
+        var cities = new TextBox
+        {
+            Width = 292, Margin = new Thickness(0, 0, 8, 0), VerticalContentAlignment = VerticalAlignment.Center,
+            IsReadOnly = true, Background = Brushes.WhiteSmoke,
+        };
+        var text = Area(48);
+        text.Text = rumor.Text;
+        text.IsReadOnly = !_editable;
+        var pick = Push("도시 고르기…", () => PickCities(row!));
+        var remove = Push("소문 빼기", () => RemoveRumor(row!));
+        pick.IsEnabled = remove.IsEnabled = _editable;
+        var panel = new StackPanel
+        {
+            Margin = new Thickness(0, 4, 0, 4),
+            Children = { Line("소문 도시", number, cities, pick, remove), Line("소문 글", text) },
+        };
+        row = new RumorRow(number, cities, text, [pick, remove], panel);
+        ShowCities(row, [.. rumor.Cities]);
+        _rumorRows.Add(row);
+        _rumorPanel.Children.Add(panel);
+        return row;
+    }
+
+    /// <summary>소문 벌 번호를 다시 매긴다.</summary>
+    private void Renumber()
+    {
+        for (int i = 0; i < _rumorRows.Count; i++) _rumorRows[i].Number.Text = $"{i + 1}";
+    }
+
+    /// <summary>빈 소문 벌을 하나 더한다 — 도시마다 다른 글을 들려줄 때.</summary>
+    private void AddRumor()
+    {
+        if (_editing == null) return;
+        var row = AddRumorRow(new([], ""));
+        Renumber();
+        row.Text.Focus();
+        Tell($"소문 {_rumorRows.Count}을(를) 더했습니다 — 「도시 고르기…」로 도시를 고르고 글을 적은 뒤 「저장」을 눌러 주세요.");
+    }
+
+    /// <summary>그 소문 벌을 뺀다.</summary>
+    private void RemoveRumor(RumorRow row)
+    {
+        int at = _rumorRows.IndexOf(row);
+        if (at < 0) return;
+        _rumorRows.RemoveAt(at);
+        _rumorPanel.Children.Remove(row.Panel);
+        Renumber();
+        Tell($"소문 {at + 1}을(를) 뺐습니다 — 「저장」을 눌러야 적힙니다.");
     }
 
     /// <summary>
@@ -753,10 +910,10 @@ public sealed class UserDiscoveryDialog : GameWindow
     }
 
     /// <summary>소문 도시를 들고 이름으로 보인다. 도시 표가 없으면 번호로.</summary>
-    private void ShowCities(List<int> ids)
+    private void ShowCities(RumorRow row, List<int> ids)
     {
-        _rumorIds = ids;
-        _rumorCities.Text = ids.Count == 0 ? "(없음)"
+        row.Ids = ids;
+        row.Cities.Text = ids.Count == 0 ? "(없음)"
             : string.Join(", ", ids.Select(id => _game?.CityName(id) is { Length: > 0 } name ? name : $"도시 {id}"));
     }
 
@@ -770,11 +927,223 @@ public sealed class UserDiscoveryDialog : GameWindow
         }
     }
 
+    // ── 「아이템」 탭 ─────────────────────────────────────────────
+
+    /// <summary>「아이템」 탭 — 왼쪽은 지어 둔 아이템, 오른쪽은 고른 아이템의 칸과 그림.</summary>
+    private UIElement ItemPage()
+    {
+        foreach (string name in ItemTable.CategoryNames) _itemCategory.Items.Add(name);
+        // 왼쪽에 아이템 목록이 하나 더 서서 발견물 탭보다 좁다 — 글 칸을 거기에 맞춘다.
+        _itemDescription.Width = HintWidth;
+
+        var form = new StackPanel();
+        void Part(UIElement part)
+        {
+            _itemParts.Add(part);
+            form.Children.Add(part);
+        }
+        Part(Line("이름", _itemName, Label("분류"), _itemCategory));
+        Part(Line("값", Label("살 때"), _itemBuy, Label("팔 때"), _itemSell, Label("효과"), _itemEffect));
+        Part(Hint("효과는 아이템 창 오른쪽 위에 뜨는 수입니다 — 무기 · 방어구면 결투 · 장비 셈에 들어갑니다."));
+        Part(Line("설명", _itemDescription));
+        var tools = new StackPanel
+        {
+            Margin = new Thickness(10, 0, 0, 0),
+            Children =
+            {
+                Push("그림 고르기…", PickItemPicture),
+                Push("가득 채우기", () => _itemPicture.Fit(PortraitImport.Fit.Cover)),
+                Push("통째로 넣기", () => _itemPicture.Fit(PortraitImport.Fit.Contain)),
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Children = { Push("－", () => _itemPicture.Zoom(1 / CropBox.ZoomStep)), Push("＋", () => _itemPicture.Zoom(CropBox.ZoomStep)) },
+                },
+                Push("그림 빼기", DropItemPicture),
+            },
+        };
+        Part(Line("그림", _itemPicture, tools));
+        Part(Hint("그림을 고르면 120x120 아이템 그림 크기로 줄여 넣습니다. 그림 안을 끌어 자리를 옮기고, 휠(또는 ＋ · －)로 키우고 줄여 원하는 곳만 고를 수 있습니다."
+                  + " 「가득 채우기」는 칸을 채우고 넘치는 곳을 자르고, 「통째로 넣기」는 그림 전체가 들어가게 줄입니다."));
+        Part(Line("만든 이", _itemAuthor, Label("닉네임이나 이름")));
+        _itemToScene = Edit("장면에 넣기", ItemToScene);
+        var bar = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+        bar.Children.Add(Push("새 아이템", AddItem));
+        foreach (var button in new[] { Push("아이템 저장", SaveItem), Push("아이템 복제", DuplicateItem), Push("아이템 지우기", RemoveItem), _itemToScene })
+        {
+            _itemParts.Add(button);
+            bar.Children.Add(button);
+        }
+        form.Children.Add(bar);
+        form.Children.Add(Hint("지은 아이템은 발견물 장면의 「[아이템] 이름」 줄로 줍니다 — 「장면에 넣기」를 누르거나 「발견물」 탭의 「아이템 넣기…」로 고르세요."
+                               + " 장면이 보여 준 아이템은 발견하면 소지품에 비치고, 발표할 때 손에 들어옵니다."
+                               + " 발견물을 내보내면 장면이 주는 아이템이 그림과 함께 파일에 담기고, 불러온 PC 에서는 비어 있는 아이템 번호를 새로 받습니다."));
+
+        var page = new DockPanel { Margin = new Thickness(6, 10, 10, 4) };
+        DockPanel.SetDock(_itemList, Dock.Left);
+        page.Children.Add(_itemList);
+        page.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = form });
+        return page;
+    }
+
+    /// <summary>「아이템」 탭 글 칸 · 안내 글의 폭.</summary>
+    private const double HintWidth = 500;
+
+    private static TextBlock Hint(string text) => new()
+    {
+        Margin = new Thickness(90, 0, 0, 6), Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap, Width = HintWidth,
+        HorizontalAlignment = HorizontalAlignment.Left, Text = text,
+    };
+
+    /// <summary>아이템 목록을 다시 채우고 그 UUID 를 고른다.</summary>
+    private void RefreshItems(string? pick)
+    {
+        _itemList.Items.Clear();
+        foreach (var l in UserItems.All.OrderBy(l => l.Entry.Name, StringComparer.Ordinal))
+            _itemList.Items.Add(new ListBoxItem { Content = $"{l.Id}  {l.Entry.Name}", Tag = l.Entry.Uuid });
+        var items = _itemList.Items.OfType<ListBoxItem>().ToList();
+        _itemList.SelectedItem = items.FirstOrDefault(i => (string)i.Tag == pick) ?? items.FirstOrDefault();
+        if (_itemList.SelectedItem == null) ShowItem(null);
+    }
+
+    /// <summary>칸들을 그 아이템으로 채운다. null 이면 비우고 끈다.</summary>
+    private void ShowItem(string? uuid)
+    {
+        _itemDropPicture = false;
+        var l = uuid == null ? null : UserItems.ByUuid(uuid);
+        _itemEditing = l?.Entry;
+        foreach (var part in _itemParts) part.IsEnabled = l != null;
+        if (_itemToScene != null) _itemToScene.IsEnabled = l != null && _editable;
+        if (l == null)
+        {
+            _itemName.Text = _itemBuy.Text = _itemSell.Text = _itemEffect.Text = _itemDescription.Text = _itemAuthor.Text = "";
+            _itemCategory.SelectedIndex = -1;
+            _itemPicture.ShowFixed(null);
+            return;
+        }
+        var e = l.Entry;
+        _itemName.Text = e.Name;
+        _itemCategory.SelectedIndex = Math.Clamp(e.Category, 0, _itemCategory.Items.Count - 1);
+        _itemBuy.Text = $"{e.BuyList}";
+        _itemSell.Text = $"{e.SellList}";
+        _itemEffect.Text = $"{e.Effect}";
+        _itemDescription.Text = e.Description;
+        _itemAuthor.Text = e.Author;
+        _itemPicture.ShowFixed(l.PicturePath is { } path ? UserItems.ReadPicture(path) : null);
+        Tell($"아이템 {l.Id}번 — UUID {e.Uuid}");
+    }
+
+    /// <summary>지난번에 적은 만든 이 — 아이템에 없으면 발견물 쪽.</summary>
+    private static string LastItemAuthor() =>
+        UserItems.All.Select(l => l.Entry.Author).LastOrDefault(a => a.Length > 0) is { Length: > 0 } author ? author : LastAuthor();
+
+    private void AddItem()
+    {
+        var made = UserItems.Blank(LastItemAuthor());
+        for (int n = 2; !UniqueItemName(made.Name, made.Uuid); n++) made = made with { Name = $"새 아이템 {n}" };
+        if (UserItems.Save(made) is { } why) { Tell($"짓지 못했습니다 — {why}"); return; }
+        RefreshItems(made.Uuid);
+        _itemName.Focus();
+        _itemName.SelectAll();
+        Tell($"새 아이템을 지었습니다(아이템 {UserItems.ByUuid(made.Uuid)?.Id}번) — 칸을 채우고 그림을 고른 뒤 「아이템 저장」을 눌러 주세요.");
+    }
+
+    private void SaveItem()
+    {
+        if (_itemEditing is not { } e) return;
+        int? N(TextBox box, string what)
+        {
+            if (int.TryParse(box.Text.Trim(), out int v)) return v;
+            Tell($"{what}에 수를 적어 주세요.");
+            return null;
+        }
+        string name = _itemName.Text.Trim();
+        if (name.Length == 0) { Tell("아이템 이름이 비었습니다."); return; }
+        if (!UniqueItemName(name, e.Uuid)) { Tell($"「{name}」 은 이미 있는 아이템 이름입니다 — 장면에서 이름으로 찾으니 다른 이름을 지어 주세요."); return; }
+        if (N(_itemBuy, "살 때 값") is not { } buy || N(_itemSell, "팔 때 값") is not { } sell || N(_itemEffect, "효과") is not { } effect) return;
+        var made = e with
+        {
+            Name = name, Category = Math.Max(0, _itemCategory.SelectedIndex), BuyList = Math.Max(0, buy), SellList = Math.Max(0, sell),
+            Effect = effect, Description = _itemDescription.Text.Trim(), Author = _itemAuthor.Text.Trim(),
+        };
+        if (UserItems.Save(made, _itemPicture.Shaped, _itemDropPicture) is { } why) { Tell($"적지 못했습니다 — {why}"); return; }
+        RefreshItems(made.Uuid);
+        // 읽기만 하는 발견물(예제 · 잠긴 것)은 장면 칸에 고친 글이 없으니 새 이름으로 다시 그린다.
+        if (_editing is { } discovery && _scene.IsReadOnly) _scene.Text = string.Join("\n", (discovery.Lines ?? []).Select(SceneText));
+        Tell($"아이템 「{made.Name}」 을 적었습니다(아이템 {UserItems.ByUuid(made.Uuid)?.Id}번).");
+    }
+
+    /// <summary>고른 아이템을 새 UUID 로 베낀다 — 그림도 함께.</summary>
+    private void DuplicateItem()
+    {
+        if (_itemEditing is not { } source || UserItems.ByUuid(source.Uuid) is not { } l) return;
+        string name = $"{source.Name} 복사본";
+        for (int n = 2; !UniqueItemName(name, null); n++) name = $"{source.Name} 복사본 {n}";
+        var copy = source with { Uuid = Guid.NewGuid().ToString(), Name = name };
+        if (UserItems.Save(copy, l.PicturePath is { } path ? UserItems.ReadPicture(path) : null) is { } why) { Tell($"복제하지 못했습니다 — {why}"); return; }
+        RefreshItems(copy.Uuid);
+        Tell($"「{source.Name}」 을 「{copy.Name}」 으로 복제했습니다(아이템 {UserItems.ByUuid(copy.Uuid)?.Id}번).");
+    }
+
+    private void RemoveItem()
+    {
+        if (_itemEditing is not { } e) return;
+        var users = UserDiscoveries.All.Where(d => UserDiscoveries.ItemRefs(d.Entry).Contains(e.Uuid, StringComparer.OrdinalIgnoreCase))
+                                       .Select(d => d.Entry.Name).ToList();
+        string used = users.Count > 0 ? $" 이 아이템을 주는 발견물({string.Join(" · ", users)})의 장면에서는 그 줄을 건너뜁니다." : "";
+        if (!ConfirmDialog.Ask(this, $"아이템 「{e.Name}」 을 지웁니다.{used} 이 아이템을 가진 세이브에서는 소지품에서 보이지 않게 됩니다. 좋습니까?", "아이템 지우기"))
+            return;
+        UserItems.Delete(e.Uuid);
+        RefreshItems(null);
+        Tell($"아이템 「{e.Name}」 을 지웠습니다.");
+    }
+
+    private void PickItemPicture()
+    {
+        if (_itemEditing == null) return;
+        var pick = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "아이템 그림 고르기",
+            Filter = "그림 (*.png;*.jpg;*.jpeg;*.bmp;*.gif)|*.png;*.jpg;*.jpeg;*.bmp;*.gif|모든 파일 (*.*)|*.*",
+        };
+        if (pick.ShowDialog(this) != true) return;
+        LoadItemPicture(pick.FileName);
+    }
+
+    /// <summary>그림 파일을 아이템 그림 칸에 올린다 — 처음에는 통째로 들어가게 줄인다.</summary>
+    internal bool LoadItemPicture(string path)
+    {
+        if (PortraitImport.Load(path) is not { } source) { Tell($"그림을 읽지 못했습니다 — {PortraitImport.LastError}"); return false; }
+        _itemDropPicture = false;
+        _itemPicture.Load(source, PortraitImport.Fit.Contain);
+        Tell($"그림을 120x120 에 맞춰 줄였습니다({source.PixelWidth}x{source.PixelHeight}) — 끌고 굴려 자리를 고른 뒤 「아이템 저장」을 눌러 주세요.");
+        return true;
+    }
+
+    private void DropItemPicture()
+    {
+        if (_itemEditing == null) return;
+        _itemDropPicture = true;
+        _itemPicture.ShowFixed(null);
+        Tell("그림을 뺍니다 — 「아이템 저장」을 눌러야 적힙니다.");
+    }
+
+    /// <summary>고른 아이템을 「[아이템] 이름」 줄로 지금 발견물의 장면에 넣는다.</summary>
+    private void ItemToScene()
+    {
+        if (_itemEditing is not { } e || ItemName(e.Uuid) is not { } name) return;
+        InsertItemLine(name);
+        _tabs.SelectedIndex = 0;
+    }
+
     /// <summary>창을 띄운다.</summary>
-    public static void Show(Window? owner, Func<DiscoveryAreaPicker.Map?>? map, Engine.Game? game = null)
+    /// <param name="tab">처음 보일 탭 이름(「아이템」 따위). null 이면 「발견물」.</param>
+    public static void Show(Window? owner, Func<DiscoveryAreaPicker.Map?>? map, Engine.Game? game = null, string? tab = null)
     {
         var window = new UserDiscoveryDialog(map, game);
         if (owner != null) window.Owner = owner;
+        if (tab != null)
+            window._tabs.SelectedItem = window._tabs.Items.OfType<TabItem>().FirstOrDefault(t => (string)t.Header == tab) ?? window._tabs.Items[0];
         window.ShowDialog();
     }
 }

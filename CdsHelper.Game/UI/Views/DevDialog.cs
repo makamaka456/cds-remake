@@ -25,7 +25,7 @@ namespace CdsHelper.Game.UI.Views;
 /// 놀 때 켜고 끄는 편의 기능(컨디션·미니맵·기능·언어·출입 일수)은 <see cref="ModDialog"/> 로
 /// 옮겼다 — 여기는 값을 밀어 넣어 <b>시험</b>하는 데다.
 /// </remarks>
-public sealed class DevDialog : GameWindow
+public sealed partial class DevDialog : GameWindow
 {
     /// <summary>단추 한 번에 움직이는 폭.</summary>
     private const int GoldStep = 10000, FameStep = 500;
@@ -76,8 +76,6 @@ public sealed class DevDialog : GameWindow
         /// </summary>
         public Func<int, bool>? EventDone { get; init; }
 
-        /// <summary>커스텀 발견물 창 — 「발견물」 탭의 단추가 창을 닫은 뒤 부른다.</summary>
-        public Action? UserDiscoveries { get; init; }
 
         /// <summary>등록된 역사 대본 칸들 — 「역사이벤트」 탭이 늘어놓는다. 못 읽었으면 탭이 안 선다.</summary>
         public Func<List<Engine.Market.CityHistory.Entry>>? HistoryEvents { get; init; }
@@ -90,6 +88,15 @@ public sealed class DevDialog : GameWindow
 
         /// <summary>초상화 — 「여급」 탭이 줄 왼쪽에 얼굴을 낸다. 없으면 얼굴 없이 늘어놓는다.</summary>
         public Portraits? Faces { get; init; }
+
+        /// <summary>아이템 표 — 「특수템추가」 탭이 이름을 읽는다. 못 읽었으면 원본 이름을 그대로 쓴다.</summary>
+        public ItemTable? Items { get; init; }
+
+        /// <summary>게임을 불러와 지도에 들었는지 — 아니면(타이틀) 「특수템추가」 탭의 단추를 끈다.</summary>
+        public Func<bool> GameLoaded { get; init; } = () => false;
+
+        /// <summary>처음 펼칠 탭 이름 — 화면 밖 시험(CDS_DIALOG=dev:…)이 쓴다. 없으면 「일반」.</summary>
+        public string? StartTab { get; init; }
     }
 
     /// <summary>발견물 탭에서 체크를 하나라도 바꿨는지.</summary>
@@ -401,9 +408,13 @@ public sealed class DevDialog : GameWindow
         // 「편집기 색」 — 퀘스트 편집기 · 모션 메이커 따위 도구 창의 붓만 따로 — 게임 화면 색과 섞이면 헷갈렸다.
         var toolColors = ColorsPage(editor: true);
         var pages = new List<(string, FrameworkElement)> { ("일반", rows), ("테스트", tests) };
+        // 「에디터」 탭 — 지금 게임 주인공의 능력치 · 기능 · 언어(버그 리포트 #35).
+        pages.Add(("에디터", PlayerEditorPage()));
+        // 「특수템추가」 탭 — 잠수폭탄 · 속사포 · 작렬탄 · 특수 선수상을 주인공 소지품에 바로 넣는다(버그 리포트 #37).
+        pages.Add(("특수템추가", SpecialItemsPage(options.Items, options.GameLoaded())));
         if (options.Discoveries is { } table)
         {
-            pages.Add(("발견물", FindsPage(table, options.EventDone, options.UserDiscoveries)));
+            pages.Add(("발견물", FindsPage(table, options.EventDone)));
             Closed += (_, _) => { if (_findsChanged) options.DiscoveriesChanged?.Invoke(); };
         }
         if (options.HistoryEvents?.Invoke() is { Count: > 0 } events)
@@ -415,7 +426,7 @@ public sealed class DevDialog : GameWindow
         pages.Add(("애드온", addOns));
         pages.Add(("색", colors));
         pages.Add(("편집기 색", toolColors));
-        stack.Children.Add(Tabs([.. pages]));
+        stack.Children.Add(Tabs(options.StartTab, [.. pages]));
         foreach (var (_, page) in pages) stack.Children.Add(page);
         stack.Children.Add(buttons);
 
@@ -600,7 +611,7 @@ public sealed class DevDialog : GameWindow
     }
 
     /// <summary>탭 머리 — 누른 쪽 판만 보이고 머리는 밝게 선다(<see cref="ModDialog"/> 와 같은 모양).</summary>
-    private static FrameworkElement Tabs(params (string Text, FrameworkElement Page)[] pages)
+    private static FrameworkElement Tabs(string? start, params (string Text, FrameworkElement Page)[] pages)
     {
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(12, 8, 12, 0) };
         var heads = new List<(Border Head, FrameworkElement Page)>();
@@ -631,7 +642,7 @@ public sealed class DevDialog : GameWindow
             heads.Add((head, page));
             bar.Children.Add(head);
         }
-        Select(pages[0].Page);
+        Select((pages.FirstOrDefault(p => p.Text == start).Page) ?? pages[0].Page);
         return bar;
     }
 
@@ -782,7 +793,7 @@ public sealed class DevDialog : GameWindow
     /// <c>0x004321B0</c>), 사건 매듭(<see cref="Player.Settle"/>)만 남는다. 그래서 찾은 것 · 보고한 것만 보면 늘 비어
     /// 있었다. 발견물 지도와 같이 <paramref name="eventDone"/> 이 참인 것도 체크해 「(사건)」으로 적는다.
     /// </remarks>
-    private FrameworkElement FindsPage(DiscoveryTable table, Func<int, bool>? eventDone, Action? userDiscoveries)
+    private FrameworkElement FindsPage(DiscoveryTable table, Func<int, bool>? eventDone)
     {
         var page = new StackPanel { Margin = new Thickness(12, 10, 12, 4), Width = 560 };
         var count = new TextBlock { Foreground = GameUi.Text, FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
@@ -884,9 +895,7 @@ public sealed class DevDialog : GameWindow
         });
         top.Children.Add(find);
         top.Children.Add(count);
-        // 사람이 지어 넣는 발견물 — 짓기 · 고치기 · 내보내기 · 불러오기(UserDiscoveryDialog).
-        if (userDiscoveries is { } open)
-            top.Children.Add(GameUi.PushButton("발견물 추가…", () => { Close(); open(); }, 140));
+        // 사람이 지어 넣는 발견물(UserDiscoveryDialog)은 제목 줄 도시락 「발견물 추가」로 옮겼다(요청).
         page.Children.Add(top);
         var sheet = new DockPanel();
         var head = new Border

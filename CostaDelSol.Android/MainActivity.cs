@@ -794,6 +794,8 @@ public sealed class MainActivity : Activity
         };
         if (GameSettings.ShowBarmaidBookMenu) rows.Add(("여급 수첩", () => RunMenuWindow(_map.ShowBarmaidBook), !_map.Started));
         if (GameSettings.ShowPersonMoveMenu) rows.Add(("인물 이동", () => RunMenuWindow(_map.ShowPersonMove), !_map.Started));
+        // 사람이 지어 넣는 발견물 — 원본 v1.1.89 에 개발 창 탭에서 도시락 줄로 옮겼다. 모드 「추가 발견물」을 켜야 줄이 선다.
+        if (GameSettings.ExtraDiscoveries) rows.Add(("발견물 추가", () => RunMenuWindow(_map.ShowUserDiscoveries), !_map.Started));
         rows.Add(("발견물 지도", () => GameThread.Post(() => _map.Key(GameKey.D)), !_map.OnMap));
         rows.Add(("모드", () => RunMenuWindow(_map.ShowModDialog), false));
         rows.Add(("개발", () => RunMenuWindow(_map.ShowDevDialog), !_map.Started));

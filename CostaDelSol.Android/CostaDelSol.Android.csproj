@@ -86,6 +86,10 @@
         <Compile Include="..\CdsHelper.Support\Local\Helpers\WorldMapRenderer.cs" Link="Shared\CdsHelper.Support\Local\Helpers\WorldMapRenderer.cs" />
         <Compile Include="..\CdsHelper.Game\Engine\GameSave.cs" Link="Shared\CdsHelper.Game\Engine\GameSave.cs" />
         <Compile Include="..\CdsHelper.Game\Engine\Sea\CityCoordinates.cs" Link="Shared\CdsHelper.Game\Engine\Sea\CityCoordinates.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DevDialog.PlayerEditor.cs" Link="Shared\CdsHelper.Game\UI\Views\DevDialog.PlayerEditor.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\DevDialog.SpecialItems.cs" Link="Shared\CdsHelper.Game\UI\Views\DevDialog.SpecialItems.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\LiveMapWindow.cs" Link="Shared\CdsHelper.Game\UI\Views\LiveMapWindow.cs" />
+        <Compile Include="..\CdsHelper.Game\Local\Helpers\SoundDiagnostics.cs" Link="Shared\CdsHelper.Game\Local\Helpers\SoundDiagnostics.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\BgmPlayer.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BgmPlayer.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\BgmAssetDownloader.cs" Link="Shared\CdsHelper.Game\Local\Helpers\BgmAssetDownloader.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Settings\GameSettings.cs" Link="Shared\CdsHelper.Game\Local\Settings\GameSettings.cs" />
@@ -93,6 +97,8 @@
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GameFont.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GameFont.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GamePalette.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GamePalette.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\FrameArt.cs" Link="Shared\CdsHelper.Game\UI\Views\FrameArt.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CropBox.cs" Link="Shared\CdsHelper.Game\UI\Views\CropBox.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Table\UserItems.cs" Link="Shared\CdsHelper.Game\Engine\Table\UserItems.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\ReleaseNotesDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ReleaseNotesDialog.cs" />
         <Compile Include="..\CdsHelper.Game\Engine\Table\SponsorEdits.cs" Link="Shared\CdsHelper.Game\Engine\Table\SponsorEdits.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\CitySpriteDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CitySpriteDialog.cs" />

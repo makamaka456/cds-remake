@@ -67,8 +67,17 @@ options : "실행한다"   — 앱을 닫고 다시 구워 띄운다
 | `CDS_START=sea:<도시>:<선체 key>` | 타이틀을 건너뛰고 라몬이 그 배 한 척으로 그 도시 앞바다에서 항해 지도에 든다(암스테르담 24 · 제노바 28 · 리스본 …) |
 | `CDS_START=land:<도시>:<선체 key>:<x>:<y>` | 같은 바로 시작인데 배는 그 도시 앞바다에 대 두고 말을 그 칸(가까운 육지)에 세운다 — 발견물 자리 사건을 밟아 볼 때(로제타석: `land:78:ketch:1460.5:407.5` + 뱃머리 6 · 걷기) |
 | `CDS_DIALOG=bugreport` | 왼쪽 위 메뉴로 연 것처럼 버그 리포트 창을 띄운다 — 메뉴 창이 떠 있는 동안 배 · 말이 서는지 본다 |
+| `CDS_DIALOG=personmove-gate:<도시>` | `CDS_START=sea:<도시>:…` 와 함께 — 그 도시에 들어가 도시락 「인물 이동」을 띄운 채 성문으로 나서고 창을 닫은 뒤 커맨드 창을 열었다 닫는다. 걸음마다 지도 상태(멈춤 · 묻는 중 · 도시 안)를 기록에 적는다(버그 리포트 #44) |
+| `CDS_DIALOG=mod[:<찾는 말>]` | 모드 창을 띄우고 찾기 칸에 그 말을 넣는다(`mod:자동` — 모든 탭을 가로질러 걸러진 화면). `CDS_START` 와 함께 쓴다 |
+| `CDS_DIALOG=sound` | 2초마다 다섯 번 효과음(닻)을 내고 소리 진단(버그 리포트의 `sound` — 곡 상태 · 재생 위치 · 트는 손 · 기본 출력 장치 · 앱 음량)을 기록에 적는다. 소리를 내려면 `CDS_MUTE=0`(크기는 시험 폴더 `game-settings.json` 의 `BgmVolume`/`SfxVolume` 0 으로 조용히). `CDS_AUDIO=winrt` 면 WPF MediaPlayer 대신 WinRT 쪽으로 튼다 |
+| `CDS_DIALOG=areapick[:x1,y1,x2,y2[,1]]` | 사람 발견물 창의 「지도에서 고르기…」(세계지도 고르기 모드)를 그 범위에서 띄운다(끝의 1 은 육지). `CDS_START` 없이 걸면 타이틀에서 WORLD.CDS 로 지은 지도로 뜬다 |
+| `CDS_FOUND=<이름>[,<이름>…]` | 바로 시작한 뒤 그 이름의 발견물들을 찾은 것으로 적고 지도를 다시 짓는다 — 사람 발견물 그림이 지도에 서는지 볼 때(사람 발견물은 `<SAVEDIR>\discoveries\<uuid>\discovery.json` 에 미리 넣어 두고 `-KeepSave`) |
+| `CDS_DIALOG=childname` | 자녀 이름 다시 짓기 창(선명입력 창)을 띄우고 그 창이 쥔 초점(글상자 · 고른 글자 수)을 기록에 적은 뒤 닫는다 |
+| `CDS_DIALOG=dev:<탭>` | 개발 창을 그 탭으로 띄운다(`dev:에디터` = 주인공 능력치 · 기능 · 언어 고치기). `CDS_START` 와 함께 쓴다 |
+| `CDS_DIALOG=userdiscovery[:<탭>]` | 도시락 「발견물 추가」처럼 커스텀 발견물 창을 그 탭(`userdiscovery:아이템`)으로 띄운다. `CDS_ITEMPIC=<그림>` 이면 고른 아이템의 그림 칸에 그 그림을 올린다(120x120 에 통째로 맞춘 첫 자리). 지은 아이템 · 발견물은 `CDS_SAVEDIR` 의 `items` · `discoveries` 에서 읽는다 |
 | `CDS_TITLE=Down,Enter` | 타이틀에서 그 글쇠들을 1초 간격으로 누른다(LOAD GAME = `Down,Enter`, CONTINUE = `Down,Down,Enter`). 기록에 세이브 자리 요약(`GameSave.Census`)과 1초마다 화면 · 마지막 불러오기 결과를 적는다 |
 | `CDS_AUTOKEY=Enter` | `CDS_TITLE` 과 함께 — 새로 뜬 창마다 종류 · 물음 글(ConfirmDialog 는 이름으로)을 적고 그 글쇠를 한 번 보낸다(목록은 맨 위 칸, 물음은 「예」) |
+| `CDS_NAV=<도시>` | `CDS_START` 와 함께 — 네비게이션에서 그 도시의 첫 길을 고른 것처럼 자동항해를 걸고, 1초마다 배 자리 · 마디 · 어귀 · 끝난 말 · 뜬 창을 기록에 적는다(`sea:75:large-carrack` + `78` = 파마구스타에서 알렉산드리아) |
 | `CDS_HEADING=<0~7>` · `CDS_SAIL=1` | 뱃머리(0 북 · 2 서 · 4 남 · 6 동 · 7 북동, `ShipRegistry.DirectionNames` 차례)와 저절로 나아가기 |
 | `CDS_SHOT=<png>:<초>[;…]` | **바다로 든 뒤** 그 초에 찍고, 마지막 것을 찍으면 스스로 닫힌다 |
 | 메시지 `0x8001` | 창에 `PostMessage` 하면 `<SAVEDIR 또는 %TEMP%>\cds_snapshot.png`. 창 핸들은 같은 폴더 `cds_hwnd.txt` |

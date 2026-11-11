@@ -1,10 +1,11 @@
-using System.IO;
+﻿using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using CdsHelper.Game.Local.Helpers;
 using CdsHelper.Game.Local.Settings;
 using CdsHelper.Game.UI.Views;
 using CdsHelper.Support.Local.Helpers;
@@ -26,7 +27,12 @@ namespace CdsHelper.Game.UI.Testing;
 ///                  CDS_START=land:&lt;도시&gt;:&lt;선체 key&gt;:&lt;x&gt;:&lt;y&gt; — 말을 그 칸에 세운다(발견물 자리 사건 밟기, StartAshoreForTest).
 ///   버그 리포트 창 CDS_DIALOG=bugreport — 왼쪽 위 메뉴로 연 것처럼 띄운다(그동안 배 · 말이 서는지 본다).
 ///   내 리포트 창   CDS_DIALOG=mybugs — 버그 리포트의 「내 리포트」 창을 띄운다(받는 곳은 CDS_STATS_URL).
+///   개발 창       CDS_DIALOG=dev:&lt;탭&gt; — 개발 창을 그 탭(「에디터」 따위)으로 띄운다.
+///   발견물 추가   CDS_DIALOG=userdiscovery[:&lt;탭&gt;] — 커스텀 발견물 창을 그 탭(「아이템」 따위)으로 띄운다. CDS_ITEMPIC=&lt;그림&gt; 이면 아이템 그림 칸에 올린다.
+///   모드 창       CDS_DIALOG=mod[:찾는 말] — 모드 창을 띄우고 찾기 칸에 그 말을 넣는다.
+///   인물 이동 성문 CDS_DIALOG=personmove-gate:&lt;도시&gt; — 도시에 들어가 인물 이동 창을 띄운 채 성문으로 나서고 닫는다(묻는 중 · 멈춤이 남는지).
 ///   매매 창       CDS_DIALOG=trade:&lt;도시&gt; — 그 도시 교역소 매매 창을 짐 셋을 실은 채 띄운다.
+///   도서관 서가    CDS_DIALOG=library:&lt;도시&gt;[:menu[:&lt;글쇠&gt;]] — 서가를 띄우고, menu 면 오른쪽 단추로 「서적 선택」을 낸다.
 ///   타이틀 글쇠    CDS_TITLE=Down,Enter — 타이틀에서 1초 간격으로 누른다(LOAD GAME). CDS_AUTOKEY=Enter 면 새로 뜬 창마다 글을 적고 그 글쇠를 보낸다.
 ///   찍고 끄기      CDS_SHOT=&lt;png&gt;:&lt;초&gt;[;&lt;png&gt;:&lt;초&gt;…] — 창이 뜬 지 그 초에 찍고, 마지막 것을 찍으면 창을 닫는다.
 /// </code>
@@ -88,6 +94,9 @@ public static class OffscreenHarness
         window.Loaded += (_, _) => window.Dispatcher.BeginInvoke(() =>
         {
             if (OffscreenTest.Start is { } start) RunStart(window, start);
+            // CDS_NAV=<도시> — 바로 시작한 뒤 네비게이션으로 그 도시에 자동항해를 걸고, 1초마다 배 자리 · 끝 · 뜬 창을 적는다.
+            if (Environment.GetEnvironmentVariable("CDS_NAV") is { } nav && int.TryParse(nav, out int navCity))
+                RunNav(window, navCity);
             ScheduleShots(window);
             // CDS_TITLE=Down,Enter — 타이틀에서 그 글쇠들을 1초 간격으로 누른다(LOAD GAME · CONTINUE 따위).
             // CDS_AUTOKEY=Enter — 새로 뜬 창마다 그 글을 기록에 적고, 그 글쇠를 한 번 보낸다(목록은 맨 위 칸 · 물음은 「예」).
@@ -100,6 +109,23 @@ public static class OffscreenHarness
                     window.OpenBugReportForTest();
                     Log("버그 리포트 창이 닫혔다");
                 }, DispatcherPriority.ApplicationIdle);
+            // CDS_DIALOG=personmove-gate:<도시> — 그 도시에 들어가 인물 이동 창을 띄운 채 성문으로 나서고 닫는다(버그 리포트 #44).
+            if (Environment.GetEnvironmentVariable("CDS_DIALOG") is { } gate && gate.StartsWith("personmove-gate:")
+                && int.TryParse(gate["personmove-gate:".Length..], out int gateCity))
+                window.Dispatcher.BeginInvoke(() => window.PersonMoveGateForTest(gateCity, Log), DispatcherPriority.ApplicationIdle);
+            // CDS_DIALOG=sound — 효과음 하나를 내고 배경음악이 도는 동안 소리 진단(버그 리포트에 싣는 것)을 2초마다 다섯 번 적는다.
+            if (Environment.GetEnvironmentVariable("CDS_DIALOG") == "sound")
+            {
+                int left = 5;
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                timer.Tick += (_, _) =>
+                {
+                    SoundBank.Current?.Play(SoundBank.AnchorPart);
+                    Log("소리 " + string.Join(" | ", SoundDiagnostics.Collect().Select(p => $"{p.Key}={p.Value}")));
+                    if (--left == 0) timer.Stop();
+                };
+                timer.Start();
+            }
             // CDS_DIALOG=mybugs — 버그 리포트의 「내 리포트」 창을 띄운다(받는 곳은 CDS_STATS_URL).
             if (Environment.GetEnvironmentVariable("CDS_DIALOG") == "mybugs")
                 window.Dispatcher.BeginInvoke(() =>
@@ -112,6 +138,102 @@ public static class OffscreenHarness
                             if (w is MyBugReportsDialog) { w.Left = window.Left + 80; w.Top = window.Top + 80; }
                     }, DispatcherPriority.ApplicationIdle);
                     MyBugReportsDialog.Open(window);
+                }, DispatcherPriority.ApplicationIdle);
+            // CDS_DIALOG=livemap — 도시락 「세계지도」 창을 띄운다(모달이 아니다 — CDS_SAIL 과 함께 쓰면 배를 따라가는지 본다).
+            if (Environment.GetEnvironmentVariable("CDS_DIALOG") == "livemap")
+                window.Dispatcher.BeginInvoke(() =>
+                {
+                    Log("세계지도 창을 띄운다");
+                    GameSettings.ShowLiveMapMenu = true;   // 뱃길은 이 모드가 켜져 있어야 적힌다
+                    window.OpenLiveMapForTest();
+                    foreach (Window w in window.OwnedWindows)
+                        if (w is LiveMapWindow) { w.Left = window.Left + 60; w.Top = window.Top + 60; }
+                }, DispatcherPriority.ApplicationIdle);
+            // CDS_FOUND=<이름>[,<이름>…] — 그 이름의 발견물들을 찾은 것으로 적는다(사람 발견물 그림이 지도에 서는지 본다).
+            if (Environment.GetEnvironmentVariable("CDS_FOUND") is { Length: > 0 } found)
+                window.Dispatcher.BeginInvoke(() =>
+                    Log("찾은 것으로 적었다 — " + string.Join(", ", window.DiscoverForTest(found.Split(',')))),
+                    DispatcherPriority.ApplicationIdle);
+            // CDS_DIALOG=areapick[:x1,y1,x2,y2[,land]] — 사람 발견물 창의 「지도에서 고르기…」 창(세계지도 고르기 모드)을 띄운다.
+            if (Environment.GetEnvironmentVariable("CDS_DIALOG") is { } pickDialog && (pickDialog == "areapick" || pickDialog.StartsWith("areapick:")))
+                window.Dispatcher.BeginInvoke(() =>
+                {
+                    var n = pickDialog.Length > 9 ? pickDialog[9..].Split(',').Select(t => int.TryParse(t, out int v) ? v : -1).ToArray() : [];
+                    DiscoveryAreaPicker.Area? start = n.Length >= 4 ? new(n[0], n[1], n[2], n[3], n.Length > 4 && n[4] == 1) : null;
+                    Log($"자리 고르기 창을 띄운다 — 처음 범위 {start?.ToString() ?? "(없음)"}");
+                    window.Dispatcher.BeginInvoke(() =>
+                    {
+                        foreach (Window w in window.OwnedWindows)
+                            if (w is LiveMapWindow) { w.Left = window.Left + 20; w.Top = window.Top + 20; }
+                    }, DispatcherPriority.ApplicationIdle);
+                    var got = window.PickAreaForTest(start);
+                    Log($"자리 고르기 창이 닫혔다 — {got?.ToString() ?? "(그만둠)"}");
+                }, DispatcherPriority.ApplicationIdle);
+            // CDS_DIALOG=mod[:찾는 말] — 모드 창을 띄우고 찾기 칸에 그 말을 넣는다. 창은 주인 안으로 옮겨 스냅숏에 들게 한다.
+            if (Environment.GetEnvironmentVariable("CDS_DIALOG") is { } modDialog && (modDialog == "mod" || modDialog.StartsWith("mod:")))
+                window.Dispatcher.BeginInvoke(() =>
+                {
+                    string? query = modDialog.Length > 4 ? modDialog[4..] : null;
+                    Log($"모드 창을 띄운다 — 찾는 말 {query ?? "(없음)"}");
+                    window.Dispatcher.BeginInvoke(() =>
+                    {
+                        foreach (Window w in window.OwnedWindows)
+                            if (w is ModDialog) { w.Left = window.Left + 20; w.Top = window.Top + 20; }
+                    }, DispatcherPriority.ApplicationIdle);
+                    window.OpenModForTest(query);
+                    Log("모드 창이 닫혔다");
+                }, DispatcherPriority.ApplicationIdle);
+            // CDS_DIALOG=dev:<탭> — 개발 창을 그 탭(「에디터」 따위)으로 띄운다. 창은 주인 안으로 옮겨 스냅숏에 들게 한다.
+            if (Environment.GetEnvironmentVariable("CDS_DIALOG") is { } devDialog && devDialog.StartsWith("dev:"))
+                window.Dispatcher.BeginInvoke(() =>
+                {
+                    Log($"개발 창을 띄운다 — 탭 {devDialog[4..]}");
+                    window.Dispatcher.BeginInvoke(() =>
+                    {
+                        foreach (Window w in window.OwnedWindows)
+                            if (w is DevDialog) { w.Left = window.Left + 40; w.Top = window.Top + 20; }
+                    }, DispatcherPriority.ApplicationIdle);
+                    window.OpenDevForTest(devDialog[4..]);
+                    Log("개발 창이 닫혔다");
+                }, DispatcherPriority.ApplicationIdle);
+            // CDS_DIALOG=userdiscovery[:<탭>] — 커스텀 발견물 창을 그 탭으로 띄운다. CDS_ITEMPIC=<그림> 이면 고른 아이템의 그림 칸에 올린다(끌기 전 첫 자리).
+            if (Environment.GetEnvironmentVariable("CDS_DIALOG") is { } userDialog && (userDialog == "userdiscovery" || userDialog.StartsWith("userdiscovery:")))
+                window.Dispatcher.BeginInvoke(() =>
+                {
+                    string? tab = userDialog.Length > 14 ? userDialog[14..] : null;
+                    Log($"커스텀 발견물 창을 띄운다 — 탭 {tab ?? "(발견물)"}");
+                    window.Dispatcher.BeginInvoke(() =>
+                    {
+                        foreach (Window w in window.OwnedWindows)
+                            if (w is UserDiscoveryDialog found)
+                            {
+                                (w.Left, w.Top) = (window.Left + 10, window.Top + 10);
+                                if (Environment.GetEnvironmentVariable("CDS_ITEMPIC") is { Length: > 0 } picture)
+                                    Log($"아이템 그림 올리기 — {found.LoadItemPicture(picture)}");
+                            }
+                    }, DispatcherPriority.ApplicationIdle);
+                    window.OpenUserDiscoveriesForTest(tab);
+                    Log("커스텀 발견물 창이 닫혔다");
+                }, DispatcherPriority.ApplicationIdle);
+            // CDS_DIALOG=childname — 자녀 이름 다시 짓기 창(선명입력 창)을 띄우고, 뜬 뒤 그 창의 초점이 어디 갔는지 적은 다음 닫는다.
+            // 화면 밖 창은 활성이 안 되므로 글쇠 초점(Keyboard)이 아니라 창이 쥔 논리 초점(FocusManager)을 본다.
+            if (Environment.GetEnvironmentVariable("CDS_DIALOG") == "childname")
+                window.Dispatcher.BeginInvoke(() =>
+                {
+                    Log("자녀 이름 창을 띄운다");
+                    window.Dispatcher.BeginInvoke(() =>
+                    {
+                        foreach (Window w in window.OwnedWindows)
+                            if (w is ShipNameDialog)
+                            {
+                                var held = System.Windows.Input.FocusManager.GetFocusedElement(w);
+                                string text = held is System.Windows.Controls.TextBox box ? $" 「{box.Text}」 고른 {box.SelectionLength}자" : "";
+                                Log($"자녀 이름 창 초점 — {held?.GetType().Name ?? "(없음)"}{text}");
+                                w.Close();
+                            }
+                    }, DispatcherPriority.ApplicationIdle);
+                    var got = ShipNameDialog.Ask(window, "후안", ["후안", "카를로스"], "아들의 이름", 8);
+                    Log($"자녀 이름 창이 닫혔다 — {got ?? "(중단)"}");
                 }, DispatcherPriority.ApplicationIdle);
             // CDS_DIALOG=trade:<도시> — 그 도시 교역소 매매 창을 짐을 실은 채 띄운다. CDS_START 로 그 도시 앞바다에 든 뒤에 쓴다.
             if (Environment.GetEnvironmentVariable("CDS_DIALOG") is { } dialog && dialog.StartsWith("trade:")
@@ -126,6 +248,41 @@ public static class OffscreenHarness
                     }, DispatcherPriority.ApplicationIdle);
                     string error = window.OpenTradeForTest(tradeCity);
                     if (error.Length > 0) Log($"매매 창 실패 — {error}");
+                }, DispatcherPriority.ApplicationIdle);
+            // CDS_DIALOG=library:<도시>[:menu[:<글쇠>]] — 그 도시 도서관 서가를 띄운다. menu 면 오른쪽 단추를 눌러
+            // 「서적 선택」 차림표를 내고, 글쇠를 주면 차림표에 그 글쇠를 한 번 보낸다(Up 이면 맨 끝 줄로 감겨 굴러간다).
+            if (Environment.GetEnvironmentVariable("CDS_DIALOG") is { } lib && lib.StartsWith("library:")
+                && lib.Split(':') is { Length: >= 2 } libParts && int.TryParse(libParts[1], out int libCity))
+                window.Dispatcher.BeginInvoke(() =>
+                {
+                    Log($"도서관 서가를 띄운다 — 도시 {libCity}");
+                    window.Dispatcher.BeginInvoke(() =>
+                    {
+                        foreach (Window w in window.OwnedWindows)
+                        {
+                            if (w is not LibraryDialog shelf) continue;
+                            shelf.Left = window.Left + 40;
+                            shelf.Top = window.Top + 40;
+                            if (libParts.Length < 3 || libParts[2] != "menu") continue;
+                            window.Dispatcher.BeginInvoke(() =>
+                            {
+                                foreach (Window c in shelf.OwnedWindows)
+                                {
+                                    c.Left = shelf.Left + 120;      // 화면 밖이면 가운데 놓기가 (0, 0) 으로 빗나간다
+                                    c.Top = shelf.Top + 60;
+                                    Log($"차림표가 떴다 — {c.GetType().Name} · 자리 ({c.Left:0}, {c.Top:0}) · 크기 {c.ActualWidth:0}x{c.ActualHeight:0} · 보임 {c.IsVisible}");
+                                    if (libParts.Length >= 4 && Enum.TryParse(libParts[3], true, out System.Windows.Input.Key libKey))
+                                        Press(c, libKey);
+                                }
+                            }, DispatcherPriority.ApplicationIdle);
+                            Log("서가에 오른쪽 단추를 누른다");
+                            shelf.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0,
+                                                                                         System.Windows.Input.MouseButton.Right)
+                                { RoutedEvent = UIElement.MouseRightButtonUpEvent });
+                        }
+                    }, DispatcherPriority.ApplicationIdle);
+                    string error = window.OpenLibraryForTest(libCity);
+                    if (error.Length > 0) Log($"도서관 서가 실패 — {error}");
                 }, DispatcherPriority.ApplicationIdle);
         }, DispatcherPriority.ApplicationIdle);
     }
@@ -162,6 +319,31 @@ public static class OffscreenHarness
         Log(error.Length == 0
             ? $"바다로 들었다 — 도시 {city} · 선체 {parts[2]} · 뱃머리 {ShipRegistry.DirectionNames[heading / 2]} · 항해 {OffscreenTest.Sail}"
             : $"바로 시작 실패 — {error}");
+    }
+
+    // ── 네비게이션 ──────────────────────────────────────────────────────────
+
+    /// <summary><c>CDS_NAV</c> — 그 도시로 자동항해를 걸고 1초마다 배 자리 · 어귀 · 뜬 창을 적는다. 창은 닫지 않는다.</summary>
+    private static void RunNav(WorldMapWindow window, int city)
+    {
+        var host = window.MapHost;
+        host.AutoSailEnded += message => Log($"자동항해 끝 — {message} · 어귀 [{string.Join(",", host.TownsAt())}]");
+        string error = window.NavForTest(city);
+        Log(error.Length == 0 ? $"네비게이션 — 도시 {city} 로 자동항해를 걸었다" : $"네비게이션 실패 — {error}");
+        var seen = new HashSet<Window>();
+        int seconds = 0;
+        var watch = new DispatcherTimer(DispatcherPriority.Normal, window.Dispatcher) { Interval = TimeSpan.FromSeconds(1) };
+        watch.Tick += (_, _) =>
+        {
+            seconds++;
+            var at = host.ShipCell;
+            Log($"{seconds}초 — 배 {at?.CellX:0.0},{at?.CellY:0.0} · 자동항해 {host.AutoSailing} · 마디 {host.AutoWaypointIndex + 1}/{host.AutoRouteCount}"
+                + $" · 어귀 [{string.Join(",", host.TownsAt())}] · {window.ScreenStateForTest()}");
+            foreach (Window w in Application.Current.Windows)
+                if (!ReferenceEquals(w, window) && w.IsVisible && seen.Add(w))
+                    Log($"창이 떴다 — {w.GetType().Name} · 글 [{TextOf(w)}]");
+        };
+        watch.Start();
     }
 
     // ── 타이틀 글쇠 ─────────────────────────────────────────────────────────
