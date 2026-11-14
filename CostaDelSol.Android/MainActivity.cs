@@ -37,7 +37,10 @@ namespace CostaDelSol.Droid;
 /// </list>
 /// 그림과 항해 셈은 GL 스레드(<see cref="MapRenderer"/>), 입력과 화면 글자는 UI 스레드다.
 /// </remarks>
+// 시작 화면 이름을 고정한다 — 안 적으면 빌드가 「crc64…」 이름을 지어 붙여, 페가수스 같은 런처에
+// 「am start -n io.github.makamaka456.costadelsol/io.github.makamaka456.costadelsol.MainActivity」로 적을 수 없다(사용자 요청).
 [Activity(
+    Name = "io.github.makamaka456.costadelsol.MainActivity",
     Label = "대항해시대3",
     MainLauncher = true,
     Theme = "@android:style/Theme.Material.NoActionBar.Fullscreen",
