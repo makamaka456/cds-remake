@@ -433,6 +433,7 @@ if (Environment.GetEnvironmentVariable("MODE") == "gallery")
     Try("묘책", () => RuseEditDialog.Show(map));
     Try("릴리즈노트", map.ShowReleaseNotes);
     Try("발견물추가", map.ShowUserDiscoveries);
+    Try("누적캐릭터", () => AccCharacterDialog.Show(map, map.CumulativeHooks()));
     if (only == "자리고르기") Drive.Steps.Clear();   // 도서관 책 단계(맨 앞)가 남아 있으면 이 단계까지 안 온다
     if (only == "자리고르기") Drive.Add("범위 그리기 시험", w =>
     {

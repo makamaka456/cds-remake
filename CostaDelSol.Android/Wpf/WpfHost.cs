@@ -33,6 +33,8 @@ namespace System.Windows
         private static readonly List<Action> Pending = [];
         internal static Point LastPoint;
         internal static event EventHandler? Rendering;
+        /// <summary>화면 프레임마다 도는 일이 걸려 있는지(낚시 · 입방체 퍼즐 따위) — 시험기가 그동안 손을 넣지 않고 기다린다.</summary>
+        internal static bool RenderingBusy => Rendering != null;
 
         /// <summary>무엇이 바뀌었다 — 다음 틈에 다시 재고 그린다.</summary>
         internal static void Touch()

@@ -51,7 +51,8 @@ namespace CostaDelSol.Droid.Game
                 else
                 {
                     System.Windows.WpfHost.Tick();
-                    bool ticking = System.Windows.WpfHost.Timers.Any(t => t.IsEnabled);
+                    // 타이머뿐 아니라 화면 프레임에 매달린 일(원본 v1.2.6 낚시 · 입방체)도 도는 중으로 본다.
+                    bool ticking = System.Windows.WpfHost.Timers.Any(t => t.IsEnabled) || System.Windows.WpfHost.RenderingBusy;
                     if (ticking && quiet.ElapsedMilliseconds < Sim.Wpf.QuietMs) { Thread.Sleep(2); continue; }
                     Script.Tick();
                     if (Sim.Wpf.Idle is { } act) act(); else throw new Exception("모달이 끝나지 않는다(대본 없음)");
