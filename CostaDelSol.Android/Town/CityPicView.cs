@@ -2529,6 +2529,9 @@ public sealed class CityPicView : Window, ITownScreen, IGateStage
         Close();
     }
 
+    /// <summary>화면 밖 시험(<c>CDS_DIALOG=patrons:…:city</c>) — 도시 커맨드 「후원자 정보」처럼 스폰서 일람을 이 창 위에 낸다.</summary>
+    internal void ShowPatronsForTest() => Patrons.ShowPatrons();
+
     void ITownScreen.ShowComment(int buildingCode) => ShowComment(buildingCode);
 
     void ITownScreen.OpenFleetForm() => Menu.Push(Port.FleetMenu);

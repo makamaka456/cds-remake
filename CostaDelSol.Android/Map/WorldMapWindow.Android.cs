@@ -634,6 +634,8 @@ public sealed partial class WorldMapWindow
         {
             ModDialog.Show(this, new ModDialog.Options
             {
+                // 「캐릭터」 탭 「누적 캐릭터…」(원본 v1.2.4) — 지운 사람을 지금 게임에서도 내린다.
+                Cumulative = CumulativeHooks(),
                 DiscoveryCountOn = () => GameSettings.ShowDiscoveryCount,
                 SetDiscoveryCount = on => GameSettings.ShowDiscoveryCount = on,
                 MiniMapOn = () => GameSettings.ShowMiniMap,
