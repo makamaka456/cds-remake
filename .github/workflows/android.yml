@@ -26,6 +26,11 @@ on:
       - 'CdsHelper/*.json'
       - '.github/workflows/android.yml'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: '릴리즈로 낼 태그(예: android-v0.9.10). 비우면 굽기만 한다. 태그는 이 실행의 커밋에 GitHub 이 만든다.'
+        required: false
+        default: ''
 
 env:
   # 다음에 낼 안드로이드판 번호 — 브랜치에서 구운 APK(아티팩트)도 이 번호로 낸다.
@@ -58,7 +63,10 @@ jobs:
         id: version
         run: |
           # 앱 버전 — 태그(android-vX.Y.Z)면 그 번호, 브랜치 빌드면 다음에 낼 판 번호(APP_VERSION)를 쓴다.
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+          if [[ -n "${{ github.event.inputs.release_tag }}" ]]; then
+            v="${{ github.event.inputs.release_tag }}"
+            v="${v#android-v}"
+          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             v="${GITHUB_REF_NAME#android-v}"
           else
             v="${APP_VERSION}"
@@ -165,11 +173,13 @@ jobs:
           path: ${{ steps.apk.outputs.path }}
 
       - name: Upload to GitHub Releases
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || github.event.inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="$GITHUB_REF_NAME"
+          # 손으로 돌리며 태그를 주면 그 태그를 이 커밋($GITHUB_SHA)에 새로 만든다 — 태그를 밀 수 없는 곳에서도 릴리즈한다.
+          tag="${{ github.event.inputs.release_tag }}"
+          [[ -z "$tag" ]] && tag="$GITHUB_REF_NAME"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${{ steps.apk.outputs.path }}" --repo "$GITHUB_REPOSITORY" --clobber
           else
@@ -177,10 +187,10 @@ jobs:
             notes="CostaDelSol.Android/docs/release-notes/$tag.md"
             if [ -f "$notes" ]; then
               gh release create "$tag" "${{ steps.apk.outputs.path }}" --repo "$GITHUB_REPOSITORY" \
-                --title "안드로이드 $tag" --notes-file "$notes"
+                --target "$GITHUB_SHA" --title "안드로이드 $tag" --notes-file "$notes"
             else
               gh release create "$tag" "${{ steps.apk.outputs.path }}" --repo "$GITHUB_REPOSITORY" \
-                --title "안드로이드 $tag" \
+                --target "$GITHUB_SHA" --title "안드로이드 $tag" \
                 --notes "대항해시대3 리메이크 안드로이드판 APK. 디버그 키로 서명했으므로 새 버전을 깔 때는 옛 앱을 먼저 지워 주세요."
             fi
           fi
