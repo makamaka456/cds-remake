@@ -1932,6 +1932,9 @@ public sealed class Player
     /// <summary>힌트를 얻는다. 처음 얻는 것이면 true.</summary>
     public bool GainHint(int hint) => hint >= 0 && _hints.Add(hint);
 
+    /// <summary>힌트를 잃는다 — 개발 창 「힌트」 탭만 쓴다(게임에는 힌트를 잃는 길이 없다). 가지고 있었으면 true.</summary>
+    public bool LoseHint(int hint) => _hints.Remove(hint);
+
     private readonly HashSet<int> _found = [];
 
     /// <summary>
@@ -2037,6 +2040,32 @@ public sealed class Player
     /// 나머지를 적어 봐야 읽는 데가 없다.
     /// </remarks>
     public IReadOnlyList<Trace> Traces => _traces;
+
+    /// <summary>
+    /// 도시 공략 한 건 — 누가(제독 · 선대 · 누적 캐릭터 · 역사 항해자) 어느 도시를 어느 나라 것으로 만들었는지. 원본에 없는 기록이다.
+    /// 모드 「향상된 연표」가 자택 연표에 싣는다(버그 리포트 #61).
+    /// </summary>
+    /// <param name="Nation">넘겨받은 나라. 모르면 -1.</param>
+    public readonly record struct Conquest(DateTime On, string Who, int City, int Nation);
+
+    private readonly List<Conquest> _conquests = [];
+
+    /// <summary>적어 둔 도시 공략들.</summary>
+    public IReadOnlyList<Conquest> Conquests => _conquests;
+
+    /// <summary>도시 공략을 적는다. 같은 날 같은 사람이 같은 도시를 거듭 적지는 않는다.</summary>
+    public void NoteConquest(DateTime on, string who, int city, int nation)
+    {
+        if (city < 0 || _conquests.Any(c => c.On == on && c.Who == who && c.City == city)) return;
+        _conquests.Add(new Conquest(on, who, city, nation));
+    }
+
+    /// <summary>세이브에서 되돌린다.</summary>
+    public void RestoreConquests(IEnumerable<Conquest>? conquests)
+    {
+        _conquests.Clear();
+        _conquests.AddRange(conquests ?? []);
+    }
 
     private readonly Dictionary<int, string> _namedDiscoveries = [];
 
@@ -2520,6 +2549,13 @@ public sealed class Player
     /// <summary>남이 발표한 날. 날짜를 안 적던 세이브에서 온 것이면 null 이다.</summary>
     public DateTime? ScoopedOn(int discovery) =>
         _scoopedOn.TryGetValue(discovery, out var on) ? on : null;
+
+    /// <summary>
+    /// 그 날까지 남(누적 캐릭터 · 역사 항해자)이 발표했는지 — 날짜를 안 적던 세이브에서 온 것은 날을 안 따진다.
+    /// 도서관 힌트의 선행 발견물과 신도시 조건이 주인공이 못 찾았어도 이것을 찾은 것으로 친다(버그 리포트 #60).
+    /// </summary>
+    public bool ScoopedBefore(int discovery, DateTime when) =>
+        _scooped.ContainsKey(discovery) && (ScoopedOn(discovery) is not { } on || on <= when);
 
     /// <summary>남이 발표한 날들 — 세이브에 적는다.</summary>
     public IReadOnlyDictionary<int, DateTime> ScoopedDates => _scoopedOn;

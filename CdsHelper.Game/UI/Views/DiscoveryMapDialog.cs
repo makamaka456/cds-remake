@@ -130,6 +130,9 @@ public sealed class DiscoveryMapDialog : GameWindow
     private readonly TranslateTransform _shift = new(0, 0);
     private readonly TextBlock _note;
 
+    /// <summary>쓰는 법 · 색 설명 — 안내 줄 옆 ⓘ 에 마우스를 올리면 뜬다(늘 펼쳐 두면 두 줄을 먹어 지저분했다).</summary>
+    private readonly TextBlock _usage = new() { FontSize = 14, LineHeight = 22 };
+
     /// <summary>풍향 · 해류 화살표가 앉는 켜. 표식보다 아래다.</summary>
     private readonly Canvas _windLayer = new() { IsHitTestVisible = false };
     private readonly Canvas _currentLayer = new() { IsHitTestVisible = false };
@@ -471,7 +474,32 @@ public sealed class DiscoveryMapDialog : GameWindow
         finder.Children.Add(GameUi.PushButton(Lang.T("다음"), () => Step(1), 70));
         finder.Children.Add(_hitNote);
         stack.Children.Add(finder);
+#if ANDROID
+        // 안드로이드: 마우스를 올리는 툴팁(ⓘ)이 없다 — 예전처럼 쓰는 법 · 색 설명을 안내 줄에 늘 펼쳐 둔다(사용자 결정).
         stack.Children.Add(_note);
+#else
+        // 안내 줄 오른쪽에 ⓘ — 쓰는 법은 그 위에 마우스를 올려야 뜬다.
+        var info = new Border
+        {
+            Width = 20, Height = 20, CornerRadius = new CornerRadius(10),
+            BorderBrush = GameUi.Text, BorderThickness = new Thickness(1.5),
+            Margin = new Thickness(6, 0, 0, 2), VerticalAlignment = VerticalAlignment.Center,
+            Background = Brushes.Transparent, Cursor = Cursors.Help,
+            Child = new TextBlock
+            {
+                Text = "i", Foreground = GameUi.Text, FontWeight = FontWeights.Bold, FontSize = 13,
+                FontFamily = new FontFamily("Georgia"),
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            },
+            ToolTip = _usage,
+        };
+        ToolTipService.SetInitialShowDelay(info, 0);
+        ToolTipService.SetShowDuration(info, int.MaxValue);
+        var noteLine = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+        noteLine.Children.Add(_note);
+        noteLine.Children.Add(info);
+        stack.Children.Add(noteLine);
+#endif
         stack.Children.Add(ok);
         Content = stack;
 
@@ -603,6 +631,7 @@ public sealed class DiscoveryMapDialog : GameWindow
             if (pin.Tag is { } tag) tag.Visibility = labels && !pin.Crowded ? Visibility.Visible : Visibility.Collapsed;
 
         // 조각마다 따로 번역한다 — 붙는 조각이 그때그때 달라 이은 글 통째로는 번역표에 없다.
+#if ANDROID
         _note.Text = Lang.T($"발견물 {_found}곳 · 찾은 것 {_done}곳 · 배율 x{Z:0.#}")
                    + Environment.NewLine + Lang.T("(휠 키우기·줄이기 · 끌어서 옮기기")
                    + (_warp != null ? Lang.T(" · 오른쪽 단추 그 자리로 옮기기") : "")
@@ -613,6 +642,24 @@ public sealed class DiscoveryMapDialog : GameWindow
                        ? Lang.T($" · 보라 풍향 {(WindTable.IsFirstHalf(_month) ? "1~6월" : "7~12월")} · 청록 해류)")
                        : ")")
                    + _said;
+#else
+        _note.Text = Lang.T($"발견물 {_found}곳 · 찾은 것 {_done}곳 · 배율 x{Z:0.#}") + _said;
+#endif
+
+        // 쓰는 법은 ⓘ 툴팁으로 — 한 줄에 하나씩.
+        var usage = new List<string> { Lang.T("휠: 키우기 · 줄이기"), Lang.T("끌기: 지도 옮기기") };
+        if (_warp != null) usage.Add(Lang.T("오른쪽 단추: 그 자리로 옮기기"));
+        if (_autoSail != null) usage.Add(Lang.T("Shift+오른쪽 단추: 그 자리로 자동항해"));
+        usage.Add("");
+        usage.Add(Lang.T("빨강: 찾은 발견물 · 회색: 아직 못 찾은 발견물"));
+        usage.Add(Lang.T("파랑: 내 자리"));
+        usage.Add(Lang.T("주황: 도시(「도」는 도서관)"));
+        if (_hasFlows)
+        {
+            usage.Add(Lang.T($"보라: 풍향 {(WindTable.IsFirstHalf(_month) ? "1~6월" : "7~12월")}"));
+            usage.Add(Lang.T("청록: 해류"));
+        }
+        _usage.Text = string.Join(Environment.NewLine, usage);
     }
 
     /// <summary>

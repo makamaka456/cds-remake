@@ -328,6 +328,12 @@ public sealed class ModDialog : GameWindow
             + " 고르기 창 없이 「도망」을 고릅니다. 짐승·독충은 그대로 묻습니다."
             + " 도망 성공 여부는 원본 그대로 굴리므로 실패하면 싸움이 이어집니다."));
 
+        // 다른 배 지나치기 — 사람 배에 두 칸 안으로 붙을 때마다 「배가 보입니다」를 묻는 것을 건너뛴다(요청).
+        rows.Children.Add(Toggle("다른 배 지나치기", GameSettings.PassShips,
+            on => GameSettings.PassShips = on,
+            "원본에 없는 것입니다 — 바다에서 다른 함대에 가까이 가도 「배가 보입니다. 가까이 가 보겠습니까?」를 묻지 않고"
+            + " 그대로 지나칩니다. 쫓아온 해적(모드 「해적 추격」)과 해적 · 이슬람 함대의 습격은 그대로 일어납니다."));
+
         // 자동 보급 — 출항할 때 물·식량을 10일분까지, 또는 실을 수 있는 데까지.
         rows.Children.Add(AutoSupplyControls());
 
@@ -368,6 +374,13 @@ public sealed class ModDialog : GameWindow
             + " 어느 후원자에게 어떤 발견물을 가져가면 좋을지, 누구와 친한지 한눈에 고를 수 있습니다."
             + " 끄면 원본처럼 이름만 나옵니다.",
             images: ["patron-list.png"]));
+
+        // 향상된 연표 — 자택 연표에 도시 공략 줄을 더한다. 파워업키트가 켠다.
+        ui.Children.Add(Toggle("향상된 연표", GameSettings.EnhancedChronicle,
+            on => GameSettings.EnhancedChronicle = on,
+            "원본에 없는 것입니다 — 자택의 「연표를 본다」에 도시 공략 기록을 더합니다."
+            + " 제독과 선대가 공략한 도시, 누적 캐릭터가 공략한 도시, 역사 항해자가 공략한 도시(포르투갈의 인도 · 아프리카 해안 공략 따위)가 날짜 차례로 함께 나옵니다."
+            + " 지금 제독의 기록은 검은 글씨, 다른 사람의 기록은 붉은 글씨입니다. 이 옵션이 생기기 전의 기록은 제독의 공략만 남아 있습니다."));
 
         // 정보 제공 등급 — 기본(원본) · 일반 · 상세.
         info.Children.Add(Select("정보 등급", ["기본 (원본)", "일반", "상세"],
@@ -505,6 +518,15 @@ public sealed class ModDialog : GameWindow
         general.Children.Add(CustomBgmControls());
         general.Children.Add(CustomSfxControls());
 
+        // 볼륨 믹서 음량 기억 — 늘 켜 두었더니 몇몇 환경에서 소리가 끊긴다는 제보가 와(v1.2.8) 모드로 뺐다.
+#if !ANDROID   // 안드로이드: 윈도우 볼륨 믹서 전용
+        general.Children.Add(Toggle("볼륨 믹서 음량 기억", GameSettings.KeepMixerVolume,
+            on => GameSettings.KeepMixerVolume = on,
+            "Windows 볼륨 믹서에서 맞춘 게임 음량을 기억해 두었다가 다음에 켤 때 되돌립니다."
+            + " 볼륨 믹서로 게임 음량을 따로 줄여 두는 분만 켜세요 — 일부 환경에서 배경음악 · 효과음이 끊길 수 있습니다."
+            + " 게임을 다시 켜야 적용됩니다."));
+#endif
+
         // 바다 입체 효과 — 지도 셰이더가 바다 칸에 물결 굴곡·햇빛·깊이·물보라를 얹는다.
         // 배 중심 — 가장자리에서 화면을 넘기지 않고 배를 늘 한가운데에 둔다. 아직 다듬는 중이라 실험에 둔다.
         // 뭍 자동이동 — 발견물 지도에서 발견물 점을 오른쪽 단추로 누르면 그 자리까지 걸어간다.
@@ -533,6 +555,27 @@ public sealed class ModDialog : GameWindow
             "원본에 없는 덧그림입니다 — 바다에 뜬 내 배 뒤로 지나온 길을 따라 물거품 항적이 벌어지며 스러지고,"
             + " 배 밑에 옅은 그림자가 깔리고 배가 살짝 출렁입니다. 빠를수록 항적이 길고, 서면 사라집니다."
             + " 켜 둔 동안은 화면을 계속 다시 그립니다. 남의 배와 뭍의 말에는 안 듭니다."));
+#if !ANDROID   // 안드로이드: 도시 그림 크게 · 배율 · 업스케일링은 넣지 않는다(사용자 결정 — 업스케일링은 AI 모델이 폰에 무겁다)
+        hires.Children.Add(Toggle("도시 그림 크게", GameSettings.CityPicLarge, on => GameSettings.CityPicLarge = on,
+            "원본에 없는 것입니다 — 입항했을 때 도시 그림만 아래 배율만큼 키워 띄웁니다(기본 1.5배). 함대 · 발견물 쪽지와"
+            + " 시설 명령 창, 도시 안에서 뜨는 창은 원래 크기 그대로입니다. 화면을 넘으면 들어가는 데까지만 키웁니다."
+            + " 「도시 그림 업스케일링」을 함께 켜면 키운 그림이 매끈합니다. 다음에 입항할 때부터 듭니다."));
+        hires.Children.Add(Select("도시 그림 배율",
+            [.. GameSettings.CityPicZoomChoices.Select(z => $"{z:0.##}배")],
+            Math.Max(0, Array.IndexOf(GameSettings.CityPicZoomChoices, GameSettings.CityPicZoom)),
+            i => GameSettings.CityPicZoom = GameSettings.CityPicZoomChoices[i],
+            "모드 「도시 그림 크게」에서 도시 그림을 보통 크기의 몇 배로 띄울지 고릅니다."));
+        hires.Children.Add(Toggle("도시 그림 업스케일링", GameSettings.CityPicUpscale,
+            on =>
+            {
+                GameSettings.CityPicUpscale = on;
+                if (on) WorldMapWindow.Current?.StartCityUpscale();
+            },
+            "원본에 없는 것입니다 — 도시 그림을 원본 400x320 도트 대신, 업스케일 모델(Rebout Blend 4x)로 네 배 키운 그림으로 그립니다."
+            + " 건물 윤곽이 매끈해지고 시가지 · 땅의 잔무늬는 붓질처럼 풀립니다. 그림은 이 PC 에서 게임을 켜 둔 동안 뒤에서 한 장씩 만들어"
+            + " 쌓아 둡니다(한 장에 수십 초, 처음 켤 때 모델 64MB 를 받습니다). 입항한 도시는 먼저 만들고, 다 되면 그 자리에서 바뀝니다."
+            + " 「도시 그림 크게」와 함께 쓰면 좋습니다."));
+#endif
         hires.Children.Add(Toggle("선박 업스케일링", GameSettings.ShipUpscale,
             on =>
             {
@@ -951,15 +994,14 @@ public sealed class ModDialog : GameWindow
     // ── 찾기 ─────────────────────────────────────────────────────────────
 
     /// <summary>찾기 칸 — 줄 이름과 설명에서 찾는다.</summary>
-    private readonly TextBox _search = new()
+    private readonly TextBox _search = new TextBox()
     {
         Width = 280,
         FontSize = 14,
         VerticalContentAlignment = VerticalAlignment.Center,
         Padding = new Thickness(2, 1, 2, 1),
         BorderThickness = new Thickness(2),
-        BorderBrush = GameUi.ItemEdge,
-    };
+    }.Dark();
 
     /// <summary>찾은 줄 수 · 「찾는 모드가 없습니다」.</summary>
     private readonly TextBlock _hitNote = new()
@@ -1003,7 +1045,7 @@ public sealed class ModDialog : GameWindow
         var hint = new TextBlock
         {
             Text = "모드 이름 · 설명으로 찾기 (Ctrl+F)",
-            Foreground = Brushes.Gray, FontSize = 13, IsHitTestVisible = false,
+            Foreground = GameUi.Text, Opacity = 0.45, FontSize = 13, IsHitTestVisible = false,
             Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
         };
         _search.TextChanged += (_, _) =>
@@ -1325,7 +1367,7 @@ public sealed class ModDialog : GameWindow
         "중량 없음", "소지금 상한 10배", "장기 휴양 120개월", "적하 시세 순위", "배 속도", "발견물 수",
         "향상된 힌트 보기", "향상된 후원자 정보", "향상된 인물정보 목록", "부하 해고", "직업 누르면 다시 굴림",
         "향상된 NPC 이동", "추가 발견물", "도시 자동저장", "교역품별 시세", "도시 투자 성장", "조선소 특별주문",
-        "새 발견물 동영상", "작위", "하드코어 모드", "제노바 · 잉글랜드 국적", "망명", "추가 선박",
+        "새 발견물 동영상", "작위", "하드코어 모드", "제노바 · 잉글랜드 국적", "망명", "추가 선박", "향상된 연표",
     ];
 
     /// <summary>

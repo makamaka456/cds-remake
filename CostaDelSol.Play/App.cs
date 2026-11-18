@@ -105,9 +105,14 @@ internal sealed class App : Application
         CrashReport.Start(typeof(App).Assembly);
         if (OffscreenTest.Isolated) return;
 
-        // 볼륨 믹서에서 맞춘 앱 음량을 되돌린다 — 배경음악 · 효과음 세션은 Windows 가 기억 못 해 다시 켜면 100% 였다(버그 리포트 #51).
-        AppVolumeKeeper.Start();
-        Exit += (_, _) => AppVolumeKeeper.Stop();
+        // 볼륨 믹서 음량 기억(AppVolumeKeeper, 버그 리포트 #51)은 모드 「볼륨 믹서 음량 기억」을 켠 사람만 — v1.2.8 에 늘 켜 두었더니
+        // 「켜고 얼마 지나면 배경음악 · 효과음이 끊기고 발견물(이구아수 폭포)을 찾으면 멈춘다」는 제보가 왔다(#55, 카페).
+        // 1초마다 모든 세션을 훑고 오디오 서비스 새 세션 알림에 훅을 거는데, 그 말고는 v1.2.7 → v1.2.8 사이 소리 쪽 변경이 없다.
+        if (GameSettings.KeepMixerVolume)
+        {
+            AppVolumeKeeper.Start();
+            Exit += (_, _) => AppVolumeKeeper.Stop();
+        }
 
         // 창이 다 뜬 뒤에 띄운다 — 지금 띄우면 주인 창이 아직 자리를 못 잡아 알림이 엉뚱한 데 선다.
         window.Dispatcher.BeginInvoke(() => { ShowReleaseNotes(window); AskKeptBooks(window); AskStats(window); },
@@ -240,9 +245,20 @@ internal sealed class App : Application
                 return;
             }
 
+            // 무엇이 바뀌는지 물음에 함께 싣는다 — 다시 시작하면 Velopack 의 「Installing update」 창만 떠서 알 길이 없었다(요청).
+            // 받은 판의 노트는 아직 exe 옆에 없으니 그 판 태그의 노트 파일을 GitHub 에서 읽는다. 못 읽으면 예전처럼 묻기만 한다.
+            string notes = await NotesForAsync(manager, version);
             bool now = window.IsLoaded && CdsHelper.Game.UI.Views.ConfirmDialog.Ask(window,
-                $"새 버전({target.Version})을 받았습니다.\n지금 다시 시작해 적용하겠습니까?"
-                + "\n(진행 중인 사항은 저장되지 않습니다. 아니오를 고르면 게임을 끌 때 적용됩니다.)");
+                notes.Length == 0
+                    ? $"새 버전({target.Version})을 받았습니다.\n지금 다시 시작해 적용하겠습니까?"
+                      + "\n(진행 중인 사항은 저장되지 않습니다. 아니오를 고르면 게임을 끌 때 적용됩니다.)"
+                    // 노트가 끼면 이은 글 통째로는 번역표에 없다 — 조각마다 번역한다.
+                    : Lang.T($"새 버전({target.Version})을 받았습니다.") + $"\n\n{notes}\n\n"
+                      + Lang.T("지금 다시 시작해 적용하겠습니까?\n(진행 중인 사항은 저장되지 않습니다. 아니오를 고르면 게임을 끌 때 적용됩니다.)"),
+                notes.Length > 0 ? "업데이트" : null);
+            // 여기서 노트를 보였으면 새 판으로 처음 켤 때 같은 노트를 또 띄우지 않는다.
+            if (notes.Length > 0 && Version.TryParse(version, out var shownVersion))
+                GameSettings.NotesSeenVersion = ReleaseNotes.Trim(shownVersion).ToString();
             GameSettings.UpdateTriedVersion = version;
             if (now) manager.ApplyUpdatesAndRestart(target);
             else manager.WaitExitThenApplyUpdates(target, silent: true, restart: false);
@@ -250,6 +266,28 @@ internal sealed class App : Application
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[Update] {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 받은 새 판까지의 릴리즈 노트 — 지금 판 뒤부터 그 판까지의 대목. 그 판 태그의 <c>릴리즈노트.md</c> 를 GitHub 에서 읽는다.
+    /// 인터넷이 막혔거나 못 읽으면 빈 글이다.
+    /// </summary>
+    private static async Task<string> NotesForAsync(UpdateManager manager, string version)
+    {
+        try
+        {
+            if (!Version.TryParse(version, out var to)) return "";
+            if (manager.CurrentVersion?.ToString() is not { } now || !Version.TryParse(now, out var from)) return "";
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            string url = RepoUrl.Replace("https://github.com/", "https://raw.githubusercontent.com/")
+                         + $"/v{version}/" + Uri.EscapeDataString("릴리즈노트.md");
+            return ReleaseNotes.Between(await http.GetStringAsync(url), from, to);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Update] 노트를 못 읽었다 — {ex.GetType().Name}: {ex.Message}");
+            return "";
         }
     }
 

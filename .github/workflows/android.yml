@@ -29,7 +29,7 @@ on:
 
 env:
   # 다음에 낼 안드로이드판 번호 — 브랜치에서 구운 APK(아티팩트)도 이 번호로 낸다.
-  APP_VERSION: '0.9.9'
+  APP_VERSION: '0.9.10'
 
 jobs:
   build:
@@ -173,7 +173,14 @@ jobs:
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${{ steps.apk.outputs.path }}" --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$tag" "${{ steps.apk.outputs.path }}" --repo "$GITHUB_REPOSITORY" \
-              --title "안드로이드 $tag" \
-              --notes "대항해시대3 리메이크 안드로이드판 APK. 디버그 키로 서명했으므로 새 버전을 깔 때는 옛 앱을 먼저 지워 주세요."
+            # 판마다 적어 둔 릴리즈 노트(CostaDelSol.Android/docs/release-notes/<태그>.md)가 있으면 그것을 본문으로 쓴다.
+            notes="CostaDelSol.Android/docs/release-notes/$tag.md"
+            if [ -f "$notes" ]; then
+              gh release create "$tag" "${{ steps.apk.outputs.path }}" --repo "$GITHUB_REPOSITORY" \
+                --title "안드로이드 $tag" --notes-file "$notes"
+            else
+              gh release create "$tag" "${{ steps.apk.outputs.path }}" --repo "$GITHUB_REPOSITORY" \
+                --title "안드로이드 $tag" \
+                --notes "대항해시대3 리메이크 안드로이드판 APK. 디버그 키로 서명했으므로 새 버전을 깔 때는 옛 앱을 먼저 지워 주세요."
+            fi
           fi

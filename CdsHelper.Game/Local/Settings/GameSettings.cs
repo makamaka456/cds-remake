@@ -61,11 +61,17 @@ public sealed class GameSettingsData
     /// <summary>게임 창이 뒤로 가거나 접히면 배경음악을 죽일지. 원본에 없어 꺼 두고 시작한다.</summary>
     public bool MuteBgmInBackground { get; set; }
 
+    /// <summary>육상전 내내 「육상전 전황정보」 창을 띄워 둘지. 원본은 기능명령 「정보」로만 열어 꺼 두고 시작한다.</summary>
+    public bool LandBattleInfoAlways { get; set; }
+
     /// <summary>
     /// 볼륨 믹서에서 맞춘 이 앱의 음량(0~1, -1 은 아직 안 만짐) · 음소거 — Windows 가 다시 켤 때 잊으므로 여기 적어 둔다(<see cref="Helpers.AppVolumeKeeper"/>).
     /// </summary>
     public double AppVolume { get; set; } = -1;
     public bool AppMute { get; set; }
+
+    /// <summary>볼륨 믹서 음량 기억(<see cref="Helpers.AppVolumeKeeper"/>)을 켤지. 몇몇 환경에서 소리가 끊긴다는 제보가 있어 꺼 두고 시작한다.</summary>
+    public bool KeepMixerVolume { get; set; }
 
     /// <summary>해상 지도 배율(0.5~1.5, 0.25 칸). 기본 0.75 — 원본 크기에 맞춘 값이다.</summary>
     public double MapScale { get; set; } = GameSettings.DefaultMapScale;
@@ -182,6 +188,15 @@ public sealed class GameSettingsData
     /// <summary>선박 업스케일링(붙박이 배를 4배로 키운 그림으로). 꺼 두고 시작한다.</summary>
     public bool ShipUpscale { get; set; }
 
+    /// <summary>도시 그림을 지도 자리에 들어가는 가장 큰 정수배로 키울지. 원본에 없어 꺼 두고 시작한다.</summary>
+    public bool CityPicLarge { get; set; }
+
+    /// <summary>「도시 그림 크게」의 배율 — <see cref="GameSettings.CityPicZoomChoices"/> 가운데 하나다.</summary>
+    public double CityPicZoom { get; set; } = 1.5;
+
+    /// <summary>도시 그림을 업스케일 모델로 키운 그림으로 그릴지(뒤에서 만들어 쌓아 둔다). 원본에 없어 꺼 두고 시작한다.</summary>
+    public bool CityPicUpscale { get; set; }
+
     /// <summary>뭍 세부 질감(지형마다 화면 해상도 잔무늬). 꺼 두고 시작한다.</summary>
     public bool LandDetail { get; set; }
 
@@ -221,12 +236,16 @@ public sealed class GameSettingsData
     /// <summary>저장·발견물 지도·모드 단축키(글쇠 이름). 비면 기본값을 쓴다.</summary>
     public string SaveKey { get; set; } = "V";
     public string MapKey { get; set; } = "D";
+    public string LiveMapKey { get; set; } = "G";
     public string ModKey { get; set; } = "M";
     public string ItemsKey { get; set; } = "I";
     public string NavKey { get; set; } = "R";
 
     /// <summary>자동항해를 「최소 조타」로 몰지. 끄면 「속도 중시」다.</summary>
     public bool SteadyHelm { get; set; }
+
+    /// <summary>네비게이션 도시 목록에서 항구가 있는 도시를 앞에 둘지. 끄면 이름 차례다.</summary>
+    public bool NavHarborFirst { get; set; }
     public string HintsKey { get; set; } = "H";
     public string PersonKey { get; set; } = "X";
     public string PatronKey { get; set; } = "P";
@@ -346,6 +365,9 @@ public sealed class GameSettingsData
     /// <summary>바다에서 다가간 함대의 신상 쪽지를 띄울지. 원본에 없어 꺼 두고 시작한다.</summary>
     public bool FleetCard { get; set; }
 
+    /// <summary>바다에서 다른 배에 붙어도 「배가 보입니다」를 묻지 않고 지나칠지. 원본에 없어 꺼 두고 시작한다.</summary>
+    public bool PassShips { get; set; }
+
     /// <summary>부하편성에서 부하를 해고할 수 있게 할지. 원본에 없어 꺼 두고 시작한다.</summary>
     public bool MateDismiss { get; set; }
 
@@ -436,6 +458,9 @@ public sealed class GameSettingsData
     /// <summary>리스본 · 세비야 · 런던 왕궁에 「망명」 줄을 낼지. 원본에 없어 꺼 두고 시작한다(파워업키트가 켠다).</summary>
     public bool Exile { get; set; }
 
+    /// <summary>향상된 연표 — 자택 연표에 도시 공략 줄을 더한다. 원본에 없어 꺼 두고 시작한다(파워업키트가 켠다).</summary>
+    public bool EnhancedChronicle { get; set; }
+
     /// <summary>뭍에서 발견물 지도로 자동이동할지. 실험이라 꺼 두고 시작한다.</summary>
     public bool LandAutoWalk { get; set; }
 
@@ -491,6 +516,9 @@ public sealed class GameSettingsData
 
     /// <summary>세계지도 창이 내 배를 따라 지도를 옮기지 않을지. 기본은 따라간다.</summary>
     public bool LiveMapNoFollow { get; set; }
+
+    /// <summary>세계지도 창 아래에 마우스를 올린 칸의 정보 줄을 띄울지. 꺼 두고 시작한다.</summary>
+    public bool LiveMapHover { get; set; }
 
     /// <summary>
     /// 게임 상단 띠에 켜 둔 칸 이름들("날짜"·"소지금" …). 한 번도 안 건드렸으면 null 이라
@@ -805,11 +833,25 @@ public static class GameSettings
         d.AppMute = mute;
     });
 
+    /// <summary>볼륨 믹서 음량 기억을 켤지 — 모드 창 「일반」. 다음에 켤 때부터 듣는다.</summary>
+    public static bool KeepMixerVolume
+    {
+        get => Get(d => d.KeepMixerVolume);
+        set => Set(d => d.KeepMixerVolume = value);
+    }
+
     /// <summary>게임 창이 뒤로 가거나 접히면 배경음악을 죽일지 — 설정 창 「일반」.</summary>
     public static bool MuteBgmInBackground
     {
         get => Get(d => d.MuteBgmInBackground);
         set => Set(d => d.MuteBgmInBackground = value);
+    }
+
+    /// <summary>육상전 내내 「육상전 전황정보」 창을 띄워 둘지 — 설정 창 「일반」.</summary>
+    public static bool LandBattleInfoAlways
+    {
+        get => Get(d => d.LandBattleInfoAlways);
+        set => Set(d => d.LandBattleInfoAlways = value);
     }
 
     /// <summary>효과음 크기(0~100). 화면 밖 시험(<see cref="OffscreenTest.Muted"/>)이면 0 이다.</summary>
@@ -941,6 +983,13 @@ public static class GameSettings
         set => Set(d => d.MapKey = value);
     }
 
+    /// <summary><b>세계지도</b>(도시락의 보조 지도 창) 단축키. 기본은 <c>G</c> 다 — W 는 발견물 지도의 바람 글쇠다.</summary>
+    public static string LiveMapKey
+    {
+        get => Get(d => d.LiveMapKey);
+        set => Set(d => d.LiveMapKey = value);
+    }
+
     /// <summary><b>모드</b> 창 단축키. 기본은 <c>M</c> 이다.</summary>
     public static string ModKey
     {
@@ -970,6 +1019,13 @@ public static class GameSettings
     {
         get => Get(d => d.SteadyHelm);
         set => Set(d => d.SteadyHelm = value);
+    }
+
+    /// <summary>네비게이션 도시 목록에서 항구가 있는 도시를 앞에 둘지 — 네비게이션 창 「정렬」 단추로 고른다. 기본은 이름 차례.</summary>
+    public static bool NavHarborFirst
+    {
+        get => Get(d => d.NavHarborFirst);
+        set => Set(d => d.NavHarborFirst = value);
     }
 
     /// <summary><b>네비게이션</b>(목적지 도시를 골라 자동항해) 단축키. 기본은 <c>R</c> 이다.</summary>
@@ -1217,6 +1273,13 @@ public static class GameSettings
     {
         get => Get(d => d.LiveMapSpots);
         set => Set(d => d.LiveMapSpots = value);
+    }
+
+    /// <summary>세계지도 창 아래 칸 정보 줄(위도 · 경도 · 칸 · 바다/육지 · 도시)을 띄울지 — 창 위 「칸 정보」 단추로. 기본은 끔.</summary>
+    public static bool LiveMapHover
+    {
+        get => Get(d => d.LiveMapHover);
+        set => Set(d => d.LiveMapHover = value);
     }
 
     /// <summary>세계지도 창이 내 배를 따라 지도를 옮길지. 기본은 켬.</summary>
@@ -1680,6 +1743,14 @@ public static class GameSettings
         set => Set(d => d.Exile = value);
     }
 
+    /// <summary>향상된 연표 — 모드 창 「UI」. 파워업키트가 켠다.</summary>
+    /// <remarks>파워업키트면 적힌 값과 상관없이 켜진 것으로 친다 — <see cref="MoreNations"/> 와 같은 까닭이다.</remarks>
+    public static bool EnhancedChronicle
+    {
+        get => Get(d => d.EnhancedChronicle) || ModPreset == 4;
+        set => Set(d => d.EnhancedChronicle = value);
+    }
+
     /// <summary>향상된 후원자 정보 — 스폰서 일람 줄에 얼굴 · 발견물 취향 · 권력 · 친밀도.</summary>
     public static bool PatronListEnhanced
     {
@@ -1739,6 +1810,12 @@ public static class GameSettings
     }
 
     /// <summary>접근 함대 정보 — 「우호적으로 접근한다 · 습격한다」 고르기 위에 상대의 초상화 · 국적 · 직업 · 함대 규모.</summary>
+    public static bool PassShips
+    {
+        get => Get(d => d.PassShips);
+        set => Set(d => d.PassShips = value);
+    }
+
     public static bool FleetCard
     {
         get => Get(d => d.FleetCard);
@@ -2096,6 +2173,28 @@ public static class GameSettings
     }
 
     /// <summary>선박 업스케일링 — 모드 창 「고해상도」에서 켜고 끈다.</summary>
+    public static bool CityPicUpscale
+    {
+        get => Get(d => d.CityPicUpscale);
+        set => Set(d => d.CityPicUpscale = value);
+    }
+
+    /// <summary>「도시 그림 크게」에서 고를 수 있는 배율.</summary>
+    public static readonly double[] CityPicZoomChoices = [1.25, 1.5, 1.75, 2, 2.5, 3];
+
+    /// <summary>「도시 그림 크게」의 배율 — 보통 크기에 곱한다. 화면을 넘으면 들어가는 데까지만 키운다. 기본 1.5배.</summary>
+    public static double CityPicZoom
+    {
+        get => Get(d => CityPicZoomChoices.Contains(d.CityPicZoom) ? d.CityPicZoom : 1.5);
+        set => Set(d => d.CityPicZoom = value);
+    }
+
+    public static bool CityPicLarge
+    {
+        get => Get(d => d.CityPicLarge);
+        set => Set(d => d.CityPicLarge = value);
+    }
+
     public static bool ShipUpscale
     {
         get => Get(d => d.ShipUpscale);

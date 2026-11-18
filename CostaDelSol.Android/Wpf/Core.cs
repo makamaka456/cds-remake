@@ -362,6 +362,7 @@ namespace System.Windows
 
         public static readonly DependencyProperty OpacityProperty = DependencyProperty.Register("Opacity", typeof(double), typeof(UIElement));
         public static readonly DependencyProperty VisibilityProperty = DependencyProperty.Register("Visibility", typeof(Visibility), typeof(UIElement));
+        public static readonly DependencyProperty FocusableProperty = DependencyProperty.Register("Focusable", typeof(bool), typeof(UIElement));
 
         public override void SetValue(DependencyProperty p, object? value)
         {

@@ -4,6 +4,12 @@ using System.Windows.Media;
 namespace System.Windows.Data
 {
     /// <summary>줄의 속성 이름 하나(표 칸이 읽고 쓴다).</summary>
+    public sealed class RelativeSource
+    {
+        public static RelativeSource TemplatedParent { get; } = new();
+        public static RelativeSource Self { get; } = new();
+    }
+
     public class Binding
     {
         public Binding() { }
@@ -11,6 +17,8 @@ namespace System.Windows.Data
         internal string PathText { get; } = "";
         public PropertyPath? Path { get; set; }
         public string? StringFormat { get; set; }
+        /// <summary>꼴 안에서 꼴 주인을 가리키는 묶음 — WpfLite 는 꼴을 안 쓰므로 받아만 둔다.</summary>
+        public RelativeSource? RelativeSource { get; set; }
         public BindingMode Mode { get; set; }
         public IValueConverter? Converter { get; set; }
         public object? ConverterParameter { get; set; }
@@ -399,8 +407,9 @@ namespace System.Windows.Data
 namespace System.Windows
 {
     /// <summary>표 칸 틀 — 안드로이드 표는 그림(Image) 칸만 그린다(얼굴 번호 → 얼굴).</summary>
-    public sealed class FrameworkElementFactory(Type type)
+    public sealed class FrameworkElementFactory(Type type, string? name = null)
     {
+        public string? Name { get; } = name;
         public Type Type { get; } = type;
         internal readonly Dictionary<DependencyProperty, object?> Values = [];
         internal readonly Dictionary<DependencyProperty, Data.Binding> Bindings = [];
@@ -413,6 +422,19 @@ namespace System.Windows
 
 namespace System.Windows.Controls
 {
+    /// <summary>
+    /// 컨트롤 꼴(ControlTemplate) — WpfLite 는 꼴을 갈아 끼우지 않는다. 받아만 둔다(원본 v1.2.16 찾기 칸 「어두운 칸」 꼴).
+    /// 색은 그 칸에 직접 준 바탕 · 테 · 글색으로 이미 그려진다.
+    /// </summary>
+    public sealed class ControlTemplate
+    {
+        public ControlTemplate() { }
+        public ControlTemplate(Type targetType) { TargetType = targetType; }
+        public Type? TargetType { get; set; }
+        public FrameworkElementFactory? VisualTree { get; set; }
+        public void Seal() { }
+    }
+
     public class DataGridTemplateColumn : DataGridColumn
     {
         public DataTemplate? CellTemplate { get; set; }
@@ -484,5 +506,19 @@ namespace System.Windows.Controls
             _root.Arrange(new Rect(final));
             return final;
         }
+    }
+}
+
+namespace System.Windows.Shell
+{
+    /// <summary>창 테두리 꾸미기(WindowChrome) — 안드로이드 창은 제 테두리가 없어 받아만 둔다.</summary>
+    public sealed class WindowChrome
+    {
+        public double CaptionHeight { get; set; }
+        public Thickness ResizeBorderThickness { get; set; }
+        public Thickness GlassFrameThickness { get; set; }
+        public CornerRadius CornerRadius { get; set; }
+        public bool UseAeroCaptionButtons { get; set; }
+        public static void SetWindowChrome(Window window, WindowChrome chrome) { }
     }
 }

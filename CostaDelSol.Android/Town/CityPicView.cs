@@ -2770,7 +2770,7 @@ public sealed class CityPicView : Window, ITownScreen, IGateStage
         EncyclopediaDialog.Show(Menu.Window ?? this, _game);
 
     void ITownScreen.ShowChronicle() =>
-        ChronicleDialog.ShowChronicle(Menu.Window ?? this, _player, _game.Discoveries?.Table);
+        ChronicleDialog.ShowChronicle(Menu.Window ?? this, _player, _game.Discoveries?.Table, _game.CityName);
 
     void ITownScreen.Retire()
     {

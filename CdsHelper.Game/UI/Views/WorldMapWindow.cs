@@ -370,7 +370,8 @@ public sealed class WorldMapWindow : Window
         foreach (string file in picked)
         {
             var (entry, message) = UserDiscoveries.Import(file, (had, got) => ConfirmDialog.Ask(this,
-                $"같은 발견물 「{had.Name}」 이 이미 있습니다. 불러온 「{got.Name}」 으로 덮어쓸까요?", "발견물 불러오기"));
+                $"같은 발견물 「{had.Name}」 이 이미 있습니다. 불러온 「{got.Name}」 으로 덮어쓸까요?", "발견물 불러오기"),
+                books: _game.Books);
             lines.Add(entry != null ? message : $"{Path.GetFileName(file)} — {message}");
         }
         if (!Local.Settings.GameSettings.ExtraDiscoveries)
@@ -861,6 +862,22 @@ public sealed class WorldMapWindow : Window
         _navOpen = true;
         try { Hold(ShowAutoSailDialog); }
         finally { _navOpen = false; }
+    }
+
+    /// <summary>
+    /// 모드 「도시 그림 업스케일링」 — 아직 안 키운 도시 그림을 뒤에서 차례로 키운다(<see cref="CityUpscale.Prefill"/>).
+    /// 게임을 처음 열 때와 모드를 켤 때 부른다. 이미 돌고 있으면 그대로 둔다.
+    /// </summary>
+    internal void StartCityUpscale()
+    {
+        CityUpscale.Enabled = () => GameSettings.CityPicUpscale;
+        CityUpscale.Say = text => Dispatcher.BeginInvoke(() => Say(text));
+        if (!GameSettings.CityPicUpscale || !_started) return;
+        if (_game.CityPics is not { } pictures) return;
+        // 그림 풀기는 UI 실에서 한다 — 묶음 파일 읽기를 실 여럿이 나눠 쓰지 않게.
+        CityUpscale.Prefill(pictures.Count,
+                            id => Dispatcher.Invoke(() => pictures.TryGetBgra(id)),
+                            CityPictures.Width, CityPictures.Height);
     }
 
     /// <summary>도시락의 여급 수첩 줄 이름. 모드 창이 이 줄을 켜고 끈다.</summary>
@@ -2689,6 +2706,7 @@ public sealed class WorldMapWindow : Window
             Engine.Market.CityHistory.ChangeNation(_game.Player, _game.CityRows, _game.Nations, city, nation);
             string who = world.People.FirstOrDefault(r => r.Id == person)?.Name ?? "";
             string town = _game.CityName(city);
+            if (who.Length > 0) _game.Player.NoteConquest(_game.Player.Date, who, city, nation);   // 향상된 연표
             if (who.Length > 0)
                 NoticeDialog.Show(this, $"{who}{GameUi.Josa(who, "이", "가")} [{town}]{GameUi.Josa(town, "을", "를")} 공략했습니다");
         };
@@ -3301,6 +3319,21 @@ public sealed class WorldMapWindow : Window
     }
 
     /// <summary>
+    /// 단축키로 <b>세계지도</b> 창을 연다 — 어느 창에서 눌러도 여기로 온다. 모달이 아니라 게임을 안 세운다.
+    /// 이미 떠 있으면 앞으로 내고, 세계지도 창 안에서 또 누르면 닫힌다(<see cref="LiveMapWindow"/>).
+    /// </summary>
+    internal void LiveMapByKey(Window owner)
+    {
+        if (!_started) return;
+        if (!GameSettings.ShowLiveMapMenu)
+        {
+            NoticeDialog.Show(owner, "모드 「세계지도」를 켜면 쓸 수 있습니다.");
+            return;
+        }
+        ShowLiveMap();
+    }
+
+    /// <summary>
     /// 단축키로 <b>모드</b> 창을 연다 — 어느 창에서 눌러도 여기로 온다. 이미 떠 있으면 또 열지 않는다.
     /// </summary>
     internal void ModByKey()
@@ -3498,6 +3531,13 @@ public sealed class WorldMapWindow : Window
         {
             e.Handled = true;
             if (GameSettings.ShowDiscoveryMapMenu) Hold(ShowDiscoveryMap);
+            return;
+        }
+
+        if (e.Key == KeyOf(GameSettings.LiveMapKey, Key.G))
+        {
+            e.Handled = true;
+            LiveMapByKey(this);
             return;
         }
 
@@ -3893,6 +3933,7 @@ public sealed class WorldMapWindow : Window
             }
             finally { loading.Close(); }
             _started = true;
+            StartCityUpscale();
         }
 
         // 상태 시계는 <b>들어올 때마다</b> 켠다. 타이틀로 돌아가면(ReturnToTitle) 멈추는데, 첫 판에서만
@@ -3970,6 +4011,7 @@ public sealed class WorldMapWindow : Window
             _game.Player.RestorePurses(saved.Purses);
             _game.Player.RestoreHidden(saved.Hidden);
             _game.Player.RestoreTraces(saved.Traces);
+            _game.Player.RestoreConquests(saved.Conquests);
             // 대본으로 지어 준 발견물 이름을 표에 도로 덧씌운다 — 원본은 레코드에 직접 쓴다.
             _game.Player.RestoreNamedDiscoveries(saved.NamedDiscoveries);
             // 남이 먼저 발표한 발견물. 이 칸 앞의 세이브는 아무도 안 앞지른 판으로 연다.
@@ -4394,6 +4436,12 @@ public sealed class WorldMapWindow : Window
         DiscoveriesChanged = () => HideCities(),
         // 인물 · 비보는 대본이 발견을 안 적는다 — 발견물 지도처럼 사건을 마쳤으면 찾은 것으로 본다.
         EventDone = id => _game.Player.IsSettled(id) && !Engine.Disev.DisevRunner.RecordsDiscovery(_game, id),
+        // 「힌트」 탭 — 주인공이 가진 힌트를 넣고 뺀다.
+        Hints = _game.Hints,
+        HintDone = id => _game.Discoveries?.IsHintDone(_game.Player, id) == true,
+        HintTargets = id => _game.Hints?.Find(id) is { Discovery: >= 0 } h && _game.Discoveries?.Table is { } dt
+            ? string.Join(" · ", dt.Discoveries.Where(r => r.Hint == h.Discovery && r.Name.Length > 0).Select(r => r.Name).Distinct())
+            : "",
         // 「역사이벤트」 탭 — 등록된 역사 대본 칸과 지금 날짜로 본 상태.
         HistoryEvents = () => _game.HistoryCatalog(),
         // 「여급」 탭 — 여급 127명의 서는 해 · 도시 · 언어 · 취향.
@@ -5420,9 +5468,8 @@ public sealed class WorldMapWindow : Window
     /// 새로 선 도시를 지도에 올린다 — 신대륙 식민 도시가 해마다 하나씩 늘어난다.
     /// </summary>
     /// <remarks>
-    /// 언제 무엇이 서는지는 <see cref="CityFounding"/> 에 있다. 1531년에는 파나마가 선
-    /// 다음 달에 레온·코로·트루히요가 <b>한꺼번에</b> 선다 — 원본의 제작 오류를 그대로
-    /// 옮긴 것이라 그 무더기도 그대로 나온다.
+    /// 언제 무엇이 서는지는 <see cref="CityFounding"/> 에 있다. 원본은 파나마가 1531년에야 서서
+    /// 레온·코로·트루히요가 그때 <b>한꺼번에</b> 섰는데, 파나마를 역사대로 1519년으로 당겨 이제 제 해에 하나씩 선다.
     /// </remarks>
     private void TellFounded()
     {
@@ -5814,6 +5861,10 @@ public sealed class WorldMapWindow : Window
             if (world.People.FirstOrDefault(r => r.Id == id) is { } row) fresh.Add(row);
         }
         if (fresh.Count == 0) return false;
+
+        // 모드 「다른 배 지나치기」 — 걸쇠만 걸고 묻지 않는다(벗어났다 다시 붙어도 안 묻는다). 쫓아온 해적은 그대로 덮친다.
+        // 붙은 배가 없던 틱처럼 바다 주사위는 그대로 굴린다.
+        if (GameSettings.PassShips && !fresh.Exists(r => Chasing(r.Id))) return false;
 
         _asking = true;
         _host.Paused = true;

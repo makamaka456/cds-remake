@@ -92,6 +92,7 @@ public sealed partial class WorldMapWindow : Window
         finally { _navOpen = false; }
     }
 
+
     /// <summary>도시락의 여급 수첩 줄 이름. 모드 창이 이 줄을 켜고 끈다.</summary>
     internal const string BarmaidBookRow = "여급 수첩";
 
@@ -1065,6 +1066,7 @@ public sealed partial class WorldMapWindow : Window
             Engine.Market.CityHistory.ChangeNation(_game.Player, _game.CityRows, _game.Nations, city, nation);
             string who = world.People.FirstOrDefault(r => r.Id == person)?.Name ?? "";
             string town = _game.CityName(city);
+            if (who.Length > 0) _game.Player.NoteConquest(_game.Player.Date, who, city, nation);   // 향상된 연표
             if (who.Length > 0)
                 NoticeDialog.Show(this, $"{who}{GameUi.Josa(who, "이", "가")} [{town}]{GameUi.Josa(town, "을", "를")} 공략했습니다");
         };
@@ -1881,6 +1883,7 @@ public sealed partial class WorldMapWindow : Window
             }
             finally { loading.Close(); }
             _started = true;
+            // 안드로이드: 「도시 그림 업스케일링」은 넣지 않는다(StartCityUpscale 를 걷었다).
         }
 
         // 상태 시계는 <b>들어올 때마다</b> 켠다. 타이틀로 돌아가면(ReturnToTitle) 멈추는데, 첫 판에서만
@@ -1958,6 +1961,7 @@ public sealed partial class WorldMapWindow : Window
             _game.Player.RestorePurses(saved.Purses);
             _game.Player.RestoreHidden(saved.Hidden);
             _game.Player.RestoreTraces(saved.Traces);
+            _game.Player.RestoreConquests(saved.Conquests);
             // 대본으로 지어 준 발견물 이름을 표에 도로 덧씌운다 — 원본은 레코드에 직접 쓴다.
             _game.Player.RestoreNamedDiscoveries(saved.NamedDiscoveries);
             // 남이 먼저 발표한 발견물. 이 칸 앞의 세이브는 아무도 안 앞지른 판으로 연다.
@@ -3147,9 +3151,8 @@ public sealed partial class WorldMapWindow : Window
     /// 새로 선 도시를 지도에 올린다 — 신대륙 식민 도시가 해마다 하나씩 늘어난다.
     /// </summary>
     /// <remarks>
-    /// 언제 무엇이 서는지는 <see cref="CityFounding"/> 에 있다. 1531년에는 파나마가 선
-    /// 다음 달에 레온·코로·트루히요가 <b>한꺼번에</b> 선다 — 원본의 제작 오류를 그대로
-    /// 옮긴 것이라 그 무더기도 그대로 나온다.
+    /// 언제 무엇이 서는지는 <see cref="CityFounding"/> 에 있다. 원본은 파나마가 1531년에야 서서
+    /// 레온·코로·트루히요가 그때 <b>한꺼번에</b> 섰는데, 파나마를 역사대로 1519년으로 당겨 이제 제 해에 하나씩 선다.
     /// </remarks>
     private void TellFounded()
     {
@@ -3541,6 +3544,10 @@ public sealed partial class WorldMapWindow : Window
             if (world.People.FirstOrDefault(r => r.Id == id) is { } row) fresh.Add(row);
         }
         if (fresh.Count == 0) return false;
+
+        // 모드 「다른 배 지나치기」 — 걸쇠만 걸고 묻지 않는다(벗어났다 다시 붙어도 안 묻는다). 쫓아온 해적은 그대로 덮친다.
+        // 붙은 배가 없던 틱처럼 바다 주사위는 그대로 굴린다.
+        if (GameSettings.PassShips && !fresh.Exists(r => Chasing(r.Id))) return false;
 
         _asking = true;
         _host.Paused = true;

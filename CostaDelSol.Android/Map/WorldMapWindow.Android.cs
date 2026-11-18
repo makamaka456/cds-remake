@@ -351,6 +351,12 @@ public sealed partial class WorldMapWindow
             .OfType<(string Name, double X, double Y, bool Library)>()
             .ToList();
 
+    /// <summary>
+    /// 세계지도 창 단축키(원본 v1.2.15, 기본 G) — 안드로이드판은 세계지도 창을 뺐으므로(사용자 결정) 아무것도 안 한다.
+    /// 공용 GameWindow 의 글쇠 처리가 이 이름을 부른다.
+    /// </summary>
+    internal void LiveMapByKey(Window owner) { }
+
     /// <summary>가로로 이어진 칸 자리를 0~2500 으로 접는다.</summary>
     private static double WrapCell(double x)
     {
@@ -694,6 +700,12 @@ public sealed partial class WorldMapWindow
         EventDone = id => _game.Player.IsSettled(id) && !Engine.Disev.DisevRunner.RecordsDiscovery(_game, id),
         HistoryEvents = () => _game.HistoryCatalog(),
         Barmaids = _game.Barmaids,
+        // 「힌트」 탭(원본 v1.2.13 무렵) — 주인공이 가진 힌트를 넣고 뺀다.
+        Hints = _game.Hints,
+        HintDone = id => _game.Discoveries?.IsHintDone(_game.Player, id) == true,
+        HintTargets = id => _game.Hints?.Find(id) is { Discovery: >= 0 } h && _game.Discoveries?.Table is { } dt
+            ? string.Join(" · ", dt.Discoveries.Where(r => r.Hint == h.Discovery && r.Name.Length > 0).Select(r => r.Name).Distinct())
+            : "",
         CityName = _game.CityName,
         Faces = _game.Faces,
     });
