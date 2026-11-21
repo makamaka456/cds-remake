@@ -115,6 +115,35 @@ public sealed partial class WorldMapWindow : Window
     }
 
     /// <summary>
+    /// 세계지도 창 빈 곳 오른쪽 단추 「여기로 자동이동」 — 그 칸까지 자동항해를 건다(요청). 걸렸으면 빈 글, 아니면 까닭.
+    /// 도시 안이면 도시 자동이동처럼 걸어 두고 곧바로 출항한다 — 자동항해는 도시 창이 닫히면서 걸린다(요청).
+    /// 도시 밖 육지에서는 못 건다.
+    /// </summary>
+    private string SailToSpotAt(double cellX, double cellY)
+    {
+        if (_cityView is { } town)
+        {
+            if (town is not { CanSailOut: true }) return Lang.T("이 도시에는 함대가 없어 배로 떠날 수 없습니다");
+            var spot = (cellX, cellY);
+            _sailTo = -1;
+            _sailSpot = spot;
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (_cityView != town || _sailSpot != spot || town.SailNow()) return;
+                Say($"출항하면 {WorldMapHost.SpotText(cellX, cellY)}까지 자동항해합니다");
+            });
+            return "";
+        }
+        if (_host.SeaBlocked || _host.IsOnLand) return Lang.T("바다에 있을 때만 자동이동할 수 있습니다");
+        var (ok, message) = _host.StartAutoSail(cellX, cellY);
+        if (!ok) return message;
+        NavStarted("livemap");
+        // 「그곳까지」 대신 짚은 자리의 위도 · 경도(요청).
+        Say($"{WorldMapHost.SpotText(cellX, cellY)}까지 {message}");
+        return "";
+    }
+
+    /// <summary>
     /// 그 칸까지 자동항해를 건다 — 지도 클릭(주 지도 Shift+오른쪽 클릭 · 발견물지도
     /// Shift+오른쪽 클릭)과 도시 이름 고르기(<see cref="AutoSailDialog"/>)가 같이 쓴다.
     /// </summary>
@@ -134,6 +163,43 @@ public sealed partial class WorldMapWindow : Window
         PlayStats.Hero(player.GameId, player.Name, _game.Nations?.Find(player.Nation)?.Name ?? "", player.Date,
                        [.. player.Abilities.Select(Ability.Display)], player.FlagshipHull?.Hull.Name ?? "",
                        player.Investments.Select(p => KeyValuePair.Create(_game.CityName(p.Key), p.Value)));
+    }
+
+    /// <summary>
+    /// 세계지도 창에서 도시 점 · 이름을 오른쪽 단추로 눌러 「자동이동」을 골랐다 — 네비게이션에서 그 도시를 고르고 첫 길(가장 빠른 길,
+    /// 내륙 도시면 배 + 걷기가 가장 빠른 자리)로 떠난 것과 같다(요청). 도시 안이면 출항하면서 걸린다.
+    /// </summary>
+    /// <returns>알릴 말 — 지도 창 아래 줄에 뜬다. 걸었으면 아래 띠에도 알린다.</returns>
+    private string SailToCityAt(double cellX, double cellY)
+    {
+        int city = CityAtCell(cellX, cellY);
+        if (city < 0) return Lang.T("그 도시를 찾지 못했습니다");
+        string name = _game.CityName(city);
+        var town = _cityView;
+        bool inCity = town != null;
+        if (inCity && city == _game.Player.CityId) return Lang.T("지금 있는 도시입니다");
+        if (inCity && town is not { CanSailOut: true }) return Lang.T("이 도시에는 함대가 없어 배로 떠날 수 없습니다");
+        if (!inCity && (_host.SeaBlocked || _host.IsOnLand)) return Lang.T("바다에 있을 때만 자동이동할 수 있습니다");
+        if (SailGoals(city) is not [var goal, ..]) return Lang.T("바닷길을 찾지 못했습니다");
+
+        _sailTo = city;
+        _sailSpot = null;
+        _sailGoal = goal;
+        if (inCity)
+        {
+            // 네비게이션과 같다 — 걸어 두고 곧바로 출항한다. 자동항해는 도시 창이 닫히면서 걸린다.
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (_cityView != town || _sailTo != city || town!.SailNow()) return;
+                Say($"출항하면 [{name}]{GameUi.Josa(name, "으로", "로")} 자동항해합니다");
+            });
+            return "";
+        }
+        var (ok, message) = _host.StartAutoSail(goal.X, goal.Y, goal.City, goal.Exact, goal.Kind);
+        if (!ok) { _sailTo = -1; return message; }
+        NavStarted(goal.Tag + ":map");
+        Say($"[{name}]까지 {message}");
+        return "";
     }
 
     /// <summary>자동항해를 걸었다 — 무엇을 골랐는지 적는다(<see cref="PlayStats.Nav"/>).</summary>
@@ -184,6 +250,10 @@ public sealed partial class WorldMapWindow : Window
         var frequent = _game.Player.CityVisits.Where(v => v.Key != here)
             .OrderByDescending(v => v.Value).ThenBy(v => v.Key).Take(FrequentCities).Select(v => v.Key).ToList();
 
+        // 둘째 탭 — 최근에 들른 도시 20곳(요청). 행적의 입항(갈래 1)을 새것부터 훑어 겹치지 않게 모은다. 지금 있는 도시는 빠진다.
+        var recent = _game.Player.Traces.Where(t => t.Kind == Player.TraceArrival && t.A >= 0 && t.A != here)
+            .Reverse().Select(t => t.A).Distinct().Take(FrequentCities).ToList();
+
         // 먼저 골라 둘 도시 — 계약 뒤 처음 열면 그 발견물에서 가장 가까운 도시, 아니면 바다에서 열었을 때 마지막으로 간 도시.
         int preselect = -1;
         string? suggestion = null;
@@ -223,10 +293,11 @@ public sealed partial class WorldMapWindow : Window
 
             string name = _game.CityName(id);
             return (true, goals[0].Afoot ? $"[{name}] 가는 길 (내륙 도시라 배를 대고 걸어갑니다)" : $"[{name}] 가는 길", plans);
-        }, frequent, preselect, suggestion);
+        }, frequent, preselect, suggestion, recent);
 
         if (chosen < 0 || pick < 0 || pick >= goals.Count) return;
         _sailTo = chosen;
+        _sailSpot = null;
         _sailGoal = goals[pick];
 
         // 도시 안이면 걸어 두고 곧바로 출항한다 — 자동항해는 도시 창이 닫히면서 걸린다.
@@ -301,6 +372,9 @@ public sealed partial class WorldMapWindow : Window
 
     /// <summary>네비게이션에서 고른 길 — 도시 안에서 골랐으면 출항한 뒤 이것으로 건다.</summary>
     private SailGoal _sailGoal;
+
+    /// <summary>도시 안에서 세계지도 「여기로 자동이동」으로 걸어 둔 칸 — 출항한 뒤 그리로 자동항해한다. 없으면 null.</summary>
+    private (double X, double Y)? _sailSpot;
 
     /// <summary>
     /// 그 도시로 가는 길 후보. 앞의 것이 기본이다.
@@ -1739,6 +1813,7 @@ public sealed partial class WorldMapWindow : Window
                         : $"{d.Given} {d.Family}".Trim() is { Length: > 0 } full ? full : "이름 없는 제독";
             if (d.Hardcore == true) name += "(H)";   // 하드코어 주인공 — 게임 오버가 되면 이 세이브가 지워진다
             if (GameSave.IsSuspendFile(s.File)) name += Lang.T("(중단)");   // 게임 중단으로 적은 것 — 열면 지워진다
+            if (GameSave.SlotOf(s.File) is > 0 and var no) name = $"[{no}] {name}";   // 고른 칸(모드 「세이브 칸 고르기」)
             string city = string.IsNullOrEmpty(d.CityName) ? "바다" : d.CityName;
             return Row(name, city, Day(d), $"{d.SavedAt:yyyy-MM-dd HH:mm}", $"{d.Discoveries?.Count ?? 0,3}개");
         }).ToList();
@@ -1754,6 +1829,7 @@ public sealed partial class WorldMapWindow : Window
                            : $"{d.Given} {d.Family}".Trim() is { Length: > 0 } whole ? whole : "이름 없는 제독";
                 if (d.Hardcore == true) who += "(H)";
                 if (GameSave.IsSuspendFile(s.File)) who += Lang.T("(중단)");
+                if (GameSave.SlotOf(s.File) is > 0 and var no) who = $"[{no}] {who}";
                 return new[]
                 {
                     who, string.IsNullOrEmpty(d.CityName) ? "바다" : d.CityName, Day(d),
@@ -1960,6 +2036,16 @@ public sealed partial class WorldMapWindow : Window
             _game.Player.Laps = saved.Laps ?? 0;
             _game.Player.RestorePurses(saved.Purses);
             _game.Player.RestoreHidden(saved.Hidden);
+            _game.Player.RestoreKeptEvidence(saved.KeptEvidence);
+            // 이 칸 앞의 세이브 — 감찰관 매수로 이미 받은 증거품은 적혀 있지 않다. 알리지 않은 발견물의 물건(시장에서 안 파는 것)이
+            // 진짜 소지품 · 보관함에 이미 있으면 받은 것으로 친다(그것 말고는 그 물건이 들어올 길이 없다).
+            if (saved.KeptEvidence == null && _game.Discoveries?.Table is { } keptTable)
+            {
+                var held = _game.Player.Items.Concat(_game.Player.Stored).ToHashSet();
+                _game.Player.KeepEvidence(_game.Player.Discoveries
+                    .Where(id => !_game.Player.HasAnnounced(id) && !_game.Player.IsHidden(id))
+                    .Where(id => keptTable.Find(id) is { GivesItem: true, SoldIn: < 0 } row && held.Contains(row.ItemId)).ToList());
+            }
             _game.Player.RestoreTraces(saved.Traces);
             _game.Player.RestoreConquests(saved.Conquests);
             // 대본으로 지어 준 발견물 이름을 표에 도로 덧씌운다 — 원본은 레코드에 직접 쓴다.
@@ -2768,10 +2854,6 @@ public sealed partial class WorldMapWindow : Window
             if (!PassGate(city, name, byLand: _host.IsOnLand)) return;
 
             _host.EnterPort(name);
-
-            // 행적에 적는다(원본 갈래 0, 0x0049270F — 도시 화면을 펼 때) — 은퇴하면 이 줄들이 누적 캐릭터의 발자취가 된다.
-            _game.Player.Note(Player.TraceArrival, city, _game.Player.Nation);
-
             inCity = ShowCityPicture(city, name);
         }
         finally
@@ -3154,6 +3236,15 @@ public sealed partial class WorldMapWindow : Window
     /// 언제 무엇이 서는지는 <see cref="CityFounding"/> 에 있다. 원본은 파나마가 1531년에야 서서
     /// 레온·코로·트루히요가 그때 <b>한꺼번에</b> 섰는데, 파나마를 역사대로 1519년으로 당겨 이제 제 해에 하나씩 선다.
     /// </remarks>
+    /// <summary>모드 「모든 도시 등장」을 켜고 껐다 — 셈을 다시 하고 지도의 도시를 그 자리에서 다시 가린다.</summary>
+    internal void RefreshFoundedCities()
+    {
+        CityFounding.Changed();
+        if (!_started) return;
+        _founded = null;
+        TellFounded();
+    }
+
     private void TellFounded()
     {
         var now = CityFounding.FoundedBy(_game.Player.Date);
@@ -3311,7 +3402,8 @@ public sealed partial class WorldMapWindow : Window
         try
         {
             // 항구가 있는 도시(건물 낱말 비트 0)면 넷에 한 번 갈매기가 먼저 난다(0x0048D9B2 ~ 0x0048D9D0).
-            if (_game.Random.Next(4) == 0 && rows.HasBuilding(spotted[0], 0))
+            // 설정 「갈매기 연출」을 끄면 안 난다. 주사위는 그대로 굴려 다른 운수가 바뀌지 않게 한다.
+            if (_game.Random.Next(4) == 0 && rows.HasBuilding(spotted[0], 0) && GameSettings.Gulls)
                 PlayEventScene(EventAnimation.GullsAtCity);
             if (_game.Player.MateAt(0).Length > 0)
                 ConfirmDialog.Tell(this, "제독, 도시가 보입니다!", face: MateFace());
@@ -6114,6 +6206,11 @@ public sealed partial class WorldMapWindow : Window
         // 그림도 건물 표도 Game 이 처음 쓸 때 연다. 둘 중 하나라도 없으면 도시 화면을 안 연다.
         if (_game.CityPics == null || _game.Buildings == null) return false;
 
+        // 행적에 적는다(원본 갈래 0, 0x0049270F — 도시 화면을 펼 때) — 은퇴하면 이 줄들이 누적 캐릭터의 발자취가 되고,
+        // 네비게이션 「최근 방문 도시」 탭도 이것을 본다. 예전에는 커맨드로 들어가는 길(EnterCity)에서만 적어, 다가가서
+        // 들어가는 보통 길로는 한 줄도 안 남아 탭이 안 떴다. 세이브를 불러 도시에서 재개할 때는 새 입항이 아니라 안 적는다.
+        if (!resumed) _game.Player.Note(Player.TraceArrival, city, _game.Player.Nation);
+
         // 새 판의 모항·도시에서 재개하는 길은 EnterCity 를 거치지 않는다.
         // 이때도 항해가 끝난 것이므로 해상재해를 푼다 — 입항이라 말은 없다.
         if (enterHome || resumed) EndVoyage(speak: false);
@@ -6200,6 +6297,8 @@ public sealed partial class WorldMapWindow : Window
             // CheckPort 가 지우지 않게 여기서 빼 둔다.
             int sailTo = dialog.Sailed ? _sailTo : -1;
             _sailTo = -1;
+            var sailSpot = dialog.Sailed ? _sailSpot : null;
+            _sailSpot = null;
 
             SetInCity(false);
 
@@ -6260,13 +6359,22 @@ public sealed partial class WorldMapWindow : Window
                 if (!_gullsShown)
                 {
                     _gullsShown = true;
-                    if (!walking) PlayEventScene(EventAnimation.Gulls);
+                    if (!walking && GameSettings.Gulls) PlayEventScene(EventAnimation.Gulls);
                 }
             }
             finally
             {
                 _host.Paused = false;
                 _asking = false;
+            }
+
+            // 세계지도에서 짚어 둔 칸이 있으면 그리로 간다(도시가 아니라 바다 한 자리).
+            if (sailSpot is { } at && !_host.SeaBlocked && !_host.IsOnLand)
+            {
+                var (spotOk, spotMessage) = _host.StartAutoSail(at.X, at.Y);
+                if (spotOk) NavStarted("livemap");
+                Say(spotOk ? $"{WorldMapHost.SpotText(at.X, at.Y)}까지 {spotMessage}" : spotMessage);
+                return;
             }
 
             // 걸어 둔 목적지가 있으면 닻을 올리고 그리로 간다. 대본이 싸움 · 딴 도시로 끌고 갔으면 걸지 않는다.

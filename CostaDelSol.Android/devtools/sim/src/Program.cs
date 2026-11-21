@@ -433,6 +433,22 @@ if (Environment.GetEnvironmentVariable("MODE") == "gallery")
     Try("묘책", () => RuseEditDialog.Show(map));
     Try("릴리즈노트", map.ShowReleaseNotes);
     Try("발견물추가", map.ShowUserDiscoveries);
+    Try("시세창", () => CityPriceDialog.Show(map, g, g.Player.CityId >= 0 ? g.Player.CityId : 0));
+    if (only == "시세지도")
+    {
+        Drive.Steps.Clear();
+        Drive.Add("시세 지도 — 리스본 누르기", w =>
+        {
+            Drive.Shot(w, "citypick");
+            var tags = Drive.Find<System.Windows.Controls.TextBlock>(w).Where(b => b.E.IsVisible && b.R.Width > 0).ToList();
+            Log.W($"  보이는 이름표 {tags.Count}개: {string.Join(",", tags.Take(12).Select(b => b.E.Text))}");
+            var lis = tags.FirstOrDefault(b => b.E.Text == "리스본");
+            if (lis.E != null) Drive.ClickCenter(w, lis.R); else Log.W("  !! 리스본 이름표 못 찾음");
+        }, "LiveMapWindow");
+        Drive.Add("시세 창", w => { Log.W($"  창 제목: {w.Title}"); Drive.Shot(w, "citypick-price"); Drive.Press(w, "닫기"); }, "CityPriceDialog");
+        Drive.Add("지도 닫기", w => Drive.Key(w, System.Windows.Input.Key.Escape), "LiveMapWindow");
+    }
+    Try("시세지도", () => map.ShowCityPrices(map));
     Try("누적캐릭터", () => AccCharacterDialog.Show(map, map.CumulativeHooks()));
     if (only == "자리고르기") Drive.Steps.Clear();   // 도서관 책 단계(맨 앞)가 남아 있으면 이 단계까지 안 온다
     if (only == "자리고르기") Drive.Add("범위 그리기 시험", w =>

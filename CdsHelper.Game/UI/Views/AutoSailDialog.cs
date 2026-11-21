@@ -109,6 +109,9 @@ public sealed class AutoSailDialog : GameWindow
     private readonly StackPanel _finder;
     private readonly UniformGrid _hitGrid = new() { Columns = Columns, Width = CellWidth * Columns, VerticalAlignment = VerticalAlignment.Top };
     private readonly FrameworkElement _hitPage;
+    /// <summary>먼저 골라 둔 까닭(「계약 발견물에서 가장 가까운 도시: …」) — 찾기 줄 끝에 붙이면 창이 옆으로 길어져 그 아래 줄에 따로 둔다(요청).</summary>
+    private readonly TextBlock _suggest = new() { Foreground = GameUi.Text, FontSize = 14, Visibility = Visibility.Collapsed, TextWrapping = TextWrapping.Wrap };
+
     private readonly TextBlock _hitNote = new() { Foreground = GameUi.Text, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
 
     /// <summary>찾은 판의 칸과 그 도시 번호 — 다시 찾을 때마다 새로 짓는다.</summary>
@@ -128,7 +131,7 @@ public sealed class AutoSailDialog : GameWindow
 
     private AutoSailDialog(IReadOnlyList<(int Id, string Name, string Culture, bool Harbor)> cities, BitmapSource? chart,
                            Func<int, (bool Ok, string Message, IReadOnlyList<Plan> Plans)> start,
-                           IReadOnlyList<int> frequent, int preselect, string? suggestion)
+                           IReadOnlyList<int> frequent, int preselect, string? suggestion, IReadOnlyList<int>? recent = null)
     {
         _start = start;
         _chart = chart;
@@ -155,6 +158,9 @@ public sealed class AutoSailDialog : GameWindow
                            .OrderBy(g => CultureRank(g.Key)).ThenBy(g => g.Key, StringComparer.Ordinal)
                            .Select(g => (Text: $"{Lang.T(g.Key)} {g.Count()}", Cities: g.OrderBy(c => c.Name, StringComparer.Ordinal).ToList()))
                            .ToList();
+        // 「최근 방문 도시」 — 자주 간 도시 다음 판, 최근에 들른 차례(요청). 같은 도시가 다른 판에도 선다.
+        var lately = (recent ?? []).Where(known.ContainsKey).Select(id => known[id]).ToList();
+        if (lately.Count > 0) groups.Insert(0, ($"{Lang.T("최근 방문 도시")} {lately.Count}", lately));
         if (often.Count > 0) groups.Insert(0, ($"{Lang.T("자주 간 도시")} {often.Count}", often));
         foreach (var group in groups)
         {
@@ -235,23 +241,31 @@ public sealed class AutoSailDialog : GameWindow
             ShowSort();
             Resort();
             if (_query.Text.Length > 0) Search();
-        }, BandStyle.Button, 150) { Height = UiSprites.BandHeight, Margin = new Thickness(12, 0, 0, 0) };
+        }, BandStyle.Button, 150) { Height = GameUi.BandRows, Margin = new Thickness(12, 0, 0, 0) };
         ShowSort();
         Resort();
         _finder.Children.Insert(_finder.Children.IndexOf(_hitNote), sort);
+
+        // 경로 — 「항해 시작」 뒤에 길 후보를 물을지, 가장 빠른 길(첫 후보)로 바로 떠날지(요청). 고른 것은 기억한다.
+        GameButton route = null!;
+        void ShowRoute() => route.Text = Lang.T(GameSettings.NavQuickRoute ? "경로: 가장 빠른 길" : "경로: 고르기");
+        route = new GameButton("", () => { GameSettings.NavQuickRoute = !GameSettings.NavQuickRoute; ShowRoute(); },
+                               BandStyle.Button, 170) { Height = GameUi.BandRows, Margin = new Thickness(8, 0, 0, 0) };
+        ShowRoute();
+        _finder.Children.Insert(_finder.Children.IndexOf(_hitNote), route);
 
         // 자동이동 모드 · 항로 표시 · 항로 굵기 · 짙기는 설정 창 「네비게이션」 탭으로 옮겼다(요청, SettingsDialog.NavigationPage).
 
         // 아직 아무것도 안 골랐으면 「항해 시작」은 흐리다 — 게임 목록 창의 「결정」과 같다.
         _go = new GameButton("항해 시작", Start, BandStyle.Button, ButtonWidth)
         {
-            Height = UiSprites.BandHeight,
+            Height = GameUi.BandRows,
             Margin = new Thickness(0, 0, ButtonGap / 2, 0),
             On = false,
         };
         var stop = new GameButton("중단", Close, BandStyle.Button, ButtonWidth)
         {
-            Height = UiSprites.BandHeight,
+            Height = GameUi.BandRows,
             Margin = new Thickness(ButtonGap / 2, 0, 0, 0),
         };
         var buttons = new StackPanel
@@ -265,6 +279,8 @@ public sealed class AutoSailDialog : GameWindow
         var stack = new StackPanel();
         stack.Children.Add(title);
         stack.Children.Add(_finder);
+        _suggest.Margin = new Thickness(Side, 4, Side, 0);
+        stack.Children.Add(_suggest);
         _heads.Children.Add(Tabs(tabs, page =>
         {
             _tabPage = page;
@@ -296,7 +312,7 @@ public sealed class AutoSailDialog : GameWindow
         if (preselect >= 0 && known.ContainsKey(preselect))
         {
             Pick(preselect);
-            if (suggestion != null) _hitNote.Text = suggestion;
+            if (suggestion != null) { _suggest.Text = suggestion; _suggest.Visibility = Visibility.Visible; }
         }
     }
 
@@ -520,6 +536,15 @@ public sealed class AutoSailDialog : GameWindow
         try { (ok, message, plans) = _start(city); }
         finally { loading.Close(); }
         if (!ok || plans.Count == 0) { _note.Text = ok ? "바닷길을 찾지 못했습니다" : message; return; }
+        // 「경로: 가장 빠른 길」이면 후보를 띄우지 않고 첫 후보(가장 빠른 길 — 내륙 도시면 배 + 걷기가 가장 빠른 자리)로 바로 떠난다.
+        if (GameSettings.NavQuickRoute && _bound < 0)
+        {
+            _bound = city;
+            _plan = 0;
+            _confirmed = true;
+            Close();
+            return;
+        }
         _note.Text = "";
         _plans = plans;
         _planRows.Clear();
@@ -554,6 +579,7 @@ public sealed class AutoSailDialog : GameWindow
         _pages.Children.Add(body);
         foreach (UIElement head in _heads.Children) head.Visibility = Visibility.Collapsed;
         _finder.Visibility = Visibility.Collapsed;
+        _suggest.Visibility = Visibility.Collapsed;
         _heads.Children.Add(new TextBlock
         {
             Text = message,
@@ -712,11 +738,12 @@ public sealed class AutoSailDialog : GameWindow
     public static (int City, int Plan) Show(Window owner, IEnumerable<(int Id, string Name, string Culture, bool Harbor)> cities,
                                             BitmapSource? chart,
                                             Func<int, (bool Ok, string Message, IReadOnlyList<Plan> Plans)> start,
-                                            IReadOnlyList<int>? frequent = null, int preselect = -1, string? suggestion = null)
+                                            IReadOnlyList<int>? frequent = null, int preselect = -1, string? suggestion = null,
+                                            IReadOnlyList<int>? recent = null)
     {
         var list = cities.ToList();
         if (list.Count == 0) { NoticeDialog.Show(owner, "아는 도시가 없습니다"); return (-1, -1); }
-        var dialog = new AutoSailDialog(list, chart, start, frequent ?? [], preselect, suggestion) { Owner = owner };
+        var dialog = new AutoSailDialog(list, chart, start, frequent ?? [], preselect, suggestion, recent) { Owner = owner };
         dialog.ShowDialog();
         return dialog._confirmed && dialog._bound >= 0 ? (dialog._bound, dialog._plan) : (-1, -1);
     }

@@ -636,6 +636,14 @@ public sealed class TradePostDialog : GameWindow
             e.Handled = true;
             AskGoodsInfo(kind);
         };
+        // 왼쪽 단추로 누르면 곧바로 「비싸게 팔리는 도시」 — 매입 정보 순위처럼(요청). 수량 단추는 제 누름을 삼켜 여기 안 온다.
+        border.Cursor = Cursors.Hand;
+        border.MouseLeftButtonUp += (_, e) =>
+        {
+            if (e.Handled || _game.Goods?.Find(kind) is null) return;
+            e.Handled = true;
+            CityPriceDialog.Show(this, _game, _city, buyersOf: kind);
+        };
         return border;
     }
 
@@ -654,8 +662,12 @@ public sealed class TradePostDialog : GameWindow
     private void AskGoodsInfo(int kind)
     {
         if (_game.Goods?.Find(kind) is null) return;
-        if (ChoiceDialog.Pick(this, _post.NameOf(kind), ["정보를 본다", "그만둔다"]) == 0)
-            GoodsInfoDialog.Show(this, _game, kind);
+        // 「비싸게 팔리는 도시」 — 매입 정보 순위처럼 어느 도시에서 비싸게 팔리는지(요청). 시세 창의 그 쪽으로 연다.
+        switch (ChoiceDialog.Pick(this, _post.NameOf(kind), ["정보를 본다", "비싸게 팔리는 도시", "그만둔다"]))
+        {
+            case 0: GoodsInfoDialog.Show(this, _game, kind); break;
+            case 1: CityPriceDialog.Show(this, _game, _city, buyersOf: kind); break;
+        }
     }
 
     /// <param name="share">
@@ -670,6 +682,8 @@ public sealed class TradePostDialog : GameWindow
             panel.Children.Add(Small($"{n}", () => add(n), n switch { 1 => 26, 10 => 32, _ => 40 }));
         panel.Children.Add(Small("모두", all, 50));
         panel.MouseRightButtonUp += (_, e) => { e.Handled = true; share(); };
+        // 단추 사이 틈을 왼쪽으로 눌러도 줄의 「비싸게 팔리는 도시」가 뜨지 않게 여기서 삼킨다.
+        panel.MouseLeftButtonUp += (_, e) => e.Handled = true;
         return panel;
     }
 
@@ -680,7 +694,9 @@ public sealed class TradePostDialog : GameWindow
         var b = GameUi.PushButton(text, run, width);
         b.Margin = new Thickness(2, 0, 0, 0);
         b.Padding = new Thickness(0);
-        if (b.Child is TextBlock t) t.FontSize = 12;
+        // 누르기 좋게 높이를 키운다(요청) — 글은 가운데에.
+        b.Height = 28;
+        if (b.Child is TextBlock t) { t.FontSize = 13; t.VerticalAlignment = VerticalAlignment.Center; }
         return b;
     }
 

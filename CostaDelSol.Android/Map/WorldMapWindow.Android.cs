@@ -405,8 +405,8 @@ public sealed partial class WorldMapWindow
         ShowModDialog();
     }
 
-    /// <summary>모드 「수에즈 운하」를 켜고 끈 것을 지도에 곧바로 들인다.</summary>
-    internal void RefreshSuezCanal() => _host.RefreshSuezCanal();
+    /// <summary>모드 「수에즈 운하」 · 「파나마 운하」를 켜고 끈 것을 지도에 곧바로 들인다(원본 v1.2.38).</summary>
+    internal void RefreshCanals() => _host.RefreshCanals();
 
     /// <summary>
     /// 단축키로 <b>소지품 정보</b>를 연다 — 바다·뭍·도시 어디서든, 지금 손이 가 있는 창 위에 뜬다.
@@ -454,6 +454,47 @@ public sealed partial class WorldMapWindow
         finally { _personOpen = false; }
     }
 
+    /// <summary>단축키로 <b>플레이어 정보</b> — 제독 본인의 인물정보 창을 곧바로 연다(원본 v1.2.35, 글쇠판이 달린 기기용).</summary>
+    internal void PlayerByKey(Window owner)
+    {
+        if (!_started || _personOpen) return;
+        _personOpen = true;
+        try { PersonInfoDialog.Show(owner, _game.Player, _game.Directory, _game); }
+        finally { _personOpen = false; }
+    }
+
+    /// <summary>
+    /// 매입 정보 「시세」(원본 v1.2.30) — 세계지도를 도시 고르기로 띄워, 도시를 누르면 그 도시에서 비싸게 팔리는 교역품을 띄운다.
+    /// 안드로이드판은 늘 떠 있는 세계지도 창을 뺐으므로 이 고르기 지도만 쓴다 — 자동이동 · 갈 길 · 발견물 점은 싣지 않는다.
+    /// </summary>
+    internal void ShowCityPrices(Window owner)
+    {
+        if (!_started) return;
+        LiveMapWindow.ShowCityPick(owner, new LiveMapWindow.Source(
+            Ship: () => _host.ShipCell is { } c ? (WrapCell(c.X), c.Y) : null,
+            MapVersion: () => _host.ShownMapVersion,
+            Tiles: _host.GameTiles,
+            Parchment: () =>
+            {
+                var all = new ExploredMap();
+                all.RevealAll();
+                return _host.Chart(all, out int w, out int h) is { } px ? (px, w, h) : null;
+            },
+            IsLand: _host.IsLandCell,
+            Cities: KnownCityMarks,
+            Spots: () => [],
+            CityClick: (map, x, y) =>
+            {
+                int city = CityAtCell(x, y);
+                if (city >= 0) CityPriceDialog.Show(map, _game, city);
+            }));
+    }
+
+    /// <summary>세계지도 도시 표식 자리(칸)의 도시 번호. 없으면 -1.</summary>
+    private int CityAtCell(double cellX, double cellY) =>
+        Enumerable.Range(0, GameMapCoords.CityCount).FirstOrDefault(id => _game.CityVisible(id)
+            && GameMapCoords.TryCityCell(id, out double cx, out double cy) && Math.Abs(cx - cellX) < 0.01 && Math.Abs(cy - cellY) < 0.01, -1);
+
     /// <summary>인물정보가 떠 있는지 — 그 창 안에서 X 를 또 눌러 겹쳐 뜨지 않게.</summary>
     private bool _personOpen;
 
@@ -492,7 +533,7 @@ public sealed partial class WorldMapWindow
                 NoticeDialog.Show(owner, "실은 교역품이 없습니다.");
                 return;
             }
-            CargoRankDialog.Show(owner, _game, 0, c => GoodsInfoDialog.Show(owner, _game, c.Kind, c.Shelf));
+            CargoRankDialog.Show(owner, _game, 0, c => GoodsInfoDialog.Show(owner, _game, c.Kind, c.Shelf), ShowCityPrices);
         }
         finally { _cargoOpen = false; }
     }

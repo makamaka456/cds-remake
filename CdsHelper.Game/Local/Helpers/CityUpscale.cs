@@ -16,7 +16,7 @@ namespace CdsHelper.Game.Local.Helpers;
 /// 나눠 주는 꼴이 된다. 그래서 그 PC 의 CITYCG 를 그 자리에서 키운다. 모델은 선박 리마스터와 같은 Rebout Blend 4x 다
 /// (<see cref="UpscaleModelAsset"/>, 없으면 처음에 받는다).
 /// <para>
-/// 한 장에 CPU 로 수십 초 걸려서 <b>뒤에서 한 장씩</b> 만든다 — 실 하나, 낮은 우선순위, 코어 절반. 입항한 도시는 줄 맨 앞으로
+/// GPU(DirectML)가 되면 GPU 로, 안 되면 CPU 로 돌린다(CPU 면 한 장에 수십 초). <b>뒤에서 한 장씩</b> 만든다 — 실 하나, 낮은 우선순위, CPU 면 코어 절반. 입항한 도시는 줄 맨 앞으로
 /// 당기고, 다 되면 그 창 그림을 갈아 끼운다(<see cref="Request"/>). 남은 도시는 게임을 켜 둔 동안 차례로 채운다(<see cref="Prefill"/>).
 /// </para>
 /// 만든 그림은 <c>%LOCALAPPDATA%\CdsHelper\cityhd</c> 에 그림 점의 해시 이름으로 둔다 — 커스텀 팩 · 도시 성장으로 그림이 바뀌면
@@ -41,6 +41,19 @@ public static class CityUpscale
 
     /// <summary>모드가 켜져 있는지 — 꺼지면 줄에 남은 것을 버리고 멈춘다.</summary>
     public static Func<bool> Enabled { get; set; } = () => false;
+
+    private static volatile int _checked, _total, _made;
+    private static volatile bool _filling, _busy, _downloading, _failed, _gpu, _cpuOnly;
+
+    /// <summary>
+    /// 지금 진행 — 모드 창에 띄운다. <c>Checked</c>/<c>Total</c> 은 채우기가 훑은 도시 그림 수(이미 있던 것 포함),
+    /// <c>Made</c> 는 이번에 새로 키운 장 수, <c>Busy</c> 는 일꾼이 지금 한 장을 키우는 중인지.
+    /// </summary>
+    public static (int Checked, int Total, int Made, bool Filling, bool Busy, bool Downloading, bool Failed) Progress
+        => (_checked, _total, _made, _filling, _busy, _downloading, _failed);
+
+    /// <summary>모델을 GPU 로 열었는지 — 아직 안 열었으면 null.</summary>
+    public static bool? OnGpu => _session == null ? null : _gpu;
 
     private sealed record Job(string Key, uint[] Bgra, int Width, int Height, List<Action<BitmapSource>> Done);
 
@@ -94,25 +107,33 @@ public static class CityUpscale
     public static void Prefill(int count, Func<int, uint[]?> picture, int width, int height)
     {
         lock (Gate) if (_filler is { IsAlive: true }) return;
+        _total = count;
+        _checked = 0;
+        _made = 0;
+        _filling = true;
         var filler = new Thread(() =>
         {
-            int made = 0;
-            for (int i = 0; i < count && Enabled(); i++)
+            try
             {
-                uint[]? px;
-                try { px = picture(i); }
-                catch { continue; }
-                if (px == null) continue;
-                string key = KeyOf(px, width, height);
-                if (File.Exists(PathOf(key))) continue;
-                using var finished = new ManualResetEventSlim();
-                Enqueue(key, px, width, height, _ => finished.Set(), front: false);
-                // 하나씩 넣는다 — 줄에 다 쌓아 두면 그림 점이 한꺼번에 수십 MB 잡힌다.
-                while (!finished.Wait(2000))
-                    if (!Enabled()) return;
-                made++;
+                for (int i = 0; i < count && Enabled(); i++, _checked = i)
+                {
+                    uint[]? px;
+                    try { px = picture(i); }
+                    catch { continue; }
+                    if (px == null) continue;
+                    string key = KeyOf(px, width, height);
+                    if (File.Exists(PathOf(key))) continue;
+                    using var finished = new ManualResetEventSlim();
+                    Enqueue(key, px, width, height, _ => finished.Set(), front: false);
+                    // 하나씩 넣는다 — 줄에 다 쌓아 두면 그림 점이 한꺼번에 수십 MB 잡힌다.
+                    while (!finished.Wait(2000))
+                        if (!Enabled()) return;
+                    _made++;
+                }
+                if (Enabled()) _checked = count;
+                if (_made > 0 && Enabled()) Say?.Invoke($"도시 그림 업스케일링을 마쳤습니다({_made}장).");
             }
-            if (made > 0 && Enabled()) Say?.Invoke($"도시 그림 업스케일링을 마쳤습니다({made}장).");
+            finally { _filling = false; }
         })
         { IsBackground = true, Priority = ThreadPriority.Lowest, Name = "도시 그림 채우기" };
         lock (Gate) _filler = filler;
@@ -155,10 +176,22 @@ public static class CityUpscale
                 Queue.RemoveFirst();
             }
 
+            _busy = true;
             try
             {
                 if (!EnsureSession()) { lock (Gate) Queue.Clear(); continue; }
-                var made = Upscale(job.Bgra, job.Width, job.Height);
+                BitmapSource made;
+                try { made = Upscale(job.Bgra, job.Width, job.Height); }
+                catch (OnnxRuntimeException) when (_gpu)
+                {
+                    // GPU 메모리가 모자라는 따위 — CPU 로 열어 다시 한다.
+                    System.Diagnostics.Debug.WriteLine("[CityUpscale] GPU 실행 실패 — CPU 로 다시");
+                    _session?.Dispose();
+                    _session = null;
+                    _cpuOnly = true;
+                    if (!EnsureSession()) { lock (Gate) Queue.Clear(); continue; }
+                    made = Upscale(job.Bgra, job.Width, job.Height);
+                }
                 Directory.CreateDirectory(Folder);
                 string path = PathOf(job.Key), temp = path + ".tmp";
                 var encoder = new PngBitmapEncoder();
@@ -171,6 +204,7 @@ public static class CityUpscale
             {
                 System.Diagnostics.Debug.WriteLine($"[CityUpscale] {ex.GetType().Name}: {ex.Message}");
             }
+            finally { _busy = false; }
         }
     }
 
@@ -183,20 +217,21 @@ public static class CityUpscale
             if (!UpscaleModelAsset.Exists)
             {
                 Say?.Invoke("도시 그림 업스케일링 모델(64MB)을 받는 중입니다...");
-                UpscaleModelAsset.DownloadAsync().GetAwaiter().GetResult();
+                _downloading = true;
+                try { UpscaleModelAsset.DownloadAsync().GetAwaiter().GetResult(); }
+                finally { _downloading = false; }
             }
-            // 코어 절반만 쓴다 — 게임이 끊기지 않게.
-            var options = new SessionOptions
-            {
-                IntraOpNumThreads = Math.Max(1, Environment.ProcessorCount / 2),
-                InterOpNumThreads = 1,
-            };
-            _session = new InferenceSession(UpscaleModelAsset.CachePath, options);
+            // CPU 면 코어 절반만 쓴다 — 게임이 끊기지 않게.
+            _session = OnnxGpu.Open(UpscaleModelAsset.CachePath, out bool gpu,
+                                    cpuThreads: Math.Max(1, Environment.ProcessorCount / 2), allowGpu: !_cpuOnly);
+            _gpu = gpu;
             _input = _session.InputMetadata.Keys.First();
+            _failed = false;
             return true;
         }
         catch (Exception ex)
         {
+            _failed = true;
             Say?.Invoke($"도시 그림 업스케일링 모델을 열지 못했습니다 — {ex.Message}");
             return false;
         }

@@ -34,7 +34,8 @@ namespace CostaDelSol.Droid.Game
         public static bool IsCurrent => true;
         public static Android.Content.Context? Activity => null;
         public static readonly Queue<Action> Work = new();
-        public static void Post(Action a) => Work.Enqueue(a);
+        public static string? LastPostStack; static readonly bool PostDbg = Environment.GetEnvironmentVariable("PUMPDBG") != null;
+        public static void Post(Action a) { if (PostDbg) LastPostStack = Environment.StackTrace; Work.Enqueue(a); }
         public static void OnUi(Action a) => a();
         public static Android.Graphics.Bitmap? Face(uint[]? bgra, int w = 80, int h = 96) =>
             bgra == null ? null : Android.Graphics.Bitmap.CreateBitmap(bgra.Select(v => (int)v).ToArray(), w, h, Android.Graphics.Bitmap.Config.Argb8888);
@@ -45,20 +46,27 @@ namespace CostaDelSol.Droid.Game
         public static void Pump(Func<bool> keepGoing)
         {
             var quiet = System.Diagnostics.Stopwatch.StartNew();
+            var dbgAt = System.Diagnostics.Stopwatch.StartNew();
+            bool dbg = Environment.GetEnvironmentVariable("PUMPDBG") != null;
             while (keepGoing())
             {
-                if (Work.Count > 0) { Script.Tick(); Work.Dequeue()(); quiet.Restart(); }
+                if (dbg && dbgAt.ElapsedMilliseconds > 3000)
+                {
+                    dbgAt.Restart();
+                    Log.W($"  [펌프] 일 {Work.Count} {(Work.Count > 0 ? string.Join("/", (Work.Peek().Target?.GetType().GetFields() ?? []).Select(f => f.GetValue(Work.Peek().Target)).OfType<Delegate>().Select(d => d.Method.DeclaringType?.FullName + "." + d.Method.Name)) : "")} 타이머 {string.Join(",", System.Windows.WpfHost.Timers.Where(t => t.IsEnabled).Select(t => t.Interval.TotalMilliseconds))} 그림바쁨 {System.Windows.WpfHost.RenderingBusy}\n{string.Join("\n", (LastPostStack ?? "").Split('\n').Skip(2).Take(14))} 창 {string.Join(",", System.Windows.WpfHost.Shown.Select(x => x.GetType().Name))}");
+                }
+                if (Work.Count > 0) { Script.Tick(); var sw0 = System.Diagnostics.Stopwatch.StartNew(); Work.Dequeue()(); if (dbg && sw0.ElapsedMilliseconds > 100) Log.W($"  [펌프] 느린 일 {sw0.ElapsedMilliseconds}ms"); quiet.Restart(); }
                 else
                 {
                     System.Windows.WpfHost.Tick();
-                    // 타이머뿐 아니라 화면 프레임에 매달린 일(원본 v1.2.6 낚시 · 입방체)도 도는 중으로 본다.
-                    bool ticking = System.Windows.WpfHost.Timers.Any(t => t.IsEnabled) || System.Windows.WpfHost.RenderingBusy;
+                    // 짧은 타이머(연출)만 — 세계지도 창의 0.5초 갱신처럼 늘 도는 느린 타이머는 기다리지 않는다. 타이머뿐 아니라 화면 프레임에 매달린 일(원본 v1.2.6 낚시 · 입방체)도 도는 중으로 본다.
+                    bool ticking = System.Windows.WpfHost.Timers.Any(t => t.IsEnabled && t.Interval.TotalMilliseconds < 400) || System.Windows.WpfHost.RenderingBusy;
                     if (ticking && quiet.ElapsedMilliseconds < Sim.Wpf.QuietMs) { Thread.Sleep(2); continue; }
                     Script.Tick();
                     if (Sim.Wpf.Idle is { } act) act(); else throw new Exception("모달이 끝나지 않는다(대본 없음)");
                     quiet.Restart();
                 }
-                System.Windows.WpfHost.Tick();
+                var sw1 = System.Diagnostics.Stopwatch.StartNew(); System.Windows.WpfHost.Tick(); if (dbg && sw1.ElapsedMilliseconds > 100) Log.W($"  [펌프] 느린 Tick {sw1.ElapsedMilliseconds}ms");
             }
         }
     }

@@ -88,6 +88,10 @@ internal sealed class GameButton : Border
             _run();
         };
 
+        // 글자 크기를 바꾸면 그 자리에서 다시 짓는다 — 화면에 붙어 있는 동안만 듣는다(닫힌 창의 단추가 붙들려 남지 않게).
+        Loaded += (_, _) => { GameUi.TextZoomChanged -= Build; GameUi.TextZoomChanged += Build; };
+        Unloaded += (_, _) => GameUi.TextZoomChanged -= Build;
+
         Build();
     }
 
@@ -187,7 +191,7 @@ internal sealed class GameButton : Border
             // 띠 위에 테만 겹친다(바탕 없음). 나중에 넣은 것이 위에 그려진다.
             Grid.SetColumnSpan(ring, 3);
             grid.Children.Add(ring);
-            if (_width > 0) band.Width = _width;
+            if (_width > 0) band.Width = _width * GameUi.TextZoom;   // 설정 「글자 크기」만큼 넓힌다 — 띠 안의 그리드와 같은 폭
             band.Margin = default;              // 바깥 여백은 이 감싸개가 든다
             Child = band;
         }
@@ -209,7 +213,7 @@ internal sealed class GameButton : Border
             ring.Child = label;
             Child = new Border
             {
-                Width = _width > 0 ? _width : double.NaN,
+                Width = _width > 0 ? _width * GameUi.TextZoom : double.NaN,
                 Background = GameUi.ItemFill,
                 BorderBrush = GameUi.ItemEdge,
                 BorderThickness = new Thickness(1),

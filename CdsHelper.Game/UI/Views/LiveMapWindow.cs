@@ -97,7 +97,25 @@ public sealed class LiveMapWindow : Window
         Func<(uint[] Pixels, int Width, int Height)?> Parchment,
         Func<int, int, bool?> IsLand,
         Func<IReadOnlyList<(string Name, double X, double Y, bool Library)>> Cities,
-        Func<IReadOnlyList<(string Name, double X, double Y, bool Found)>> Spots);
+        Func<IReadOnlyList<(string Name, double X, double Y, bool Found)>> Spots,
+        Func<double, double, string>? SailToCity = null,
+        Action<Window, double, double>? CityClick = null,
+        Action<Window, double, double>? CityPrices = null,
+        Func<double, double, string>? SailToSpot = null,
+        Func<(IReadOnlyList<(double X, double Y)> Route, int Index)?>? PlannedRoute = null);
+
+    // PlannedRoute — 자동항해 중이면 가고 있는 항로와 다음 꺾는 점 번호(요청). 남은 길을 지나온 뱃길과 다른 색으로 긋는다.
+
+    // SailToSpot — 지도 빈 곳을 오른쪽 단추로 눌러 「여기로 자동이동」을 고르면 그 칸으로 자동항해를 건다(요청).
+    // 받는 것은 칸 자리, 돌려주는 것은 못 걸었을 때의 까닭(걸렸으면 빈 글).
+
+    // CityPrices — 도시 오른쪽 단추 메뉴의 「시세」(요청). 그 도시의 시세 · 판매 물품 창을 띄운다.
+
+    // CityClick — 도시 고르기로 띄운 창(ShowCityPick)에서 도시 점 · 이름을 왼쪽 단추로 누르면 부른다(지도 창, 도시 칸 자리).
+    // 매입 정보의 「시세」가 그 도시에서 비싸게 팔리는 교역품을 띄우는 데 쓴다.
+
+    // SailToCity — 도시 점 · 이름을 오른쪽 단추로 눌러 「자동이동」을 고르면 그 자리 도시로 네비게이션처럼 자동이동을 건다(요청).
+    // 받는 것은 도시 칸 자리, 돌려주는 것은 알릴 말(빈 글이면 말 없음). 고르기 모드 · 지도 창 밖에서 연 것은 null 이다.
 
     /// <summary>휠로 오갈 배율 — 칸 하나가 화면 몇 점인지.</summary>
     private static readonly double[] Zooms = [0.25, 0.35, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12, 16];
@@ -119,6 +137,8 @@ public sealed class LiveMapWindow : Window
     private static readonly Brush Mine = Frozen(Color.FromRgb(0x20, 0x60, 0xFF));
     private static readonly Brush CityInk = Frozen(Color.FromRgb(0xF0, 0x90, 0x10));
     private static readonly Brush TrailInk = Frozen(Color.FromArgb(0xE0, 0xFF, 0xE0, 0x40));
+    /// <summary>자동항해로 갈 길 — 지나온 뱃길(노랑)과 갈리게 하늘색 점선.</summary>
+    private static readonly Brush PlanInk = Frozen(Color.FromArgb(0xE8, 0x40, 0xE0, 0xFF));
     private static readonly Brush Shade = Frozen(Color.FromArgb(0xA0, 0, 0, 0));
     private static readonly Brush AreaInk = Frozen(Color.FromRgb(0x60, 0x90, 0xFF));
     private static readonly Brush AreaFill = Frozen(Color.FromArgb(0x38, 0x20, 0x50, 0xFF));
@@ -140,6 +160,8 @@ public sealed class LiveMapWindow : Window
     private readonly Image _base = new() { Width = WorldW, Height = WorldH };
     private readonly Image _detail = new() { Visibility = Visibility.Collapsed };
     private readonly System.Windows.Shapes.Path _trail = new() { Stroke = TrailInk, IsHitTestVisible = false };
+    private readonly System.Windows.Shapes.Path _plan = new() { Stroke = PlanInk, IsHitTestVisible = false };
+    private string _planKey = "";
     private readonly Canvas _cityLayer = new();
     private readonly Canvas _spotLayer = new();
     private readonly Canvas _yetLayer = new();
@@ -196,6 +218,9 @@ public sealed class LiveMapWindow : Window
 
     private bool Picking => _pick != null;
 
+    /// <summary>도시 고르기로 띄웠는지(<see cref="ShowCityPick"/>) — 도시를 늘 보이고, 누르면 <see cref="Source.CityClick"/>.</summary>
+    private bool CityPicking => _src.CityClick != null;
+
     /// <summary>따라가기 — 고르기 모드에서는 늘 끈다.</summary>
     private bool Follow => !Picking && GameSettings.LiveMapFollow;
 
@@ -207,7 +232,7 @@ public sealed class LiveMapWindow : Window
     {
         _src = src;
         _pick = pick;
-        Title = Lang.T(pick != null ? "발견물 자리 고르기" : "세계지도");
+        Title = Lang.T(pick != null ? "발견물 자리 고르기" : src.CityClick != null ? "시세 — 도시 고르기" : "세계지도");
         Width = pick != null ? 1200 : 900;
         Height = pick != null ? 800 : 620;
         MinWidth = 420;
@@ -232,6 +257,7 @@ public sealed class LiveMapWindow : Window
         _world.Children.Add(_base);
         _world.Children.Add(_detail);
         _world.Children.Add(_trail);
+        _world.Children.Add(_plan);
         _world.Children.Add(_areaLayer);
         _world.Children.Add(_cityLayer);
         _world.Children.Add(_spotLayer);
@@ -324,7 +350,25 @@ public sealed class LiveMapWindow : Window
 #endif
             e.Handled = true;
         };
-        _viewport.MouseRightButtonUp += (_, e) => { if (Picking) { EndPan(); e.Handled = true; } };
+        _viewport.MouseRightButtonUp += (_, e) =>
+        {
+            if (Picking) { EndPan(); e.Handled = true; return; }
+            // 빈 곳 오른쪽 단추 — 「여기로 자동이동」(요청). 도시 점 · 이름표는 제 메뉴가 있어 거기서 뜬다.
+            if (_src.SailToSpot is not { } spot || e.Handled) return;
+            // 도시 점 · 이름표 위면 그 메뉴(자동이동 · 시세)에 맡긴다 — 여기서 삼키면 그 메뉴가 안 뜬다.
+            if (e.OriginalSource is FrameworkElement { Parent: var parent } && ReferenceEquals(parent, _cityLayer)) return;
+            var (cx, cy) = CellUnder(e.GetPosition(_viewport));
+            var go = new MenuItem { Header = Lang.T("여기로 자동이동") };
+            go.Click += (_, _) =>
+            {
+                string said = spot(cx + 0.5, cy + 0.5);
+                if (said.Length > 0) NoticeDialog.Show(this, said);
+                else { var owner = Owner; Close(); owner?.Activate(); }
+            };
+            var menu = new ContextMenu { Items = { go }, PlacementTarget = _viewport, Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
+            menu.IsOpen = true;
+            e.Handled = true;
+        };
 
         // 위 단추 줄 — 바탕 · 표식 켜고 끄기 · 따라가기 · 내 위치로 · 경로 지우기.
         var bar = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 4) };
@@ -346,7 +390,8 @@ public sealed class LiveMapWindow : Window
         _yetButton = Button("", () => { GameSettings.DiscoveryMapYet = !GameSettings.DiscoveryMapYet; Refresh(); }, 140);
         bar.Children.Add(_yetButton);
         _cityButton = Button("", () => { GameSettings.DiscoveryMapCities = !GameSettings.DiscoveryMapCities; Refresh(); }, 110);
-        bar.Children.Add(_cityButton);
+        // 도시 고르기에서는 도시를 늘 보이니 켜고 끄는 단추가 없다.
+        if (src.CityClick == null) bar.Children.Add(_cityButton);
         _followButton = Button("", () => SetFollow(!GameSettings.LiveMapFollow), 130);
         if (pick == null)
         {
@@ -388,6 +433,12 @@ public sealed class LiveMapWindow : Window
         var root = new DockPanel { LastChildFill = true, Margin = new Thickness(2) };
         DockPanel.SetDock(bar, Dock.Top);
         root.Children.Add(bar);
+        // 해역 탭 — 누르면 그 바다가 화면에 꽉 차게 옮기고 키운다(요청).
+        var regions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 4) };
+        foreach (var (name, x1, y1, x2, y2) in Regions)
+            regions.Children.Add(Button(name, () => ShowRegion(x1, y1, x2, y2), 110));
+        DockPanel.SetDock(regions, Dock.Top);
+        root.Children.Add(regions);
         var foot = new StackPanel();
         foot.Children.Add(_hover);
         foot.Children.Add(_status);
@@ -434,7 +485,12 @@ public sealed class LiveMapWindow : Window
                 CenterOn(WorldW / 2.0, WorldH / 2.0);
             }
             // 고르기 모드는 모달이라 그동안 배가 안 움직인다 — 바탕 · 표식을 0.5초마다 다시 볼 일이 없다.
+#if ANDROID
+            // 안드로이드: 시세 도시 고르기(ShowCityPick)도 모달이라 배가 안 움직인다 — 0.5초마다 창 전체를 다시 그리지 않게 시계를 안 건다.
+            if (pick == null && src.CityClick == null) _timer.Start();
+#else
             if (pick == null) _timer.Start();
+#endif
             Keyboard.Focus(_viewport);
         };
         if (pick != null)
@@ -486,6 +542,18 @@ public sealed class LiveMapWindow : Window
         if (GameWindow.Alive(owner) is { } alive) win.Owner = alive;
         _open = win;
         win.Show();
+    }
+
+    /// <summary>
+    /// 도시 고르기로 띄운다 — 도시를 누를 때마다 <see cref="Source.CityClick"/> 를 부르고, 닫을 때까지 기다린다.
+    /// 늘 떠 있는 세계지도 창(<see cref="Toggle"/>)과는 따로 연다.
+    /// </summary>
+    internal static void ShowCityPick(Window owner, Source src)
+    {
+        var win = new LiveMapWindow(src);
+        if (GameWindow.Alive(owner) is { } alive) win.Owner = alive;
+        win.Loaded += (_, _) => win._status.Text = Lang.T("시세를 볼 도시를 누르세요 — 휠로 키우고 줄이며, 끌어서 옮깁니다.");
+        win.ShowDialog();
     }
 
     /// <summary>떠 있으면 닫는다 — 게임을 새로 불러올 때 따위.</summary>
@@ -617,7 +685,7 @@ public sealed class LiveMapWindow : Window
         bool spots = GameSettings.LiveMapParchment ? GameSettings.DiscoveryMapSpots : GameSettings.LiveMapSpots;
         _spotLayer.Visibility = spots ? Visibility.Visible : Visibility.Collapsed;
         _yetLayer.Visibility = GameSettings.DiscoveryMapYet ? Visibility.Visible : Visibility.Collapsed;
-        _cityLayer.Visibility = GameSettings.DiscoveryMapCities ? Visibility.Visible : Visibility.Collapsed;
+        _cityLayer.Visibility = GameSettings.DiscoveryMapCities || CityPicking ? Visibility.Visible : Visibility.Collapsed;
         RefreshButtons();
         Apply();
     }
@@ -650,6 +718,7 @@ public sealed class LiveMapWindow : Window
             _trailVersion = ShipTrail.Version;
             DrawTrail();
         }
+        if (!Picking) DrawPlan();
 
         // 표식 — 찾은 것이 바뀌거나 도시가 서면 다시 찍는다.
         var cities = _src.Cities();
@@ -741,6 +810,43 @@ public sealed class LiveMapWindow : Window
         _detailFor = (x0, y0, cols, rows, scale);
     }
 
+    /// <summary>
+    /// 자동항해로 갈 길 — 배 자리에서 다음 꺾는 점부터 끝까지(요청). 지도는 가로로 이어져 있어 칸을 0~2500 으로 접고,
+    /// 접힌 자리(반 바퀴 넘게 뛰는 곳)에서 선을 끊는다. 배 자리 · 꺾는 점이 그대로면 다시 긋지 않는다.
+    /// </summary>
+    private void DrawPlan()
+    {
+        var plan = _src.PlannedRoute?.Invoke();
+        string key = plan is { } p && _shipAt is { } s ? $"{p.Route.GetHashCode()}|{p.Index}|{s.X:0.0}|{s.Y:0.0}" : "";
+        if (key == _planKey) return;
+        _planKey = key;
+        if (key.Length == 0) { _plan.Data = null; return; }
+
+        static double Fold(double x) { x %= WorldW; return x < 0 ? x + WorldW : x; }
+        var (route, index) = plan!.Value;
+        var points = new List<Point> { new(_shipAt!.Value.X, _shipAt.Value.Y) };
+        for (int i = Math.Max(0, index); i < route.Count; i++) points.Add(new Point(Fold(route[i].X), route[i].Y));
+
+        var geo = new StreamGeometry();
+        using (var g = geo.Open())
+        {
+            var run = new List<Point>();
+            void Flush()
+            {
+                if (run.Count >= 2) { g.BeginFigure(run[0], false, false); g.PolyLineTo(run.Skip(1).ToList(), true, true); }
+                run.Clear();
+            }
+            foreach (var pt in points)
+            {
+                if (run.Count > 0 && Math.Abs(pt.X - run[^1].X) > WorldW / 2) Flush();
+                run.Add(pt);
+            }
+            Flush();
+        }
+        geo.Freeze();
+        _plan.Data = geo;
+    }
+
     private void DrawTrail()
     {
         var geo = new StreamGeometry();
@@ -765,10 +871,65 @@ public sealed class LiveMapWindow : Window
         _spotLayer.Children.Add(_yetLayer);
 
         foreach (var c in cities)
+        {
             Mark(_cityLayer, c.X, c.Y, c.Library ? 9 : 7, CityInk, c.Library ? $"{Lang.T(c.Name)} ({Lang.T("도서관")})" : Lang.T(c.Name), Lang.T(c.Name));
+            if ((_src.SailToCity != null || _src.CityPrices != null) && !Picking) AttachCityMenu(_pins[^1].Dot, _pins[^1].Tag, c.X, c.Y);
+            if (_src.CityClick is { } click && !Picking) AttachCityClick(_pins[^1].Dot, _pins[^1].Tag, c.X, c.Y, click);
+        }
         foreach (var s in spots)
             Mark(s.Found ? _spotLayer : _yetLayer, s.X, s.Y, 7, s.Found ? Found : Yet, Lang.T(s.Name), Lang.T(s.Name),
                  s.Found ? null : YetText);
+    }
+
+    /// <summary>
+    /// 도시 점 · 이름표에 오른쪽 단추 메뉴 「자동이동」을 단다 — 고르면 네비게이션에서 그 도시를 고른 것처럼(가장 빠른 길) 자동이동이 걸린다.
+    /// 못 걸었으면(도시 안에 함대가 없다 · 바닷길이 없다 따위) 그 까닭을 안내 창으로 띄운다 — 칸 정보 줄은 꺼 두고 시작해 안 보일 수 있다.
+    /// </summary>
+    private void AttachCityMenu(FrameworkElement dot, TextBlock tag, double x, double y)
+    {
+        var menu = new ContextMenu();
+        if (_src.SailToCity is { } sail)
+        {
+            var go = new MenuItem { Header = Lang.T("자동이동") };
+            go.Click += (_, _) =>
+            {
+                string said = sail(x, y);
+                if (said.Length > 0) NoticeDialog.Show(this, said);
+                // 걸렸으면 지도를 닫는다 — 떠 있으면 지도에 가려 곧바로 떠나는 것이 안 보인다(요청).
+                else { var owner = Owner; Close(); owner?.Activate(); }
+            };
+            menu.Items.Add(go);
+        }
+        // 「시세」 — 그 도시에서 비싸게 팔리는 교역품 · 판매 물품 창(지도는 그대로 둔다).
+        if (_src.CityPrices is { } prices)
+        {
+            var price = new MenuItem { Header = Lang.T("시세") };
+            price.Click += (_, _) => prices(this, x, y);
+            menu.Items.Add(price);
+        }
+        dot.ContextMenu = menu;
+        tag.IsHitTestVisible = true;   // 이름표를 눌러도 메뉴가 뜨게(도시만 — 발견물 이름표는 그대로 손을 안 받는다)
+        tag.ContextMenu = menu;
+        tag.Cursor = Cursors.Hand;
+        dot.Cursor = Cursors.Hand;
+    }
+
+    /// <summary>
+    /// 도시 고르기 — 도시 점 · 이름표를 왼쪽 단추로 누르면 그 도시를 넘긴다. 누름을 여기서 받아 지도 끌기로 새지 않게 하고,
+    /// 넘기는 것은 누름이 끝난 뒤에 한다(그 손이 창을 띄워도 마우스 잡기가 꼬이지 않게).
+    /// </summary>
+    private void AttachCityClick(FrameworkElement dot, TextBlock tag, double x, double y, Action<Window, double, double> click)
+    {
+        void Down(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+            Dispatcher.BeginInvoke(() => click(this, x, y));
+        }
+        dot.MouseLeftButtonDown += Down;
+        tag.MouseLeftButtonDown += Down;
+        tag.IsHitTestVisible = true;
+        tag.Cursor = Cursors.Hand;
+        dot.Cursor = Cursors.Hand;
     }
 
     private void Mark(Canvas layer, double x, double y, double size, Brush fill, string tip, string name, Brush? ink = null)
@@ -806,6 +967,40 @@ public sealed class LiveMapWindow : Window
         }
         e.Handled = true;
         Apply();
+    }
+
+    /// <summary>
+    /// 해역 탭 — 이름과 그 바다를 덮는 칸 범위(지도 2500x1250). 범위는 도시 자리로 잡았다 —
+    /// 북유럽(런던 · 베르겐 · 스톡홀름), 지중해(리스본~이스탄불 · 알렉산드리아), 동남아시아(말라카 · 암보이나),
+    /// 동아시아(북경 · 한양 · 나가사키), 아메리카(베라크루스 · 아바나 · 리마 · 부에노스아이레스),
+    /// 아프리카(세우타~루안다 · 소팔라), 인도양(모잠비크 · 아덴 · 호르무즈 · 캘리컷 · 말라카).
+    /// </summary>
+    private static readonly (string Name, double X1, double Y1, double X2, double Y2)[] Regions =
+    [
+        ("북유럽", 1150, 150, 1520, 310),
+        ("지중해", 1160, 300, 1500, 430),
+        ("동남아시아", 1890, 500, 2250, 720),
+        ("동아시아", 1950, 290, 2260, 530),
+        ("아메리카", 500, 380, 1060, 900),
+        ("아프리카", 1150, 370, 1600, 900),
+        ("인도양", 1480, 400, 1990, 790),
+    ];
+
+    /// <summary>그 범위가 화면에 다 들어가는 가장 큰 배율로 키우고 가운데에 둔다. 따라가기는 끈다(배로 되돌아가지 않게).</summary>
+    private void ShowRegion(double x1, double y1, double x2, double y2)
+    {
+        if (Follow) SetFollow(false);
+        int fit = 0;
+        for (int i = 0; i < Zooms.Length; i++)
+            if ((x2 - x1) * Zooms[i] <= ViewW && (y2 - y1) * Zooms[i] <= ViewH) fit = i;
+        _zoom = fit;
+        CenterOn((x1 + x2) / 2, (y1 + y2) / 2);
+    }
+
+    /// <summary>화면 밖 시험(<c>CDS_MAPREGION=&lt;번호&gt;</c>) — 그 해역 탭을 누른 것처럼.</summary>
+    internal void ShowRegionForTest(int index)
+    {
+        if (index >= 0 && index < Regions.Length) ShowRegion(Regions[index].X1, Regions[index].Y1, Regions[index].X2, Regions[index].Y2);
     }
 
     private void CenterOn(double x, double y, bool apply = true)
@@ -879,6 +1074,8 @@ public sealed class LiveMapWindow : Window
             Canvas.SetTop(_ship, at.Y - s / 2);
         }
         _trail.StrokeThickness = 2.5 / Z;
+        _plan.StrokeThickness = 2.5 / Z;
+        _plan.StrokeDashArray = [3, 2];
 
         if (_parchmentActual || Z < DetailFrom) _detail.Visibility = Visibility.Collapsed;
         else QueueDetail();
@@ -895,7 +1092,9 @@ public sealed class LiveMapWindow : Window
             return;
         }
         string where = _shipAt is { } me ? $"   ·   {Lang.T("내 위치")} {LatLon(me.X, me.Y)}" : "";
-        _status.Text = $"{Lang.T("배율")} x{Z:0.##}{where}   ·   " + Lang.T("휠 키우기·줄이기 · 끌어서 옮기기 · 노랑 지나온 뱃길 · 파랑 내 위치");
+        _status.Text = $"{Lang.T("배율")} x{Z:0.##}{where}   ·   " + Lang.T(CityPicking
+            ? "도시를 누르면 그 도시에서 비싸게 팔리는 교역품 · 휠 키우기·줄이기 · 끌어서 옮기기"
+            : "휠 키우기·줄이기 · 끌어서 옮기기 · 노랑 지나온 뱃길 · 하늘색 갈 길 · 파랑 내 위치");
     }
 
     /// <summary>마우스를 올린 칸 — 좌표 · 바다/육지 · 가까운 도시.</summary>

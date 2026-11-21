@@ -244,6 +244,13 @@ public sealed class ModDialog : GameWindow
         }
 
         // 발견물 지도 — 커맨드 「정보」 줄과 단축키를 함께 여닫는다. 원본 항해지도는 표식을 안 찍는다.
+        // 글자 크기 — 게임 띠의 글자와 띠 높이를 함께 키운다(요청). 띠는 늘리지 않고 가운데 줄을 되풀이해 높인다.
+        ui.Children.Add(Select("글자 크기",
+            [.. GameSettings.TextScaleChoices.Select(p => p == 100 ? "100% (원본)" : $"{p}%")],
+            Math.Max(0, Array.IndexOf(GameSettings.TextScaleChoices, GameSettings.TextScale)),
+            i => { GameSettings.TextScale = GameSettings.TextScaleChoices[i]; GameUi.NotifyTextZoom(); },
+            "메뉴 줄 · 단추 · 화면 위 상태 띠의 게임 글자를 키웁니다. 띠도 테두리 무늬는 그대로 두고 그만큼 높아집니다."
+            + " 원본 도트 글자를 매끈하게 키워 찍습니다. 단추와 상태 띠는 바로 바뀌고, 창 크기 · 제목 줄은 창을 다시 열면 맞춰집니다."));
         ui.Children.Add(Toggle("발견물 지도", GameSettings.ShowDiscoveryMapMenu,
             on => GameSettings.ShowDiscoveryMapMenu = on,
             "처음 하시는 분께 추천합니다. 세계지도 위에 발견물과 도시가 어디 있는지 한눈에 보여 주는 창입니다."
@@ -514,6 +521,13 @@ public sealed class ModDialog : GameWindow
         if (Engine.HardcoreRules.Current?.Invoke() is { Hardcore: true }) autoSave.IsEnabled = false;
         save.Children.Add(autoSave);
 
+        // 세이브 칸 고르기 — 저장할 때 열 칸 가운데 적을 칸을 고른다(요청).
+        save.Children.Add(Toggle("세이브 칸 고르기", GameSettings.SaveSlotPick,
+            on => GameSettings.SaveSlotPick = on,
+            "원본에 없는 것입니다 — 저장할 때 1~10번 칸 가운데 적을 칸을 고릅니다. 찬 칸을 고르면 겹쳐 쓸지 한 번 더 묻습니다."
+            + " 고른 칸은 오래돼도 지워지지 않아, 중요한 이벤트 앞을 남겨 두고 나중에 「로드」로 다시 볼 수 있습니다."
+            + " 끄면 예전처럼 저장할 때마다 새 칸에 적고, 10개를 넘으면 가장 오래된 것부터 지웁니다."));
+
         // 커스텀 BGM — 등록한 곡으로 갈아 끼운다. 곡 등록 창은 햄버거에 있던 것을 이 줄 밑 단추로 옮겼다.
         general.Children.Add(CustomBgmControls());
         general.Children.Add(CustomSfxControls());
@@ -565,16 +579,7 @@ public sealed class ModDialog : GameWindow
             Math.Max(0, Array.IndexOf(GameSettings.CityPicZoomChoices, GameSettings.CityPicZoom)),
             i => GameSettings.CityPicZoom = GameSettings.CityPicZoomChoices[i],
             "모드 「도시 그림 크게」에서 도시 그림을 보통 크기의 몇 배로 띄울지 고릅니다."));
-        hires.Children.Add(Toggle("도시 그림 업스케일링", GameSettings.CityPicUpscale,
-            on =>
-            {
-                GameSettings.CityPicUpscale = on;
-                if (on) WorldMapWindow.Current?.StartCityUpscale();
-            },
-            "원본에 없는 것입니다 — 도시 그림을 원본 400x320 도트 대신, 업스케일 모델(Rebout Blend 4x)로 네 배 키운 그림으로 그립니다."
-            + " 건물 윤곽이 매끈해지고 시가지 · 땅의 잔무늬는 붓질처럼 풀립니다. 그림은 이 PC 에서 게임을 켜 둔 동안 뒤에서 한 장씩 만들어"
-            + " 쌓아 둡니다(한 장에 수십 초, 처음 켤 때 모델 64MB 를 받습니다). 입항한 도시는 먼저 만들고, 다 되면 그 자리에서 바뀝니다."
-            + " 「도시 그림 크게」와 함께 쓰면 좋습니다."));
+        hires.Children.Add(CityUpscaleControls());
 #endif
         hires.Children.Add(Toggle("선박 업스케일링", GameSettings.ShipUpscale,
             on =>
@@ -666,10 +671,23 @@ public sealed class ModDialog : GameWindow
 
         // 수에즈 운하 — 지중해와 수에즈만 사이에 바닷길.
         general.Children.Add(Toggle("수에즈 운하", GameSettings.SuezCanal,
-            on => { GameSettings.SuezCanal = on; WorldMapWindow.Current?.RefreshSuezCanal(); },
+            on => { GameSettings.SuezCanal = on; WorldMapWindow.Current?.RefreshCanals(); },
             "원본에 없는 것입니다(운하는 1869년) — 포트사이드와 수에즈 사이 지협에 두 칸 폭의 바닷길을 뚫어, 지중해에서 홍해로"
             + " 배로 곧장 지나갈 수 있게 합니다.",
             images: ["suez-canal.png"]));
+
+        // 파나마 운하 — 카리브해와 파나마만 사이에 바닷길(요청).
+        general.Children.Add(Toggle("파나마 운하", GameSettings.PanamaCanal,
+            on => { GameSettings.PanamaCanal = on; WorldMapWindow.Current?.RefreshCanals(); },
+            "원본에 없는 것입니다(운하는 1914년) — 파나마 바로 옆 지협에 두 칸 폭의 바닷길을 뚫어, 카리브해에서 태평양으로"
+            + " 배로 곧장 지나갈 수 있게 합니다. 남아메리카 끝을 돌아가지 않아도 됩니다."));
+
+        // 모든 도시 등장 — 신대륙 식민 도시를 등장 연도와 상관없이 다 세운다(건의).
+        general.Children.Add(Toggle("모든 도시 등장", GameSettings.AllCities,
+            on => { GameSettings.AllCities = on; WorldMapWindow.Current?.RefreshFoundedCities(); },
+            "원본에 없는 것입니다 — 아메리카 등 나중에 생기는 신도시를 등장 연도와 상관없이 모두 지도에 세웁니다."
+            + " 끄면 원래 등장 연도대로 돌아가는데, 켜 둔 동안 등장 연도가 된 도시는 그대로 남습니다."
+            + " 멕시코는 아스텍 이벤트로만 섭니다."));
 
         // 교역품별 시세 — 도시마다 물건마다 시세를 따로 둔다. 시세 꼼수를 막으려고 켠 채로 시작한다.
         general.Children.Add(Toggle("교역품별 시세", GameSettings.GoodsMarkets, on => GameSettings.GoodsMarkets = on,
@@ -752,6 +770,14 @@ public sealed class ModDialog : GameWindow
             i => GameSettings.PortDays = i + GameSettings.MinPortDays,
             $"항구·마을에 들어가고 나올 때 각각 지나는 날수. 원본 기본값 {GameSettings.DefaultPortDays}일입니다."
             + " 바꾼 값은 다음 출입부터 곧바로 듭니다."));
+
+        // 해상전 배속 — 포격 · 이동 · 백병전 몸짓을 빨리 돌린다(요청).
+        rows.Children.Add(Select("해상전 배속",
+            [.. GameSettings.SeaBattleSpeeds.Select((s, i) => i == 0 ? $"x{s} (원본)" : $"x{s}")],
+            GameSettings.SeaBattleSpeed,
+            i => GameSettings.SeaBattleSpeed = i,
+            "원본에 없는 것입니다 — 해상전에서 배가 움직이고 포를 쏘고 백병전을 벌이는 몸짓을 이 배수만큼 빨리 돌립니다."
+            + " 셈과 결과는 그대로이고, 바꾼 값은 해상전 중에도 곧바로 듭니다."));
 
         // 인물 이동 — 떠날지 굴리는 때와 확률. 원본은 매월 1일 5분의 1이다.
         // 첫 줄(0)이 원본 「매월 1일」이고, 그 뒤 줄 번호가 곧 날수다.
@@ -1238,7 +1264,7 @@ public sealed class ModDialog : GameWindow
         open.HorizontalAlignment = HorizontalAlignment.Left;
         open.Margin = new Thickness(0, 10, 0, 2);
         Watch(open, "누적 캐릭터",
-            "원본에 없는 것입니다 — 은퇴해 누적 캐릭터로 올라간 제독(최대 5명)을 얼굴 · 이름 · 나라 · 은퇴 날짜 · 명성과 함께 늘어놓습니다."
+            "원본에 없는 것입니다 — 은퇴해 누적 캐릭터로 올라간 제독(최대 10명, 원본은 5명)을 얼굴 · 이름 · 나라 · 은퇴 날짜 · 명성과 함께 늘어놓습니다."
             + " 한 사람씩 「삭제」하거나, 지우지 않고 「등장 안 함」을 켜 다음 게임부터 등장시키지 않을 수 있습니다."
             + " 지금 게임에 나와 있는 사람을 지우면 지금 게임에서도 사라지고, 세이브를 불러와도 돌아오지 않습니다."
             + " 원본은 한 사람씩 지울 수 없고, NEW GAME 에서 「등장시키지 않는다」를 고른 주인공이 은퇴할 때 다섯을 한꺼번에 지울 뿐입니다.");
@@ -1613,6 +1639,81 @@ public sealed class ModDialog : GameWindow
         group.Children.Add(line);
         return group;
     }
+
+#if !ANDROID
+    /// <summary>
+    /// 도시 그림 업스케일링 켜기와 그 밑의 진행 줄 — 뒤에서 키우는 동안 게임이 느려질 수 있어 얼마나 남았는지 보인다(요청).
+    /// 창이 떠 있는 동안 1초마다 <see cref="Local.Helpers.CityUpscale.Progress"/> 를 읽는다.
+    /// </summary>
+    private UIElement CityUpscaleControls()
+    {
+        var box = Toggle("도시 그림 업스케일링", GameSettings.CityPicUpscale,
+            on =>
+            {
+                GameSettings.CityPicUpscale = on;
+                if (on) WorldMapWindow.Current?.StartCityUpscale();
+            },
+            "원본에 없는 것입니다 — 도시 그림을 원본 400x320 도트 대신, 업스케일 모델(Rebout Blend 4x)로 네 배 키운 그림으로 그립니다."
+            + " 건물 윤곽이 매끈해지고 시가지 · 땅의 잔무늬는 붓질처럼 풀립니다. 그림은 이 PC 에서 게임을 켜 둔 동안 뒤에서 한 장씩 만들어"
+            + " 쌓아 둡니다(한 장에 수십 초, 처음 켤 때 모델 64MB 를 받습니다). 입항한 도시는 먼저 만들고, 다 되면 그 자리에서 바뀝니다."
+            + " 만드는 동안 게임이 느려질 수 있습니다 — 끄면 멈추고, 다시 켜면 남은 것부터 이어서 만듭니다. 진행은 아래 줄에 보입니다."
+            + " 「도시 그림 크게」와 함께 쓰면 좋습니다.");
+
+        const double barWidth = 220;
+        var fill = new Border { Width = 0, HorizontalAlignment = HorizontalAlignment.Left, Background = GameUi.DarkFieldSelect };
+        var bar = new Border
+        {
+            Width = barWidth, Height = 8, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 0),
+            Background = GameUi.DarkFieldFill,
+            BorderBrush = GameUi.DarkFieldEdge, BorderThickness = new Thickness(1),
+            Child = fill,
+        };
+        var text = new TextBlock
+        {
+            Foreground = GameUi.Text, Opacity = 0.8, FontSize = 13, Margin = new Thickness(0, 3, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var line = new StackPanel { Margin = new Thickness(22, 0, 0, 4) };
+        line.Children.Add(bar);
+        line.Children.Add(text);
+        Watch(line, "도시 그림 업스케일링 진행",
+            "뒤에서 키운 도시 그림 수입니다. 이미 만들어 둔 그림도 셉니다. 끄면 멈추고, 다시 켜면 남은 것부터 이어서 만듭니다.");
+
+        void Refresh()
+        {
+            bool on = box.IsChecked == true;
+            line.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            if (!on) return;
+            var p = Local.Helpers.CityUpscale.Progress;
+            double ratio = p.Total > 0 ? Math.Clamp((double)p.Checked / p.Total, 0, 1) : 0;
+            fill.Width = (barWidth - 2) * ratio;
+            text.Text = p switch
+            {
+                { Downloading: true } => Local.Helpers.Lang.T("모델(64MB)을 받는 중입니다..."),
+                { Failed: true } => Local.Helpers.Lang.T("모델을 열지 못했습니다."),
+                { Total: 0 } => Local.Helpers.Lang.T("게임을 시작하면 뒤에서 만들기 시작합니다."),
+                { Filling: true } => Local.Helpers.Lang.T($"{p.Checked}/{p.Total}장 · 이번에 {p.Made}장 만듦")
+                    + (Local.Helpers.CityUpscale.OnGpu is { } gpu ? (gpu ? " · GPU" : " · CPU") : "")
+                    + (p.Busy ? Local.Helpers.Lang.T(" — 만드는 중(게임이 느려질 수 있습니다)") : ""),
+                _ when p.Checked >= p.Total => Local.Helpers.Lang.T($"{p.Total}장 모두 준비됐습니다."),
+                _ => Local.Helpers.Lang.T($"{p.Checked}/{p.Total}장 · 멈춤"),
+            };
+        }
+
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        timer.Tick += (_, _) => Refresh();
+        box.Checked += (_, _) => Refresh();
+        box.Unchecked += (_, _) => Refresh();
+        line.Loaded += (_, _) => { Refresh(); timer.Start(); };
+        Closed += (_, _) => timer.Stop();
+        Refresh();
+
+        var group = new StackPanel();
+        group.Children.Add(box);
+        group.Children.Add(line);
+        return group;
+    }
+#endif
 
     /// <summary>자동 보급 켜기와 그 밑의 양 고르기(10일분 · 최대). 끄면 고르기도 흐려진다.</summary>
     private UIElement AutoSupplyControls()

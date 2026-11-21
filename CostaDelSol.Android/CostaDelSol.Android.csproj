@@ -97,6 +97,8 @@
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GameFont.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GameFont.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\GamePalette.cs" Link="Shared\CdsHelper.Game\Local\Helpers\GamePalette.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\FrameArt.cs" Link="Shared\CdsHelper.Game\UI\Views\FrameArt.cs" />
+        <Compile Include="..\CdsHelper.Game\Engine\Sea\Canals.cs" Link="Shared\CdsHelper.Game\Engine\Sea\Canals.cs" />
+        <Compile Include="..\CdsHelper.Game\UI\Views\CityPriceDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\CityPriceDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\AccCharacterDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\AccCharacterDialog.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\CropBox.cs" Link="Shared\CdsHelper.Game\UI\Views\CropBox.cs" />
         <Compile Include="..\CdsHelper.Game\Engine\Table\UserItems.cs" Link="Shared\CdsHelper.Game\Engine\Table\UserItems.cs" />
@@ -160,7 +162,6 @@
         <Compile Include="..\CdsHelper.Game\UI\Views\ShipPickDialog.cs" Link="Shared\CdsHelper.Game\UI\Views\ShipPickDialog.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\ShipStill.cs" Link="Shared\CdsHelper.Game\Local\Helpers\ShipStill.cs" />
         <Compile Include="..\CdsHelper.Game\Local\Helpers\StandardText.cs" Link="Shared\CdsHelper.Game\Local\Helpers\StandardText.cs" />
-        <Compile Include="..\CdsHelper.Game\Engine\Sea\SuezCanal.cs" Link="Shared\CdsHelper.Game\Engine\Sea\SuezCanal.cs" />
         <Compile Include="..\CdsHelper.Game\Engine\Town\TavernRumorEdits.cs" Link="Shared\CdsHelper.Game\Engine\Town\TavernRumorEdits.cs" />
         <Compile Include="..\CdsHelper.Game\Engine\Disev\TownLines.cs" Link="Shared\CdsHelper.Game\Engine\Disev\TownLines.cs" />
         <Compile Include="..\CdsHelper.Game\UI\Views\UiFont.cs" Link="Shared\CdsHelper.Game\UI\Views\UiFont.cs" />

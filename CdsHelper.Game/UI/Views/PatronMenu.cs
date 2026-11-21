@@ -423,7 +423,11 @@ internal sealed class PatronMenu(Window view, Engine.Game game, string cityName,
 
         // 이 후원자가 좋아하는 갈래의 힌트는 갈색(#DEC6AD) 바탕으로 도드라지게 한다 — 설득이
         // 갈래 취향을 그대로 따지므로(후원자 정보의 「발견물의 취향」) 고르기 전에 보이는 편이 낫다.
-        var liked = mine.Select(id => _game.Hints?.Find(id) is { } h && patron.Likes(h.Category)).ToList();
+        // 판정(Decide)과 같은 후원자 표 취향을 본다 — 개발도구 · 팩으로 고친 취향은 표(SponsorEdits)에만 얹혀서,
+        // patrons.json 의 옛 취향을 보던 예전에는 고친 갈래가 아니라 원래 갈래가 칠해졌다(버그 리포트 #66).
+        var sponsorRow = _game.Sponsors?.FindByName(patron.Name);
+        var liked = mine.Select(id => _game.Hints?.Find(id) is { } h
+                                      && (sponsorRow is { } sr ? Persuasion.Likes(sr.Tastes, h.Category) : patron.Likes(h.Category))).ToList();
 
         // 「다른 이야기는 없는가?」면 <b>목록을 다시 띄운다</b>(0x004AE8E0 의 되풀이). 한 번 내민 힌트는
         // 그 줄을 막아 두고(0x004AE993), 아직 안 내민 것이 남아 있는 동안 되풀이한다(0x004AE99A).
@@ -1104,7 +1108,9 @@ internal sealed class PatronMenu(Window view, Engine.Game game, string cityName,
             // 나머지는 후원자가 가져가 일람에서 사라진다 — 발견물 아이템은 보고 전까지 소지품에 없던 것이다.
             // 말투 셋(0x0052FBE0 · 0x0052FC00 · 0x0052FC60) 뒤에 「%s%s 손에 넣었다!」(0x0052FCB0)이고,
             // 넘치면 물릴 수 없는 버리기 창이다(0x004B1710).
-            if (row.GivesItem && _game.Items?.Find(row.ItemId) is { } gift
+            // 감찰관 매수로 그 물건을 이미 받았으면 둘 다 건너뛴다.
+            bool kept = _player.HasKeptEvidence(row.Id);
+            if (row.GivesItem && !kept && _game.Items?.Find(row.ItemId) is { } gift
                 && gift.Category == Palace.KeepsakeCategory)
             {
                 int s = StyleOf(patron);
@@ -1116,7 +1122,7 @@ internal sealed class PatronMenu(Window view, Engine.Game game, string cityName,
             }
             // 모드 「후원자에게 무기 · 방어구 받기」 — 원본은 서적 말고는 후원자가 가져가, 엑스칼리버 같은 무기 · 방어구를
             // 가지려면 계약 없이 찾아 항구에서 발표해야 했다. 가지겠다면 남은 사례를 친밀도만큼 깎는다(Palace.ArmsCut).
-            else if (row.GivesItem && Local.Settings.GameSettings.PatronGivesArms
+            else if (row.GivesItem && !kept && Local.Settings.GameSettings.PatronGivesArms
                      && _game.Items?.Find(row.ItemId) is { Category: ItemTable.WeaponCategory or ItemTable.ArmorCategory } arms)
             {
                 int cut = Palace.ArmsCut(_player.ClosenessOf(patron.Name));
@@ -2587,6 +2593,8 @@ internal sealed class PatronMenu(Window view, Engine.Game game, string cityName,
             if (_game.Discoveries?.Table?.Find(id) is { GivesItem: true } row) got.Add(row.ItemId);
 
         ItemGain.AddForced(_view, _game, got);
+        // 받은 것을 적어 둔다 — 숨긴 발견물은 알려지지 않은 채라 나중에 항구에서 발표하면 물건이 또 들어오던 것.
+        _player.KeepEvidence(_player.HiddenDiscoveries);
         _player.ClearHidden();
     }
 

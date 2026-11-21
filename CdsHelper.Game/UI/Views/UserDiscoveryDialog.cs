@@ -91,7 +91,7 @@ public sealed class UserDiscoveryDialog : GameWindow
 
     /// <summary>칸을 고치는 단추들 — 예제 · 잠긴 것을 볼 때 끈다.</summary>
     private readonly List<Button> _editors = [];
-    private readonly Button _save, _remove, _export, _unlock, _unlockDrop;
+    private readonly Button _save, _remove, _export, _upload, _unlock, _unlockDrop;
 
     private UserDiscoveries.Entry? _editing;
     private (uint[] Bgra, int Width, int Height)? _newPicture;
@@ -106,6 +106,9 @@ public sealed class UserDiscoveryDialog : GameWindow
     private readonly TextBox _itemName = Box(), _itemBuy = Box(90), _itemSell = Box(90), _itemEffect = Box(60), _itemAuthor = Box();
     private readonly TextBox _itemDescription = Area(60);
     private readonly ComboBox _itemCategory = new() { Width = 160 };
+
+    /// <summary>아이템 그림의 배경 — 양피지(기본) · 없음. 고르면 그림 칸 바탕도 그것으로 보인다.</summary>
+    private readonly ComboBox _itemBackdrop = new() { Width = 160 };
 
     /// <summary>아이템 그림 — 120x120 을 두 배로 보이며 끌고 굴려 자리를 고른다. 남는 자리는 투명이다.</summary>
     private readonly CropBox _itemPicture = new(UserItems.PictureWidth, UserItems.PictureHeight, 2, Brushes.Transparent);
@@ -220,6 +223,17 @@ public sealed class UserDiscoveryDialog : GameWindow
         bar.Children.Add(_remove);
         bar.Children.Add(_export);
         bar.Children.Add(Push("불러오기…", Import));
+        // 클라우드 공유 — 받는 곳이 있는 판(릴리즈)만 단추를 낸다.
+        _upload = Push("클라우드에 올리기…", Upload);
+#if !ANDROID // 안드로이드판은 클라우드 공유를 뺐다
+        if (DiscoveryShare.Available)
+#else
+        if (false)
+#endif
+        {
+            bar.Children.Add(_upload);
+            bar.Children.Add(Push("공유 발견물…", OpenShared));
+        }
 
         var body = new DockPanel();
         DockPanel.SetDock(_list, Dock.Left);
@@ -289,7 +303,7 @@ public sealed class UserDiscoveryDialog : GameWindow
         _category.IsEnabled = _land.IsEnabled = _open.IsEnabled = _license.IsEnabled = _hasHint.IsEnabled = on;
         foreach (var button in _editors) button.IsEnabled = on;
         _save.IsEnabled = on;
-        _remove.IsEnabled = _export.IsEnabled = !_example;
+        _remove.IsEnabled = _export.IsEnabled = _upload.IsEnabled = !_example;
 
         bool locked = _editing is { } e && UserDiscoveries.IsLocked(e);
         _password.IsEnabled = !_example;
@@ -388,7 +402,10 @@ public sealed class UserDiscoveryDialog : GameWindow
         _hintDeadline.Text = $"{e.HintDeadline}";
         _hintText.Text = e.HintText;
         ShowRumors(UserDiscoveries.RumorsOf(e));
-        _book.Text = e.Book;
+        // 더한 책을 가리키면 그 책의 지금 제목을 보인다(책 이름을 고쳤어도).
+        _bookId = e.BookId;
+        _book.Text = BookEdits.ByUuid(e.BookId) is { } linkedBook ? linkedBook.Title : e.Book;
+        _bookIdTitle = _book.Text;
         _description.Text = e.Description;
         _scene.Text = string.Join("\n", (e.Lines ?? []).Select(SceneText));
         _credit.Text = e.Credit;
@@ -513,7 +530,7 @@ public sealed class UserDiscoveryDialog : GameWindow
             X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Chance = Math.Max(1, chance),
             HintName = _hintName.Text.Trim(), HintGrade = Math.Clamp(grade, 1, 3), HintCategory = Math.Max(0, hintCategory),
             HintFunds = Math.Max(0, funds), HintDeadline = Math.Max(1, deadline), HintText = _hintText.Text.Trim(),
-            Rumors = rumors, Book = _book.Text.Trim(),
+            Rumors = rumors, Book = _book.Text.Trim(), BookId = _book.Text == _bookIdTitle ? _bookId : "",
             Description = _description.Text.Trim(), Lines = ParseScene(_scene.Text),
             Credit = _credit.Text.Trim(), Author = _author.Text.Trim(),
             License = _license.Text.Trim() is { Length: > 0 } license ? license : UserDiscoveries.DefaultLicense,
@@ -703,7 +720,29 @@ public sealed class UserDiscoveryDialog : GameWindow
         if (pick.ShowDialog(this) != true) return;
         _newMovie = pick.FileName;
         _movie.Text = System.IO.Path.GetFileName(pick.FileName);
-        Tell("동영상을 골랐습니다 — 장면에 「[동영상]」 줄을 넣어야 재생되고, 「저장」을 눌러야 적힙니다. 내보내면 파일에 함께 담깁니다.");
+        Tell(AddMovieLine()
+            ? "동영상을 골랐습니다 — 장면에 「[동영상]」 줄을 넣었습니다. 원하는 자리로 옮기고 「저장」을 눌러 주세요. 내보내면 파일에 함께 담깁니다."
+            : "동영상을 골랐습니다 — 「저장」을 눌러야 적힙니다. 내보내면 파일에 함께 담깁니다.");
+    }
+
+    /// <summary>
+    /// 장면에 「[동영상]」 줄이 없으면 넣는다 — 그림은 기본 장면에 「[그림]」 줄이 들어 있지만 동영상은 손으로 적어야 해서
+    /// 빠뜨리기 쉬웠다(제보). 「[그림]」 앞, 없으면 「[발견]」 앞, 그것도 없으면 맨 끝. 넣었으면 true.
+    /// </summary>
+    private bool AddMovieLine()
+    {
+        var lines = _scene.Text.Replace("\r\n", "\n").Split('\n').ToList();
+        if (lines.Any(l => l.Trim() == "[동영상]")) return false;
+        int at = lines.FindIndex(l => l.Trim() == "[그림]");
+        if (at < 0) at = lines.FindIndex(l => l.TrimStart().StartsWith("[발견]"));
+        if (at < 0)
+        {
+            while (lines.Count > 0 && lines[^1].Trim().Length == 0) lines.RemoveAt(lines.Count - 1);
+            at = lines.Count;
+        }
+        lines.Insert(at, "[동영상]");
+        _scene.Text = string.Join("\n", lines);
+        return true;
     }
 
     private void DropMovie()
@@ -711,7 +750,11 @@ public sealed class UserDiscoveryDialog : GameWindow
         if (_editing == null) return;
         _newMovie = "";
         _movie.Text = "(없음)";
-        Tell("동영상을 뺍니다 — 「저장」을 눌러야 적힙니다.");
+        // 고를 때 넣어 준 「[동영상]」 줄도 함께 뺀다 — 동영상 없이 남으면 아무것도 안 띄우는 줄이다.
+        var lines = _scene.Text.Replace("\r\n", "\n").Split('\n').ToList();
+        bool had = lines.RemoveAll(l => l.Trim() == "[동영상]") > 0;
+        if (had) _scene.Text = string.Join("\n", lines);
+        Tell(had ? "동영상을 빼고 장면의 「[동영상]」 줄도 지웠습니다 — 「저장」을 눌러야 적힙니다." : "동영상을 뺍니다 — 「저장」을 눌러야 적힙니다.");
     }
 
     private void Export()
@@ -741,6 +784,45 @@ public sealed class UserDiscoveryDialog : GameWindow
         Refresh(entry?.Uuid ?? _editing?.Uuid);
         RefreshItems(_itemEditing?.Uuid);
         Tell(message);
+    }
+
+    /// <summary>
+    /// 고른 발견물을 클라우드에 올린다 — 저장해 둔 것을 내보내기 파일로 묶어 올린다. 잠긴 것은 비밀번호를 풀어야 올린다
+    /// (남의 것을 불러와 제 것처럼 올리지 않게). 올리기 전 창이 정식 버전에 넣어도 좋은지 묻는다.
+    /// </summary>
+    private async void Upload()
+    {
+        if (_example || _editing is not { } e) return;
+        if (UserDiscoveries.All.All(l => l.Entry.Uuid != e.Uuid)) { Tell("먼저 「저장」해 주세요."); return; }
+        if (UserDiscoveries.IsLocked(e) && !_unlocked.Contains(e.Uuid)) { Tell("잠긴 발견물은 비밀번호로 잠금을 풀어야 올릴 수 있습니다."); return; }
+        _upload.IsEnabled = false;
+        try
+        {
+            Tell("공유 목록을 확인하는 중입니다…");
+#if !ANDROID
+            bool update = (await DiscoveryShare.List())?.Any(s => s.Uuid == e.Uuid && s.Mine) == true;
+            if (ShareUploadDialog.Ask(this, e.Name, e.License, update) is not { } official) { Tell(""); return; }
+            Tell("올리는 중입니다…");
+            Tell(await DiscoveryShare.Upload(e.Uuid, official) is { } why
+                ? why
+                : $"「{e.Name}」 을 클라우드에 올렸습니다 — 저장해 둔 내용으로 올렸습니다.");
+#else
+            await Task.CompletedTask;
+#endif
+        }
+        finally { _upload.IsEnabled = !_example; }
+    }
+
+    /// <summary>「공유 발견물」 창 — 받아서 들인 것이 있으면 목록을 다시 읽는다.</summary>
+    private void OpenShared()
+    {
+#if !ANDROID // 안드로이드판은 클라우드 공유를 뺐다
+        if (SharedDiscoveryDialog.Open(this, _game) is { } got)
+        {
+            Refresh(got);
+            RefreshItems(_itemEditing?.Uuid);
+        }
+#endif
     }
 
     /// <summary>비밀번호로 잠금을 푼다 — 이 창을 연 동안만 풀려 있다.</summary>
@@ -918,12 +1000,19 @@ public sealed class UserDiscoveryDialog : GameWindow
             : string.Join(", ", ids.Select(id => _game?.CityName(id) is { Length: > 0 } name ? name : $"도시 {id}"));
     }
 
+    /// <summary>
+    /// 고른 책의 고유 번호 — 더한 책이면 그 책의 Uuid, 원본 책이면 ""(제목으로 잇는다). 책 칸 글을 손으로 고치면
+    /// (<see cref="_bookIdTitle"/> 과 달라지면) 버리고 제목으로 잇는다.
+    /// </summary>
+    private string _bookId = "", _bookIdTitle = "";
+
     /// <summary>책 고르기 창을 띄워 힌트를 실을 책을 고른다.</summary>
     private void PickBook()
     {
-        if (BookPickerDialog.Pick(this, _game, _book.Text.Trim()) is { } title)
+        if (BookPickerDialog.Pick(this, _game, _book.Text.Trim()) is ({ } title, { } bookId))
         {
-            _book.Text = title;
+            _bookId = bookId;
+            _book.Text = _bookIdTitle = title;
             Tell($"힌트를 『{title}』 에 싣습니다 — 「저장」을 눌러야 적힙니다.");
         }
     }
@@ -934,6 +1023,9 @@ public sealed class UserDiscoveryDialog : GameWindow
     private UIElement ItemPage()
     {
         foreach (string name in ItemTable.CategoryNames) _itemCategory.Items.Add(name);
+        foreach (string name in UserItems.BackdropNames) _itemBackdrop.Items.Add(name);
+        _itemBackdrop.SelectedIndex = UserItems.BackdropParchment;
+        _itemBackdrop.SelectionChanged += (_, _) => ShowItemBackdrop();
         // 왼쪽에 아이템 목록이 하나 더 서서 발견물 탭보다 좁다 — 글 칸을 거기에 맞춘다.
         _itemDescription.Width = HintWidth;
 
@@ -964,6 +1056,8 @@ public sealed class UserDiscoveryDialog : GameWindow
             },
         };
         Part(Line("그림", _itemPicture, tools));
+        Part(Line("배경", _itemBackdrop));
+        Part(Hint("그림의 비치는(투명한) 자리에 깔리는 바탕입니다. 「양피지」는 원본 아이템 그림의 양피지와 같은 바탕입니다(원본 그림 206장에서 칸마다 가장 흔한 색을 모았습니다)."));
         Part(Hint("그림을 고르면 120x120 아이템 그림 크기로 줄여 넣습니다. 그림 안을 끌어 자리를 옮기고, 휠(또는 ＋ · －)로 키우고 줄여 원하는 곳만 고를 수 있습니다."
                   + " 「가득 채우기」는 칸을 채우고 넘치는 곳을 자르고, 「통째로 넣기」는 그림 전체가 들어가게 줄입니다."));
         Part(Line("만든 이", _itemAuthor, Label("닉네임이나 이름")));
@@ -1025,6 +1119,7 @@ public sealed class UserDiscoveryDialog : GameWindow
         var e = l.Entry;
         _itemName.Text = e.Name;
         _itemCategory.SelectedIndex = Math.Clamp(e.Category, 0, _itemCategory.Items.Count - 1);
+        _itemBackdrop.SelectedIndex = Math.Clamp(e.Backdrop, 0, _itemBackdrop.Items.Count - 1);
         _itemBuy.Text = $"{e.BuyList}";
         _itemSell.Text = $"{e.SellList}";
         _itemEffect.Text = $"{e.Effect}";
@@ -1033,6 +1128,23 @@ public sealed class UserDiscoveryDialog : GameWindow
         _itemPicture.ShowFixed(l.PicturePath is { } path ? UserItems.ReadPicture(path) : null);
         Tell($"아이템 {l.Id}번 — UUID {e.Uuid}");
     }
+
+    /// <summary>그림 칸 바탕을 고른 배경으로 — 양피지면 그 그림을, 없음이면 비침을 보이는 바둑판(본디 바탕)을 깐다.</summary>
+    private void ShowItemBackdrop()
+    {
+        _itemCheckerBack ??= _itemPicture.Background;
+        if (_itemBackdrop.SelectedIndex == UserItems.BackdropParchment && UserItems.Parchment is { Length: UserItems.PictureWidth * UserItems.PictureHeight } back)
+        {
+            var bmp = BitmapSource.Create(UserItems.PictureWidth, UserItems.PictureHeight, 96, 96, PixelFormats.Bgra32, null, back, UserItems.PictureWidth * 4);
+            bmp.Freeze();
+            var brush = new ImageBrush(bmp) { Stretch = Stretch.Fill };
+            RenderOptions.SetBitmapScalingMode(brush, BitmapScalingMode.NearestNeighbor);
+            _itemPicture.Background = brush;
+        }
+        else _itemPicture.Background = _itemCheckerBack;
+    }
+
+    private Brush? _itemCheckerBack;
 
     /// <summary>지난번에 적은 만든 이 — 아이템에 없으면 발견물 쪽.</summary>
     private static string LastItemAuthor() =>
@@ -1066,6 +1178,7 @@ public sealed class UserDiscoveryDialog : GameWindow
         {
             Name = name, Category = Math.Max(0, _itemCategory.SelectedIndex), BuyList = Math.Max(0, buy), SellList = Math.Max(0, sell),
             Effect = effect, Description = _itemDescription.Text.Trim(), Author = _itemAuthor.Text.Trim(),
+            Backdrop = Math.Max(0, _itemBackdrop.SelectedIndex),
         };
         if (UserItems.Save(made, _itemPicture.Shaped, _itemDropPicture) is { } why) { Tell($"적지 못했습니다 — {why}"); return; }
         RefreshItems(made.Uuid);

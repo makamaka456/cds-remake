@@ -64,6 +64,12 @@ public sealed class GameSettingsData
     /// <summary>육상전 내내 「육상전 전황정보」 창을 띄워 둘지. 원본은 기능명령 「정보」로만 열어 꺼 두고 시작한다.</summary>
     public bool LandBattleInfoAlways { get; set; }
 
+    /// <summary>자동 업데이트를 끌지 — 켜면 새 버전을 받지 않고 알리기만 한다. 기본은 받는다(꺼짐 아님).</summary>
+    public bool NoAutoUpdate { get; set; }
+
+    /// <summary>갈매기 연출을 끌지 — 첫 출항 · 항구 도시를 발견할 때 나는 갈매기. 기본은 원본대로 난다.</summary>
+    public bool NoGulls { get; set; }
+
     /// <summary>
     /// 볼륨 믹서에서 맞춘 이 앱의 음량(0~1, -1 은 아직 안 만짐) · 음소거 — Windows 가 다시 켤 때 잊으므로 여기 적어 둔다(<see cref="Helpers.AppVolumeKeeper"/>).
     /// </summary>
@@ -246,8 +252,13 @@ public sealed class GameSettingsData
 
     /// <summary>네비게이션 도시 목록에서 항구가 있는 도시를 앞에 둘지. 끄면 이름 차례다.</summary>
     public bool NavHarborFirst { get; set; }
+    /// <summary>네비게이션 「항해 시작」에서 길 후보를 묻지 않고 가장 빠른 길로 바로 떠날지.</summary>
+    public bool NavQuickRoute { get; set; }
+    /// <summary>게임 띠(메뉴 줄 · 단추 · 상단 띠) 글자 크기(%). 100 이 원본이다.</summary>
+    public int TextScale { get; set; } = 100;
     public string HintsKey { get; set; } = "H";
     public string PersonKey { get; set; } = "X";
+    public string PlayerKey { get; set; } = "C";
     public string PatronKey { get; set; } = "P";
     public string CargoKey { get; set; } = "T";
 
@@ -368,6 +379,9 @@ public sealed class GameSettingsData
     /// <summary>바다에서 다른 배에 붙어도 「배가 보입니다」를 묻지 않고 지나칠지. 원본에 없어 꺼 두고 시작한다.</summary>
     public bool PassShips { get; set; }
 
+    /// <summary>모드 「모든 도시 등장」 — 아직 안 선 신도시를 다 세운다. 원본에 없어 꺼 두고 시작한다.</summary>
+    public bool AllCities { get; set; }
+
     /// <summary>부하편성에서 부하를 해고할 수 있게 할지. 원본에 없어 꺼 두고 시작한다.</summary>
     public bool MateDismiss { get; set; }
 
@@ -440,6 +454,9 @@ public sealed class GameSettingsData
     /// <summary>수에즈 지협에 바닷길을 뚫을지. 원본에 없어 꺼 두고 시작한다.</summary>
     public bool SuezCanal { get; set; }
 
+    /// <summary>파나마 지협에 바닷길을 뚫을지. 원본에 없어 꺼 두고 시작한다(요청).</summary>
+    public bool PanamaCanal { get; set; }
+
     /// <summary>스폰서 제안에서 고르기 없이 자금 증가를 고를지. 원본에 없어 꺼 두고 시작한다.</summary>
     public bool AutoFundRaise { get; set; }
 
@@ -495,6 +512,15 @@ public sealed class GameSettingsData
     /// <b>도시에 들어설 때마다</b> 자동저장 파일에 적을지. 게임에는 없는 것이라 꺼 두고 시작한다.
     /// </summary>
     public bool AutoSaveOnPort { get; set; }
+
+    /// <summary>저장할 때 열 칸 가운데 적을 칸을 고를지. 게임에는 없는 것이라 꺼 두고 시작한다(요청).</summary>
+    public bool SaveSlotPick { get; set; }
+
+    /// <summary>지상전 「애니메이션」을 OFF 로 골라 두었는지 — 다음 지상전도 그대로 연다(요청).</summary>
+    public bool LandBattleQuick { get; set; }
+
+    /// <summary>해상전 몸짓 배속의 차례(<see cref="GameSettings.SeaBattleSpeeds"/>). 원본은 x1(요청).</summary>
+    public int SeaBattleSpeed { get; set; }
 
     /// <summary>햄버거에 「여급 수첩」 줄을 낼지. 게임에는 없는 것이라 꺼 두고 시작한다.</summary>
     public bool ShowBarmaidBookMenu { get; set; }
@@ -854,6 +880,20 @@ public static class GameSettings
         set => Set(d => d.LandBattleInfoAlways = value);
     }
 
+    /// <summary>게임을 켤 때 새 버전을 저절로 받아 적용할지 — 설정 창 「일반」. 끄면 새 버전이 있다고 알리기만 한다(버그 리포트 #66).</summary>
+    public static bool AutoUpdate
+    {
+        get => !Get(d => d.NoAutoUpdate);
+        set => Set(d => d.NoAutoUpdate = !value);
+    }
+
+    /// <summary>갈매기 연출 — 설정 창 「일반」. 끄면 첫 출항 · 항구 도시 발견 때 갈매기가 안 난다(버그 리포트 #66 요청).</summary>
+    public static bool Gulls
+    {
+        get => !Get(d => d.NoGulls);
+        set => Set(d => d.NoGulls = !value);
+    }
+
     /// <summary>효과음 크기(0~100). 화면 밖 시험(<see cref="OffscreenTest.Muted"/>)이면 0 이다.</summary>
     public static int SfxVolume
     {
@@ -1028,6 +1068,13 @@ public static class GameSettings
         set => Set(d => d.NavHarborFirst = value);
     }
 
+    /// <summary>네비게이션 「경로」 단추 — 켜면 「항해 시작」에서 길 후보 화면 없이 가장 빠른 길(첫 후보)로 바로 떠난다(요청).</summary>
+    public static bool NavQuickRoute
+    {
+        get => Get(d => d.NavQuickRoute);
+        set => Set(d => d.NavQuickRoute = value);
+    }
+
     /// <summary><b>네비게이션</b>(목적지 도시를 골라 자동항해) 단축키. 기본은 <c>R</c> 이다.</summary>
     public static string NavKey
     {
@@ -1061,6 +1108,13 @@ public static class GameSettings
     {
         get => Get(d => d.PersonKey);
         set => Set(d => d.PersonKey = value);
+    }
+
+    /// <summary><b>플레이어 정보</b>(제독 본인의 인물정보 창을 곧바로) 단축키. 기본은 <c>C</c> 다(요청).</summary>
+    public static string PlayerKey
+    {
+        get => Get(d => d.PlayerKey);
+        set => Set(d => d.PlayerKey = value);
     }
 
     /// <summary>
@@ -1641,6 +1695,13 @@ public static class GameSettings
         set => Set(d => d.SuezCanal = value);
     }
 
+    /// <summary>파나마 운하 — 카리브해와 파나마만 사이에 배가 지나갈 바닷길을 뚫는다(Engine.Sea.Canals).</summary>
+    public static bool PanamaCanal
+    {
+        get => Get(d => d.PanamaCanal);
+        set => Set(d => d.PanamaCanal = value);
+    }
+
     /// <summary>게임 로드 창 글꼴 — 세이브 고르기 창(게임 로드 · CONTINUE)을 리디바탕 표로 띄운다(SaveListDialog).</summary>
     public static bool RidiLoadList
     {
@@ -1816,6 +1877,13 @@ public static class GameSettings
         set => Set(d => d.PassShips = value);
     }
 
+    /// <summary>모드 「모든 도시 등장」 — 켜면 아직 안 선 신도시가 다 서고, 켜 둔 동안 날짜가 된 도시는 꺼도 남는다(CityFounding).</summary>
+    public static bool AllCities
+    {
+        get => Get(d => d.AllCities);
+        set => Set(d => d.AllCities = value);
+    }
+
     public static bool FleetCard
     {
         get => Get(d => d.FleetCard);
@@ -1944,6 +2012,33 @@ public static class GameSettings
     {
         get => Get(d => d.AutoSaveOnPort);
         set => Set(d => d.AutoSaveOnPort = value);
+    }
+
+    /// <summary>세이브 칸 고르기 — 저장할 때 1~10 칸 가운데 적을 칸을 고른다(GameSave.SlotPath). 돌려 쓰는 칸과 달리 안 지워진다.</summary>
+    public static bool SaveSlotPick
+    {
+        get => Get(d => d.SaveSlotPick);
+        set => Set(d => d.SaveSlotPick = value);
+    }
+
+    /// <summary>지상전 「애니메이션」 OFF — 지상전 차림표에서 고른 것을 기억한다(LandBattleScene).</summary>
+    /// <summary>해상전 몸짓 배속 — 포격 · 이동 · 백병전 몸짓의 기다림을 이만큼 줄인다(SeaCombatDialog.Wait).</summary>
+    public static readonly int[] SeaBattleSpeeds = [1, 2, 3, 4, 8];
+
+    /// <summary>해상전 배속 차례 — 0 이 원본 x1.</summary>
+    public static int SeaBattleSpeed
+    {
+        get => Math.Clamp(Get(d => d.SeaBattleSpeed), 0, SeaBattleSpeeds.Length - 1);
+        set => Set(d => d.SeaBattleSpeed = Math.Clamp(value, 0, SeaBattleSpeeds.Length - 1));
+    }
+
+    /// <summary>지금 고른 해상전 배수.</summary>
+    public static int SeaBattleScale => SeaBattleSpeeds[SeaBattleSpeed];
+
+    public static bool LandBattleQuick
+    {
+        get => Get(d => d.LandBattleQuick);
+        set => Set(d => d.LandBattleQuick = value);
     }
 
     /// <summary>
@@ -2181,6 +2276,19 @@ public static class GameSettings
 
     /// <summary>「도시 그림 크게」에서 고를 수 있는 배율.</summary>
     public static readonly double[] CityPicZoomChoices = [1.25, 1.5, 1.75, 2, 2.5, 3];
+
+    /// <summary>설정 「글자 크기」에서 고르는 값(%).</summary>
+    public static readonly int[] TextScaleChoices = [100, 125, 150];
+
+    /// <summary>
+    /// 게임 띠의 글자 크기(%) — 모드 창 「UI」. 글자는 Scale2x 로 키워 찍고, 띠는 가운데 줄을 되풀이해 그만큼 높인다(GameUi.BandFrame).
+    /// 이미 떠 있는 창 · 상단 띠는 다시 열거나 게임을 다시 켜야 바뀐다.
+    /// </summary>
+    public static int TextScale
+    {
+        get => Get(d => TextScaleChoices.Contains(d.TextScale) ? d.TextScale : 100);
+        set => Set(d => d.TextScale = value);
+    }
 
     /// <summary>「도시 그림 크게」의 배율 — 보통 크기에 곱한다. 화면을 넘으면 들어가는 데까지만 키운다. 기본 1.5배.</summary>
     public static double CityPicZoom
